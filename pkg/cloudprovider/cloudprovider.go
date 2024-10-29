@@ -21,12 +21,12 @@ type CloudProvider struct {
 	instanceTypes []*cloudprovider.InstanceType
 }
 
-func NewCloudProvider(ctx context.Context, kubeClient client.Client, dynClient *dynamic.DynamicClient, exoClient *egov3.Client) *CloudProvider {
+func NewCloudProvider(ctx context.Context, kubeClient client.Client, dynClient *dynamic.DynamicClient, exoClient *egov3.Client, zone string) *CloudProvider {
 	return &CloudProvider{
 		kubeClient: kubeClient,
 		dynClient:  dynClient,
 		exoClient:  exoClient,
-		instanceTypes: ConstructInstanceTypes(cloudprovider.InstanceTypeOverhead{
+		instanceTypes: ConstructInstanceTypes(exoClient, zone, cloudprovider.InstanceTypeOverhead{
 			// TOOD discover this from somewhere
 			KubeReserved: v1.ResourceList{
 				v1.ResourceCPU:    resource.MustParse("100m"),

@@ -12,8 +12,10 @@
 			"program": "${workspaceFolder}/cmd/karpenter-exoscale/main.go",
 			"env": {
 				"SYSTEM_NAMESPACE": "kube-system",
-				"KUBECONFIG": "/tmp/kube.config"
-			}
+				"KUBECONFIG": "/tmp/kube.config",
+				"EXOSCALE_ZONE": "ch-gva-2"
+			},
+			"envFile": "${workspaceFolder}/.env",
 		}
 	]
 }
