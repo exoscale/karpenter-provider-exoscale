@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/awslabs/operatorpkg/status"
+	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -16,13 +17,15 @@ import (
 type CloudProvider struct {
 	kubeClient    client.Client
 	dynClient     *dynamic.DynamicClient
+	exoClient     *egov3.Client
 	instanceTypes []*cloudprovider.InstanceType
 }
 
-func NewCloudProvider(ctx context.Context, kubeClient client.Client, dynClient *dynamic.DynamicClient) *CloudProvider {
+func NewCloudProvider(ctx context.Context, kubeClient client.Client, dynClient *dynamic.DynamicClient, exoClient *egov3.Client) *CloudProvider {
 	return &CloudProvider{
 		kubeClient: kubeClient,
 		dynClient:  dynClient,
+		exoClient:  exoClient,
 		instanceTypes: ConstructInstanceTypes(cloudprovider.InstanceTypeOverhead{
 			// TOOD discover this from somewhere
 			KubeReserved: v1.ResourceList{

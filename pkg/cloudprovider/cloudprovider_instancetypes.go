@@ -6,6 +6,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
+
+
 )
 
 type InstanceTypeOptions struct {
@@ -23,6 +25,7 @@ func MakeInstanceTypeLabels(cpu, mem int) map[string]string {
 
 // InstanceTypesAssorted create many unique instance types with varying CPU/memory/architecture/OS/zone/capacity type.
 func ConstructInstanceTypes(cfgInstanceOverhead cloudprovider.InstanceTypeOverhead) []*cloudprovider.InstanceType {
+
 	var instanceTypes []*cloudprovider.InstanceType
 
 	opts := InstanceTypeOptions{

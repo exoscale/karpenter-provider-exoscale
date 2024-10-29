@@ -7,20 +7,27 @@ import (
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/operator"
+	egocreds "github.com/exoscale/egoscale/v3/credentials"
+	egov3 "github.com/exoscale/egoscale/v3"
 )
-
-var ()
 
 func main() {
 	ctx, op := operator.NewOperator()
 
 	dynClient, err := dynamic.NewForConfig(op.GetConfig())
 	if err != nil {
-		os.Stderr.WriteString(err.Error())
+		op.GetLogger().Error(err, "fatal startup error")
 		os.Exit(1)
 	}
 
-	cloudProvider := exoscale.NewCloudProvider(ctx, op.GetClient(), dynClient)
+	creds := egocreds.NewEnvCredentials()
+	exoClient, err = egov3.NewClient(creds)
+	if err != nil {
+		op.GetLogger().Error(err, "fatal startup error")
+		os.Exit(1)
+	}
+
+	cloudProvider := exoscale.NewCloudProvider(ctx, op.GetClient(), dynClient, exoClient)
 	op.
 		WithControllers(ctx, controllers.NewControllers(ctx,
 			op.Manager,
