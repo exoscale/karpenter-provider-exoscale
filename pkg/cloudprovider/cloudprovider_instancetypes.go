@@ -66,7 +66,7 @@ func ConstructInstanceTypes(exoClient *exov3.Client, zone string, cfgInstanceOve
 			InstanceTypeLabels: map[string]string{},
 		}
 
-		price := PriceFromResources(opts.Resources)
+		price := priceFromProfile(opts.Name)
 
 		opts.Offerings = cloudprovider.Offerings{}
 		opts.Offerings = append(opts.Offerings, cloudprovider.Offering{
@@ -95,20 +95,4 @@ func newInstanceType(options InstanceTypeOptions, cfgInstanceOverhead cloudprovi
 		Capacity:     options.Resources,
 		Overhead:     &cfgInstanceOverhead,
 	}
-}
-
-// It's totally faked and not the real prices, we should expose prices from the API
-func PriceFromResources(resources v1.ResourceList) float64 {
-	price := 0.0
-	for k, v := range resources {
-		switch k {
-		case v1.ResourceCPU:
-			price += 0.025 * v.AsApproximateFloat64()
-		case v1.ResourceMemory:
-			price += 0.001 * v.AsApproximateFloat64() / (1e9)
-		case ResourceGPUVendorA:
-			price += 1.0
-		}
-	}
-	return price
 }
