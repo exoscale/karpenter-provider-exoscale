@@ -60,13 +60,9 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		return nil, fmt.Errorf("failed to create node %s: %w", nodeClaim.Name, err)
 	}
 
-	op, err = c.exoClient.Wait(ctx, op)
+	op, err = c.exoClient.Wait(ctx, op, egov3.OperationStateSuccess)
 	if err != nil {
-		return nil, fmt.Errorf("failed to wait for node %s creation: %w", nodeClaim.Name, err)
-	}
-
-	if op.State != egov3.OperationStateSuccess {
-		return nil, fmt.Errorf("failed to create node operation %s for node %s: %s", op.ID, nodeClaim.Name, op.Message)
+		return nil, fmt.Errorf("failed to perform node %s creation: %w", nodeClaim.Name, err)
 	}
 
 	// Retrieve the nodepool ID
@@ -108,13 +104,9 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		return fmt.Errorf("failed to delete nodepool %s: %w", nodeClaim.Name, err)
 	}
 
-	op, err = c.exoClient.Wait(ctx, op)
+	op, err = c.exoClient.Wait(ctx, op, egov3.OperationStateSuccess)
 	if err != nil {
-		return fmt.Errorf("failed to wait for node %s deletion: %w", nodeClaim.Name, err)
-	}
-
-	if op.State != egov3.OperationStateSuccess {
-		return fmt.Errorf("failed to delete node operation %s for node %s: %s", op.ID, nodeClaim.Name, op.Message)
+		return fmt.Errorf("failed to delete node operation %s for node %s: %w", op.ID, nodeClaim.Name, err)
 	}
 
 	return nil
