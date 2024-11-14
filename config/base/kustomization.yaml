@@ -8,3 +8,4 @@ resources:
   - kube-node-leases/
   - clusterrole.yaml
   - clusterrole-leases.yaml
+  - nodeclass.yaml
