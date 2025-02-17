@@ -9,6 +9,7 @@ import (
 	exoscale "github.com/exoscale/karpenter-exoscale/pkg/cloudprovider"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/karpenter/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/operator"
 )
 
@@ -44,8 +45,6 @@ func main() {
 	// permit custom API endpoint
 	exoAPIEndpoint = os.Getenv("EXOSCALE_API_ENDPOINT")
 
-
-
 	exoClient, err := egov3.NewClient(credentials.NewStaticCredentials(exoAPIKey, exoAPISecret), egov3.ClientOptWithEndpoint(
 		egov3.Endpoint(exoAPIEndpoint)))
 	if err != nil {
@@ -71,6 +70,7 @@ func main() {
 	}
 
 	cloudProvider := exoscale.NewCloudProvider(ctx, op.GetClient(), dynClient, exoClient, zone)
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 	op.
 		WithControllers(ctx, controllers.NewControllers(ctx,
 			op.Manager,
@@ -78,5 +78,6 @@ func main() {
 			op.GetClient(),
 			op.EventRecorder,
 			cloudProvider,
-		)...).Start(ctx, cloudProvider)
+			clusterState,
+		)...).Start(ctx)
 }
