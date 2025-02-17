@@ -158,6 +158,10 @@ func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
 	return []status.Object{&apiv1.ExoscaleNodeClass{}}
 }
 
+func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
+	return []cloudprovider.RepairPolicy{}
+}
+
 func (c *CloudProvider) Name() string {
 	return "Exoscale"
 }
