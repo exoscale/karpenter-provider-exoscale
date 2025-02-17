@@ -8,7 +8,7 @@ require (
 	github.com/awslabs/operatorpkg v0.0.0-20240805231134-67d0acfb6306
 	github.com/exoscale/egoscale/v3 v3.1.9
 	github.com/google/uuid v1.6.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	k8s.io/api v0.30.3
 	k8s.io/apimachinery v0.30.3
 	k8s.io/client-go v0.30.3
