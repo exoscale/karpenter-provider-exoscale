@@ -22,6 +22,8 @@ github.com/evanphx/json-patch/v5 v5.9.11 h1:/8HVnzMq13/3x9TPvjG08wUGqBTmZBsCWzjT
 github.com/evanphx/json-patch/v5 v5.9.11/go.mod h1:3j+LviiESTElxA4p3EMKAB9HXj3/XEtnUf6OZxqIQTM=
 github.com/exoscale/egoscale/v3 v3.1.9 h1:kC876X4GKsojoqzJtq/MxNG91ebrDVEM9Ro+XOL7Yts=
 github.com/exoscale/egoscale/v3 v3.1.9/go.mod h1:t9+MpSEam94na48O/xgvvPFpQPRiwZ3kBN4/UuQtKco=
+github.com/exoscale/egoscale/v3 v3.1.13 h1:CAGC7QRjp2AiGj01agsSD0VKCp4OZmW5f51vV2IguNQ=
+github.com/exoscale/egoscale/v3 v3.1.13/go.mod h1:t9+MpSEam94na48O/xgvvPFpQPRiwZ3kBN4/UuQtKco=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
