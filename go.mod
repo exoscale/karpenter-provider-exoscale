@@ -2,7 +2,7 @@ module github.com/exoscale/karpenter-exoscale
 
 go 1.23.2
 
-toolchain go1.24.0
+toolchain go1.24.1
 
 require (
 	github.com/awslabs/operatorpkg v0.0.0-20250212191036-bf6d68a8adc5
