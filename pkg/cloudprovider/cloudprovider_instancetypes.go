@@ -69,7 +69,7 @@ func ConstructInstanceTypes(exoClient *exov3.Client, zone string, cfgInstanceOve
 		price := priceFromProfile(opts.Name)
 
 		opts.Offerings = cloudprovider.Offerings{}
-		opts.Offerings = append(opts.Offerings, cloudprovider.Offering{
+		opts.Offerings = append(opts.Offerings, &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(),
 			Price:        price,
 			Available:    true,
