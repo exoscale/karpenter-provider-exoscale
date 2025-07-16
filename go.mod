@@ -6,7 +6,7 @@ toolchain go1.24.1
 
 require (
 	github.com/awslabs/operatorpkg v0.0.0-20250325071853-9b4e36db18ce
-	github.com/exoscale/egoscale/v3 v3.1.13
+	github.com/exoscale/egoscale/v3 v3.1.24
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.10.0
 	k8s.io/api v0.32.3
