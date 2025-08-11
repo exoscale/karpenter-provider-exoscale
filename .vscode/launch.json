@@ -10,6 +10,7 @@
 			"request": "launch",
 			"mode": "auto",
 			"program": "${workspaceFolder}/cmd/karpenter-exoscale/main.go",
+			"args": ["--leader-election-namespace=kube-system"],
 			"env": {
 				"SYSTEM_NAMESPACE": "kube-system",
 				"KUBECONFIG": "/tmp/kube.config",
