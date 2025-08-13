@@ -6,7 +6,7 @@ toolchain go1.24.5
 
 require (
 	github.com/awslabs/operatorpkg v0.0.0-20250721225858-4e7491c57aa5
-	github.com/exoscale/egoscale/v3 v3.1.24
+	github.com/exoscale/egoscale/v3 v3.1.25
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.10.0
 	k8s.io/api v0.33.3
@@ -38,6 +38,8 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
