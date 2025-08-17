@@ -3,20 +3,30 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.3
+    controller-gen.kubebuilder.io/version: v0.16.5
   name: exoscalenodeclasses.karpenter.exoscale.com
 spec:
   group: karpenter.exoscale.com
   names:
+    categories:
+    - karpenter
     kind: ExoscaleNodeClass
     listKind: ExoscaleNodeClassList
     plural: exoscalenodeclasses
     singular: exoscalenodeclass
   scope: Cluster
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
     schema:
       openAPIV3Schema:
+        description: ExoscaleNodeClass is the Schema for the ExoscaleNodeClass API
         properties:
           apiVersion:
             description: |-
@@ -35,7 +45,185 @@ spec:
             type: string
           metadata:
             type: object
+          spec:
+            description: ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
+            properties:
+              antiAffinityGroups:
+                description: AntiAffinityGroups is a list of anti-affinity group IDs
+                items:
+                  type: string
+                maxItems: 8
+                type: array
+                x-kubernetes-validations:
+                - message: each anti-affinity group must be a valid UUID
+                  rule: self.all(aag, aag.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+                - message: duplicate anti-affinity groups are not allowed
+                  rule: size(self) == size(self.toSet())
+              diskSize:
+                default: 50
+                description: DiskSize is the size of the root disk in GB
+                format: int64
+                maximum: 8000
+                minimum: 10
+                type: integer
+              imageGCHighThresholdPercent:
+                default: 85
+                description: ImageGCHighThresholdPercent is the disk usage percentage
+                  at which image garbage collection is triggered
+                format: int32
+                maximum: 100
+                minimum: 0
+                type: integer
+              imageGCLowThresholdPercent:
+                default: 80
+                description: ImageGCLowThresholdPercent is the disk usage percentage
+                  below which image garbage collection stops
+                format: int32
+                maximum: 100
+                minimum: 0
+                type: integer
+              imageMinimumGCAge:
+                default: 5m
+                description: |-
+                  ImageMinimumGCAge is the minimum age for an unused image before it can be garbage collected
+                  Example: "5m" for 5 minutes
+                pattern: ^[0-9]+(s|m|h)$
+                type: string
+              kubeReserved:
+                description: KubeReserved is resources reserved for Kubernetes system
+                  components
+                properties:
+                  cpu:
+                    description: CPU reservation (e.g., "200m")
+                    pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must be a valid CPU quantity
+                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(m)?$')
+                  ephemeralStorage:
+                    description: EphemeralStorage reservation (e.g., "1Gi")
+                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must be a valid storage quantity
+                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
+                  memory:
+                    description: Memory reservation (e.g., "300Mi")
+                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must be a valid memory quantity
+                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
+                type: object
+              nodeLabels:
+                additionalProperties:
+                  type: string
+                description: NodeLabels are labels to be applied to the node upon
+                  registration
+                type: object
+                x-kubernetes-validations:
+                - message: label keys must be valid
+                  rule: self.all(key, key.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))
+                - message: label keys cannot use reserved prefixes
+                  rule: self.all(key, !key.startsWith('kubernetes.io/') && !key.startsWith('k8s.io/'))
+              nodeTaints:
+                description: NodeTaints are taints to be applied to the node upon
+                  registration
+                items:
+                  description: NodeTaint represents a Kubernetes taint to be applied
+                    to a node
+                  properties:
+                    effect:
+                      description: Effect is the taint effect (NoSchedule, PreferNoSchedule,
+                        NoExecute)
+                      enum:
+                      - NoSchedule
+                      - PreferNoSchedule
+                      - NoExecute
+                      type: string
+                    key:
+                      description: Key is the taint key
+                      type: string
+                    value:
+                      description: Value is the taint value
+                      type: string
+                  required:
+                  - effect
+                  - key
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-validations:
+                - message: taint key is required
+                  rule: self.all(taint, has(taint.key) && taint.key != '')
+              privateNetworks:
+                description: PrivateNetworks is a list of private network IDs to attach
+                  to instances
+                items:
+                  type: string
+                maxItems: 10
+                type: array
+                x-kubernetes-validations:
+                - message: each private network must be a valid UUID
+                  rule: self.all(net, net.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+                - message: duplicate private networks are not allowed
+                  rule: size(self) == size(self.toSet())
+              securityGroups:
+                description: SecurityGroups is a list of security group IDs to attach
+                  to instances
+                items:
+                  type: string
+                maxItems: 50
+                type: array
+                x-kubernetes-validations:
+                - message: each security group must be a valid UUID
+                  rule: self.all(sg, sg.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+                - message: duplicate security groups are not allowed
+                  rule: size(self) == size(self.toSet())
+              systemReserved:
+                description: SystemReserved is resources reserved for OS system components
+                properties:
+                  cpu:
+                    description: CPU reservation (e.g., "200m")
+                    pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must be a valid CPU quantity
+                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(m)?$')
+                  ephemeralStorage:
+                    description: EphemeralStorage reservation (e.g., "1Gi")
+                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must be a valid storage quantity
+                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
+                  memory:
+                    description: Memory reservation (e.g., "300Mi")
+                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: must be a valid memory quantity
+                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
+                type: object
+              templateID:
+                description: TemplateID is the ID of the template to use for instances
+                pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                type: string
+                x-kubernetes-validations:
+                - message: templateID is immutable
+                  rule: self == oldSelf
+            required:
+            - templateID
+            type: object
+            x-kubernetes-validations:
+            - message: imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent
+              rule: '!has(self.imageGCHighThresholdPercent) || !has(self.imageGCLowThresholdPercent)
+                || self.imageGCLowThresholdPercent < self.imageGCHighThresholdPercent'
+            - message: maximum 8 anti-affinity groups allowed
+              rule: '!has(self.antiAffinityGroups) || size(self.antiAffinityGroups)
+                <= 8'
           status:
+            description: ExoscaleNodeClassStatus defines the observed state of ExoscaleNodeClass
             properties:
               conditions:
                 description: Conditions contains signals for health and readiness
@@ -95,6 +283,8 @@ spec:
                   type: object
                 type: array
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

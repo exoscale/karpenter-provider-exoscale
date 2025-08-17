@@ -1,25 +1,27 @@
-# Build the manager binary
-FROM golang:1.24.5 as builder
+FROM golang:1.24.5 AS builder
 
 WORKDIR /workspace
-# Copy the Go Modules manifests
+
 COPY go.mod go.mod
 COPY go.sum go.sum
-COPY .netrc /root/.netrc
 
-# Copy the go source
+RUN go mod download
+
 COPY cmd/ cmd/
 COPY pkg/ pkg/
+COPY apis/ apis/
+COPY internal/ internal/
 
-# Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager cmd/karpenter-exoscale/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-s -w" \
+    -o manager \
+    cmd/karpenter-exoscale/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/manager /karpenter-exoscale
 USER nonroot:nonroot
 
-ENTRYPOINT ["/manager"]
+ENTRYPOINT ["/karpenter-exoscale"]

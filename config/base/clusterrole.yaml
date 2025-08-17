@@ -31,10 +31,6 @@ rules:
   - apiGroups: ["apps"]
     resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
     verbs: ["list", "watch"]
-  - apiGroups: ["admissionregistration.k8s.io"]
-    resources:
-      ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"]
-    verbs: ["get", "watch", "list"]
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch"]
@@ -54,11 +50,3 @@ rules:
   - apiGroups: [""]
     resources: ["pods/eviction"]
     verbs: ["create"]
-  - apiGroups: ["admissionregistration.k8s.io"]
-    resources: ["validatingwebhookconfigurations"]
-    verbs: ["update"]
-    resourceNames:
-      [
-        "validation.webhook.karpenter.sh",
-        "validation.webhook.config.karpenter.sh",
-      ]
