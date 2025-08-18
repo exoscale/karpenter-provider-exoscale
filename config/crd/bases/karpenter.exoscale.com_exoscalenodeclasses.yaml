@@ -54,11 +54,6 @@ spec:
                   type: string
                 maxItems: 8
                 type: array
-                x-kubernetes-validations:
-                - message: each anti-affinity group must be a valid UUID
-                  rule: self.all(aag, aag.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
-                - message: duplicate anti-affinity groups are not allowed
-                  rule: size(self) == size(self.toSet())
               diskSize:
                 default: 50
                 description: DiskSize is the size of the root disk in GB
@@ -97,23 +92,14 @@ spec:
                     description: CPU reservation (e.g., "200m")
                     pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
                     type: string
-                    x-kubernetes-validations:
-                    - message: must be a valid CPU quantity
-                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(m)?$')
                   ephemeralStorage:
                     description: EphemeralStorage reservation (e.g., "1Gi")
                     pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
                     type: string
-                    x-kubernetes-validations:
-                    - message: must be a valid storage quantity
-                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
                   memory:
                     description: Memory reservation (e.g., "300Mi")
                     pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
                     type: string
-                    x-kubernetes-validations:
-                    - message: must be a valid memory quantity
-                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
                 type: object
               nodeLabels:
                 additionalProperties:
@@ -121,11 +107,6 @@ spec:
                 description: NodeLabels are labels to be applied to the node upon
                   registration
                 type: object
-                x-kubernetes-validations:
-                - message: label keys must be valid
-                  rule: self.all(key, key.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))
-                - message: label keys cannot use reserved prefixes
-                  rule: self.all(key, !key.startsWith('kubernetes.io/') && !key.startsWith('k8s.io/'))
               nodeTaints:
                 description: NodeTaints are taints to be applied to the node upon
                   registration
@@ -163,11 +144,6 @@ spec:
                   type: string
                 maxItems: 10
                 type: array
-                x-kubernetes-validations:
-                - message: each private network must be a valid UUID
-                  rule: self.all(net, net.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
-                - message: duplicate private networks are not allowed
-                  rule: size(self) == size(self.toSet())
               securityGroups:
                 description: SecurityGroups is a list of security group IDs to attach
                   to instances
@@ -175,11 +151,6 @@ spec:
                   type: string
                 maxItems: 50
                 type: array
-                x-kubernetes-validations:
-                - message: each security group must be a valid UUID
-                  rule: self.all(sg, sg.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
-                - message: duplicate security groups are not allowed
-                  rule: size(self) == size(self.toSet())
               systemReserved:
                 description: SystemReserved is resources reserved for OS system components
                 properties:
@@ -187,23 +158,14 @@ spec:
                     description: CPU reservation (e.g., "200m")
                     pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
                     type: string
-                    x-kubernetes-validations:
-                    - message: must be a valid CPU quantity
-                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(m)?$')
                   ephemeralStorage:
                     description: EphemeralStorage reservation (e.g., "1Gi")
                     pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
                     type: string
-                    x-kubernetes-validations:
-                    - message: must be a valid storage quantity
-                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
                   memory:
                     description: Memory reservation (e.g., "300Mi")
                     pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
                     type: string
-                    x-kubernetes-validations:
-                    - message: must be a valid memory quantity
-                      rule: self == '' || self.matches('^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')
                 type: object
               templateID:
                 description: TemplateID is the ID of the template to use for instances

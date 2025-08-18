@@ -51,22 +51,16 @@ type ExoscaleNodeClassSpec struct {
 	// SecurityGroups is a list of security group IDs to attach to instances
 	// +optional
 	// +kubebuilder:validation:MaxItems=50
-	// +kubebuilder:validation:XValidation:rule="self.all(sg, sg.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))",message="each security group must be a valid UUID"
-	// +kubebuilder:validation:XValidation:rule="size(self) == size(self.toSet())",message="duplicate security groups are not allowed"
 	SecurityGroups []string `json:"securityGroups,omitempty"`
 
 	// AntiAffinityGroups is a list of anti-affinity group IDs
 	// +optional
 	// +kubebuilder:validation:MaxItems=8
-	// +kubebuilder:validation:XValidation:rule="self.all(aag, aag.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))",message="each anti-affinity group must be a valid UUID"
-	// +kubebuilder:validation:XValidation:rule="size(self) == size(self.toSet())",message="duplicate anti-affinity groups are not allowed"
 	AntiAffinityGroups []string `json:"antiAffinityGroups,omitempty"`
 
 	// PrivateNetworks is a list of private network IDs to attach to instances
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
-	// +kubebuilder:validation:XValidation:rule="self.all(net, net.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))",message="each private network must be a valid UUID"
-	// +kubebuilder:validation:XValidation:rule="size(self) == size(self.toSet())",message="duplicate private networks are not allowed"
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
 
 	// ImageGCHighThresholdPercent is the disk usage percentage at which image garbage collection is triggered
@@ -100,8 +94,6 @@ type ExoscaleNodeClassSpec struct {
 
 	// NodeLabels are labels to be applied to the node upon registration
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self.all(key, key.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))",message="label keys must be valid"
-	// +kubebuilder:validation:XValidation:rule="self.all(key, !key.startsWith('kubernetes.io/') && !key.startsWith('k8s.io/'))",message="label keys cannot use reserved prefixes"
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
 	// NodeTaints are taints to be applied to the node upon registration
@@ -115,19 +107,16 @@ type ResourceReservation struct {
 	// CPU reservation (e.g., "200m")
 	// +optional
 	// +kubebuilder:validation:Pattern="^(\\d+(m|[.])?(\\d+)?|\\d+m)$"
-	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^[0-9]+(\\.[0-9]+)?(m)?$')",message="must be a valid CPU quantity"
 	CPU string `json:"cpu,omitempty"`
 
 	// Memory reservation (e.g., "300Mi")
 	// +optional
 	// +kubebuilder:validation:Pattern="^(\\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$"
-	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')",message="must be a valid memory quantity"
 	Memory string `json:"memory,omitempty"`
 
 	// EphemeralStorage reservation (e.g., "1Gi")
 	// +optional
 	// +kubebuilder:validation:Pattern="^(\\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$"
-	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^[0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$')",message="must be a valid storage quantity"
 	EphemeralStorage string `json:"ephemeralStorage,omitempty"`
 }
 
