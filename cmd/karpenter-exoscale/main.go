@@ -4,32 +4,24 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	"github.com/exoscale/egoscale/v3/credentials"
 	exoscale "github.com/exoscale/karpenter-exoscale/pkg/cloudprovider"
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/bootstraptoken"
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/garbagecollection"
-	"github.com/exoscale/karpenter-exoscale/pkg/controllers/nodeclaim"
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/nodeclass"
-	"github.com/exoscale/karpenter-exoscale/pkg/controllers/repair"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/pricing"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
-	"sigs.k8s.io/karpenter/pkg/events"
 	"sigs.k8s.io/karpenter/pkg/operator"
 )
 
 func main() {
-	ctx := setupSignalHandler()
+	ctx := context.Background()
 	ctxOp, op := operator.NewOperator()
 
 	if err := run(ctx, ctxOp, op); err != nil {
@@ -53,19 +45,14 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		return fmt.Errorf("zone validation failed: %w", err)
 	}
 
-	pricingProvider, err := createPricingProvider()
-	if err != nil {
-		return fmt.Errorf("failed to create pricing provider: %w", err)
+	instanceTypeProvider := instancetype.NewExoscaleProvider(exoClient, config.Zone)
+	if err := instanceTypeProvider.Refresh(ctx); err != nil {
+		return fmt.Errorf("failed to refresh instance types: %w", err)
 	}
 
-	instanceTypeProvider, err := createInstanceTypeProvider(ctx, exoClient, config.Zone, pricingProvider)
-	if err != nil {
-		return fmt.Errorf("failed to create instance type provider: %w", err)
-	}
+	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterName, instanceTypeProvider)
 
-	instanceProvider := createInstanceProvider(exoClient, config.Zone, config.ClusterName)
-
-	userDataProvider := createUserDataProvider(op.GetClient(), op.GetConfig().Host, config.ClusterDNS, config.ClusterDomain)
+	userDataProvider := userdata.NewProvider(op.GetClient(), op.GetConfig().Host, config.ClusterDNS, config.ClusterDomain)
 
 	cloudProvider := exoscale.NewCloudProvider(
 		op.GetClient(),
@@ -73,7 +60,6 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		op.GetConfig().Host,
 		op.EventRecorder,
 		instanceTypeProvider,
-		pricingProvider,
 		instanceProvider,
 		userDataProvider,
 		config.Zone,
@@ -94,7 +80,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		clusterState,
 	)
 
-	if err := registerCustomControllers(op.Manager, exoClient, cloudProvider, instanceProvider, op.EventRecorder, config.Zone, config.ClusterName); err != nil {
+	if err := registerCustomControllers(op.Manager, exoClient, instanceProvider, config.Zone); err != nil {
 		return fmt.Errorf("failed to register custom controllers: %w", err)
 	}
 
@@ -169,29 +155,6 @@ func createExoscaleClient(ctx context.Context, zone, apiKey, apiSecret string) (
 	)
 }
 
-func setupSignalHandler() context.Context {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigChan
-		if _, err := fmt.Fprintf(os.Stderr, "Received signal: %v, initiating graceful shutdown...\n", sig); err != nil {
-			// Best effort logging - if stderr write fails during shutdown, continue anyway
-		}
-		cancel()
-
-		time.Sleep(10 * time.Second)
-		if _, err := fmt.Fprintf(os.Stderr, "Graceful shutdown timeout exceeded, forcing exit\n"); err != nil {
-			// Best effort logging - if stderr write fails during shutdown, continue anyway
-		}
-		os.Exit(1)
-	}()
-
-	return ctx
-}
-
 func validateZone(ctx context.Context, client *egov3.Client, zone string) error {
 	zones, err := client.ListZones(ctx)
 	if err != nil {
@@ -212,10 +175,11 @@ func validateZone(ctx context.Context, client *egov3.Client, zone string) error 
 	return fmt.Errorf("zone %s not found. Available zones: %v", zone, availableZones)
 }
 
-func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, cloudProvider *exoscale.CloudProvider, instanceProvider instance.Provider, recorder events.Recorder, zone, clusterName string) error {
-	if err := (&bootstraptoken.BootstrapTokenController{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProvider instance.Provider, zone string) error {
+	if err := (&bootstraptoken.Controller{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("bootstrap-token-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create bootstrap token controller: %w", err)
 	}
@@ -230,52 +194,9 @@ func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, cloudP
 		return fmt.Errorf("unable to create nodeclass controller: %w", err)
 	}
 
-	if err := (&nodeclaim.NodeClaimReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		ExoscaleClient: exoClient,
-		Recorder:       recorder,
-		Zone:           zone,
-		ClusterName:    clusterName,
-	}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create nodeclaim controller: %w", err)
-	}
-
-	if err := (&repair.NodeRepairController{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		CloudProvider:  cloudProvider,
-		ExoscaleClient: exoClient,
-		Recorder:       mgr.GetEventRecorderFor("repair-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create repair controller: %w", err)
-	}
-
 	if err := garbagecollection.NewController(mgr, instanceProvider); err != nil {
 		return fmt.Errorf("unable to create garbage collection controller: %w", err)
 	}
 
 	return nil
-}
-
-func createPricingProvider() (pricing.Provider, error) {
-	return pricing.NewStaticProvider(&pricing.ProviderOptions{
-		DefaultCurrency: pricing.EUR,
-	})
-}
-
-func createInstanceTypeProvider(ctx context.Context, exoClient *egov3.Client, zone string, pricingProvider pricing.Provider) (instancetype.Provider, error) {
-	provider := instancetype.NewExoscaleProvider(exoClient, zone, pricingProvider)
-	if err := provider.Refresh(ctx); err != nil {
-		return nil, fmt.Errorf("failed to refresh instance types: %w", err)
-	}
-	return provider, nil
-}
-
-func createInstanceProvider(exoClient *egov3.Client, zone string, clusterName string) instance.Provider {
-	return instance.NewProvider(exoClient, zone, clusterName)
-}
-
-func createUserDataProvider(kubeClient client.Client, clusterEndpoint string, clusterDNS string, clusterDomain string) userdata.Provider {
-	return userdata.NewProvider(kubeClient, clusterEndpoint, clusterDNS, clusterDomain)
 }

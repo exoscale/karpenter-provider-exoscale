@@ -17,19 +17,26 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 func TestProvider_Create(t *testing.T) {
 	ctx := context.Background()
 	mockClient := &mocks.MockExoscaleClient{}
+	mockInstanceTypeProvider := &mocks.MockInstanceTypeProvider{}
+
+	mockInstanceTypeProvider.On("Get", mock.Anything, "standard.medium").Return(&cloudprovider.InstanceType{
+		Name: "standard.medium",
+	}, nil)
 
 	cacheInstance := cache.New(30*time.Second, 60*time.Second)
 
 	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cacheInstance,
+		exoClient:            mockClient,
+		zone:                 "ch-gva-2",
+		clusterName:          "test-cluster",
+		cache:                cacheInstance,
+		instanceTypeProvider: mockInstanceTypeProvider,
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -71,6 +78,11 @@ func TestProvider_Create(t *testing.T) {
 		State: egov3.InstanceStateRunning,
 	}
 
+	mockInstanceTypeProvider.On("GetInstanceTypeID", "standard.medium").Return(string(mocks.StandardMediumTypeID), true)
+	mockInstanceTypeProvider.On("Get", mock.Anything, "standard.medium").Return(&cloudprovider.InstanceType{
+		Name: "standard.medium",
+	}, nil)
+
 	mockClient.On("CreateInstance", mock.Anything, mock.MatchedBy(func(req egov3.CreateInstanceRequest) bool {
 		return req.Labels[constants.LabelManagedBy] == constants.ManagedByKarpenter &&
 			req.Labels[constants.LabelClusterName] == "test-cluster" &&
@@ -90,29 +102,76 @@ func TestProvider_Create(t *testing.T) {
 }
 
 func TestProvider_Delete(t *testing.T) {
-	ctx := context.Background()
-	mockClient := &mocks.MockExoscaleClient{}
+	t.Run("Success", func(t *testing.T) {
+		ctx := context.Background()
+		mockClient := &mocks.MockExoscaleClient{}
 
-	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cache.New(30*time.Second, 60*time.Second),
-	}
+		provider := &DefaultProvider{
+			instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+			exoClient:            mockClient,
+			zone:                 "ch-gva-2",
+			clusterName:          "test-cluster",
+			cache:                cache.New(30*time.Second, 60*time.Second),
+		}
 
-	operation := &egov3.Operation{
-		ID:    mocks.OperationID1,
-		State: egov3.OperationStateSuccess,
-	}
+		operation := &egov3.Operation{
+			ID:    mocks.OperationID1,
+			State: egov3.OperationStateSuccess,
+		}
 
-	mockClient.On("DeleteInstance", mock.Anything, mocks.InstanceID1).Return(operation, nil)
-	mockClient.On("Wait", mock.Anything, operation, mock.Anything).
-		Return(operation, nil)
+		mockClient.On("DeleteInstance", mock.Anything, mocks.InstanceID1).Return(operation, nil)
+		mockClient.On("Wait", mock.Anything, operation, mock.Anything).
+			Return(operation, nil)
 
-	err := provider.Delete(ctx, string(mocks.InstanceID1))
+		err := provider.Delete(ctx, string(mocks.InstanceID1))
 
-	assert.NoError(t, err)
-	mockClient.AssertExpectations(t)
+		assert.NoError(t, err)
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("InstanceNotFound", func(t *testing.T) {
+		ctx := context.Background()
+		mockClient := &mocks.MockExoscaleClient{}
+
+		provider := &DefaultProvider{
+			instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+			exoClient:            mockClient,
+			zone:                 "ch-gva-2",
+			clusterName:          "test-cluster",
+			cache:                cache.New(30*time.Second, 60*time.Second),
+		}
+
+		mockClient.On("DeleteInstance", mock.Anything, mocks.InstanceID1).Return(nil, egov3.ErrNotFound)
+
+		err := provider.Delete(ctx, string(mocks.InstanceID1))
+
+		assert.Error(t, err)
+		assert.True(t, errors.IsInstanceNotFoundError(err))
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("DeleteFails", func(t *testing.T) {
+		ctx := context.Background()
+		mockClient := &mocks.MockExoscaleClient{}
+
+		provider := &DefaultProvider{
+			instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+			exoClient:            mockClient,
+			zone:                 "ch-gva-2",
+			clusterName:          "test-cluster",
+			cache:                cache.New(30*time.Second, 60*time.Second),
+		}
+
+		// Network error when deleting
+		mockClient.On("DeleteInstance", mock.Anything, mocks.InstanceID1).
+			Return(nil, stderrors.New("network error"))
+
+		err := provider.Delete(ctx, string(mocks.InstanceID1))
+
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to delete instance")
+		mockClient.AssertExpectations(t)
+	})
 }
 
 func TestProvider_Get(t *testing.T) {
@@ -120,10 +179,11 @@ func TestProvider_Get(t *testing.T) {
 	mockClient := &mocks.MockExoscaleClient{}
 
 	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cache.New(30*time.Second, 60*time.Second),
+		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+		exoClient:            mockClient,
+		zone:                 "ch-gva-2",
+		clusterName:          "test-cluster",
+		cache:                cache.New(30*time.Second, 60*time.Second),
 	}
 
 	createdAt := time.Now()
@@ -151,10 +211,11 @@ func TestProvider_List(t *testing.T) {
 	mockClient := &mocks.MockExoscaleClient{}
 
 	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cache.New(30*time.Second, 60*time.Second),
+		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+		exoClient:            mockClient,
+		zone:                 "ch-gva-2",
+		clusterName:          "test-cluster",
+		cache:                cache.New(30*time.Second, 60*time.Second),
 	}
 
 	instances := []egov3.ListInstancesResponseInstances{
@@ -190,6 +251,28 @@ func TestProvider_List(t *testing.T) {
 
 	mockClient.On("ListInstances", mock.Anything, mock.Anything).Return(listResponse, nil)
 
+	fullInstance1 := &egov3.Instance{
+		ID:   mocks.InstanceID1,
+		Name: "test-cluster-node-1",
+		Labels: map[string]string{
+			constants.LabelManagedBy:   constants.ManagedByKarpenter,
+			constants.LabelClusterName: "test-cluster",
+		},
+		AntiAffinityGroups: []egov3.AntiAffinityGroup{},
+	}
+	fullInstance2 := &egov3.Instance{
+		ID:   mocks.InstanceID2,
+		Name: "test-cluster-node-2",
+		Labels: map[string]string{
+			constants.LabelManagedBy:   constants.ManagedByKarpenter,
+			constants.LabelClusterName: "test-cluster",
+		},
+		AntiAffinityGroups: []egov3.AntiAffinityGroup{},
+	}
+
+	mockClient.On("GetInstance", mock.Anything, mocks.InstanceID1).Return(fullInstance1, nil)
+	mockClient.On("GetInstance", mock.Anything, mocks.InstanceID2).Return(fullInstance2, nil)
+
 	result, err := provider.List(ctx)
 
 	assert.NoError(t, err)
@@ -199,83 +282,17 @@ func TestProvider_List(t *testing.T) {
 	mockClient.AssertExpectations(t)
 }
 
-func TestProvider_resolveInstanceType(t *testing.T) {
-	provider := &DefaultProvider{}
-
-	tests := []struct {
-		name        string
-		nodeClaim   *karpenterv1.NodeClaim
-		expected    string
-		expectError bool
-	}{
-		{
-			name: "single instance type",
-			nodeClaim: &karpenterv1.NodeClaim{
-				Spec: karpenterv1.NodeClaimSpec{
-					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
-						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelInstanceTypeStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"standard.medium"},
-							},
-						},
-					},
-				},
-			},
-			expected: "standard.medium",
-		},
-		{
-			name: "multiple instance types picks first",
-			nodeClaim: &karpenterv1.NodeClaim{
-				Spec: karpenterv1.NodeClaimSpec{
-					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
-						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelInstanceTypeStable,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"standard.small", "standard.medium"},
-							},
-						},
-					},
-				},
-			},
-			expected: "standard.small",
-		},
-		{
-			name: "no instance type requirement",
-			nodeClaim: &karpenterv1.NodeClaim{
-				Spec: karpenterv1.NodeClaimSpec{
-					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{},
-				},
-			},
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := provider.resolveInstanceType(tt.nodeClaim)
-
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestProvider_buildInstanceLabels(t *testing.T) {
 	ctx := context.Background()
 	mockClient := &mocks.MockExoscaleClient{}
+	mockInstanceTypeProvider := &mocks.MockInstanceTypeProvider{}
 
 	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cache.New(30*time.Second, 60*time.Second),
+		instanceTypeProvider: mockInstanceTypeProvider,
+		exoClient:            mockClient,
+		zone:                 "ch-gva-2",
+		clusterName:          "test-cluster",
+		cache:                cache.New(30*time.Second, 60*time.Second),
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -329,6 +346,11 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 		"custom-tag-2":             "value2",
 	}
 
+	mockInstanceTypeProvider.On("GetInstanceTypeID", "standard.medium").Return(string(mocks.StandardMediumTypeID), true)
+	mockInstanceTypeProvider.On("Get", mock.Anything, "standard.medium").Return(&cloudprovider.InstanceType{
+		Name: "standard.medium",
+	}, nil)
+
 	mockClient.On("CreateInstance", mock.Anything, mock.MatchedBy(func(req egov3.CreateInstanceRequest) bool {
 		for key, expectedValue := range expectedLabels {
 			if actualValue, ok := req.Labels[key]; !ok || actualValue != expectedValue {
@@ -358,12 +380,17 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 func TestProvider_Create_ErrorOnCreateInstance(t *testing.T) {
 	ctx := context.Background()
 	mockClient := &mocks.MockExoscaleClient{}
+	mockInstanceTypeProvider := &mocks.MockInstanceTypeProvider{}
+	mockInstanceTypeProvider.On("Get", mock.Anything, "standard.medium").Return(&cloudprovider.InstanceType{
+		Name: "standard.medium",
+	}, nil)
 
 	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cache.New(30*time.Second, 60*time.Second),
+		exoClient:            mockClient,
+		zone:                 "ch-gva-2",
+		clusterName:          "test-cluster",
+		cache:                cache.New(30*time.Second, 60*time.Second),
+		instanceTypeProvider: mockInstanceTypeProvider,
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -389,6 +416,9 @@ func TestProvider_Create_ErrorOnCreateInstance(t *testing.T) {
 		},
 	}
 
+	// Mock the instancetype provider to return a UUID for the instance type
+	mockInstanceTypeProvider.On("GetInstanceTypeID", "standard.medium").Return(string(mocks.StandardMediumTypeID), true)
+
 	mockClient.On("CreateInstance", mock.Anything, mock.Anything).
 		Return(nil, stderrors.New("API error"))
 
@@ -405,10 +435,11 @@ func TestProvider_Get_NotFound(t *testing.T) {
 	mockClient := &mocks.MockExoscaleClient{}
 
 	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cache.New(30*time.Second, 60*time.Second),
+		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+		exoClient:            mockClient,
+		zone:                 "ch-gva-2",
+		clusterName:          "test-cluster",
+		cache:                cache.New(30*time.Second, 60*time.Second),
 	}
 
 	mockClient.On("GetInstance", mock.Anything, mocks.InstanceID1).
@@ -528,10 +559,11 @@ func TestProvider_UpdateTags(t *testing.T) {
 			mockClient := &mocks.MockExoscaleClient{}
 
 			provider := &DefaultProvider{
-				exoClient:   mockClient,
-				zone:        "ch-gva-2",
-				clusterName: "test-cluster",
-				cache:       cache.New(30*time.Second, 60*time.Second),
+				instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+				exoClient:            mockClient,
+				zone:                 "ch-gva-2",
+				clusterName:          "test-cluster",
+				cache:                cache.New(30*time.Second, 60*time.Second),
 			}
 
 			if tt.getInstanceError != nil {
@@ -547,20 +579,20 @@ func TestProvider_UpdateTags(t *testing.T) {
 					Return(instance, nil)
 
 				if tt.updateInstanceError != nil {
-					mockClient.On("UpdateInstance", ctx, egov3.UUID(tt.instanceID), mock.Anything).Return(nil, tt.updateInstanceError)
+					mockClient.On("UpdateInstance", mock.Anything, egov3.UUID(tt.instanceID), mock.Anything).Return(nil, tt.updateInstanceError)
 				} else {
 					operation := &egov3.Operation{
 						ID:    mocks.OperationID1,
 						State: egov3.OperationStateSuccess,
 					}
 
-					mockClient.On("UpdateInstance", ctx, egov3.UUID(tt.instanceID), mock.Anything).Return(operation, nil)
+					mockClient.On("UpdateInstance", mock.Anything, egov3.UUID(tt.instanceID), mock.Anything).Return(operation, nil)
 
 					if tt.waitError != nil {
-						mockClient.On("Wait", ctx, operation, mock.Anything).
+						mockClient.On("Wait", mock.Anything, operation, mock.Anything).
 							Return(nil, tt.waitError)
 					} else {
-						mockClient.On("Wait", ctx, operation, mock.Anything).
+						mockClient.On("Wait", mock.Anything, operation, mock.Anything).
 							Return(operation, nil)
 					}
 				}
@@ -588,10 +620,11 @@ func TestProvider_UpdateTags_CacheInvalidation(t *testing.T) {
 
 	cacheInstance := cache.New(30*time.Second, 60*time.Second)
 	provider := &DefaultProvider{
-		exoClient:   mockClient,
-		zone:        "ch-gva-2",
-		clusterName: "test-cluster",
-		cache:       cacheInstance,
+		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
+		exoClient:            mockClient,
+		zone:                 "ch-gva-2",
+		clusterName:          "test-cluster",
+		cache:                cacheInstance,
 	}
 
 	instanceID := string(mocks.InstanceID1)
@@ -621,8 +654,8 @@ func TestProvider_UpdateTags_CacheInvalidation(t *testing.T) {
 	}
 
 	mockClient.On("GetInstance", mock.Anything, egov3.UUID(instanceID)).Return(instance, nil)
-	mockClient.On("UpdateInstance", ctx, egov3.UUID(instanceID), mock.Anything).Return(operation, nil)
-	mockClient.On("Wait", ctx, operation, mock.Anything).Return(operation, nil)
+	mockClient.On("UpdateInstance", mock.Anything, egov3.UUID(instanceID), mock.Anything).Return(operation, nil)
+	mockClient.On("Wait", mock.Anything, operation, mock.Anything).Return(operation, nil)
 
 	err := provider.UpdateTags(ctx, instanceID, map[string]string{"new": "label"})
 

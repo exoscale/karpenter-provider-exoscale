@@ -24,22 +24,3 @@ type Filters struct {
 	MaxGPU        *resource.Quantity
 	Architecture  string
 }
-
-type ProviderOptions struct {
-	Zone                string
-	DefaultArchitecture string
-	PricingProvider     interface {
-		GetPrice(ctx context.Context, instanceType string) (float64, error)
-	}
-}
-
-type InstanceTypeInfo struct {
-	Name         string
-	Family       string
-	Size         string
-	CPU          resource.Quantity
-	Memory       resource.Quantity
-	GPU          resource.Quantity
-	Architecture string
-	Price        float64
-}

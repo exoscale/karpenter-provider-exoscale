@@ -2,10 +2,11 @@ package bootstraptoken
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
+	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
@@ -22,7 +23,7 @@ import (
 type env struct {
 	ctx        context.Context
 	k8sClient  client.Client
-	controller *BootstrapTokenController
+	controller *Controller
 }
 
 func setup(t *testing.T, objects ...client.Object) *env {
@@ -37,7 +38,7 @@ func setup(t *testing.T, objects ...client.Object) *env {
 	}
 	k8sClient := builder.Build()
 
-	controller := &BootstrapTokenController{
+	controller := &Controller{
 		Client:   k8sClient,
 		Scheme:   scheme,
 		Recorder: record.NewFakeRecorder(100),
@@ -54,13 +55,13 @@ func createBootstrapSecret(name, nodeClaimName string) *v1.Secret {
 	return &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "kube-system",
+			Namespace: metav1.NamespaceSystem,
 			Labels: map[string]string{
-				LabelTokenProvider: TokenProviderName,
+				constants.LabelTokenProvider: constants.ProviderName,
 			},
 			Annotations: map[string]string{
-				AnnotationBootstrapToken: nodeClaimName,
-				AnnotationTokenCreated:   time.Now().Format(time.RFC3339),
+				constants.AnnotationBootstrapToken: nodeClaimName,
+				constants.AnnotationTokenCreated:   time.Now().Format(time.RFC3339),
 			},
 		},
 		Type: "bootstrap.kubernetes.io/token",
@@ -72,17 +73,17 @@ func createBootstrapSecret(name, nodeClaimName string) *v1.Secret {
 }
 
 func createExpiredBootstrapSecret(name, nodeClaimName string) *v1.Secret {
-	expiredTime := time.Now().Add(-BootstrapTokenTimeout - time.Hour)
+	expiredTime := time.Now().Add(-constants.DefaultBootstrapTokenTTL - time.Hour)
 	return &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "kube-system",
+			Namespace: metav1.NamespaceSystem,
 			Labels: map[string]string{
-				LabelTokenProvider: TokenProviderName,
+				constants.LabelTokenProvider: constants.ProviderName,
 			},
 			Annotations: map[string]string{
-				AnnotationBootstrapToken: nodeClaimName,
-				AnnotationTokenCreated:   expiredTime.Format(time.RFC3339),
+				constants.AnnotationBootstrapToken: nodeClaimName,
+				constants.AnnotationTokenCreated:   expiredTime.Format(time.RFC3339),
 			},
 		},
 		Type: "bootstrap.kubernetes.io/token",
@@ -97,14 +98,14 @@ func createRegisteredBootstrapSecret(name, nodeClaimName string) *v1.Secret {
 	return &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "kube-system",
+			Namespace: metav1.NamespaceSystem,
 			Labels: map[string]string{
-				LabelTokenProvider: TokenProviderName,
+				constants.LabelTokenProvider: constants.ProviderName,
 			},
 			Annotations: map[string]string{
-				AnnotationBootstrapToken: nodeClaimName,
-				AnnotationTokenCreated:   time.Now().Format(time.RFC3339),
-				AnnotationNodeRegistered: "true",
+				constants.AnnotationBootstrapToken: nodeClaimName,
+				constants.AnnotationTokenCreated:   time.Now().Format(time.RFC3339),
+				AnnotationNodeRegistered:           "true",
 			},
 		},
 		Type: "bootstrap.kubernetes.io/token",
@@ -115,7 +116,7 @@ func createRegisteredBootstrapSecret(name, nodeClaimName string) *v1.Secret {
 	}
 }
 
-func createNode(name, providerID, nodeClaimName string) *v1.Node {
+func createNode(name, providerID, bootstrapToken string) *v1.Node {
 	node := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -125,9 +126,9 @@ func createNode(name, providerID, nodeClaimName string) *v1.Node {
 		},
 	}
 
-	if nodeClaimName != "" {
+	if bootstrapToken != "" {
 		node.Annotations = map[string]string{
-			"karpenter.sh/node-claim": nodeClaimName,
+			"exoscale.com/bootstrap-token": bootstrapToken,
 		}
 	}
 
@@ -149,7 +150,7 @@ func TestReconcile(t *testing.T) {
 				regularSecret := &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "regular-secret",
-						Namespace: "kube-system",
+						Namespace: metav1.NamespaceSystem,
 					},
 					Type: "Opaque",
 				}
@@ -158,7 +159,7 @@ func TestReconcile(t *testing.T) {
 			request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "regular-secret",
-					Namespace: "kube-system",
+					Namespace: metav1.NamespaceSystem,
 				},
 			},
 			expectedResult: reconcile.Result{},
@@ -169,7 +170,7 @@ func TestReconcile(t *testing.T) {
 			request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "non-existent-secret",
-					Namespace: "kube-system",
+					Namespace: metav1.NamespaceSystem,
 				},
 			},
 			expectedResult: reconcile.Result{},
@@ -183,36 +184,36 @@ func TestReconcile(t *testing.T) {
 			request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "expired-token",
-					Namespace: "kube-system",
+					Namespace: metav1.NamespaceSystem,
 				},
 			},
 			expectedResult: reconcile.Result{},
 			verify: func(t *testing.T, s *env) {
 				var deletedSecret v1.Secret
-				err := s.controller.Get(s.ctx, types.NamespacedName{Name: "expired-token", Namespace: "kube-system"}, &deletedSecret)
+				err := s.controller.Get(s.ctx, types.NamespacedName{Name: "expired-token", Namespace: metav1.NamespaceSystem}, &deletedSecret)
 				assert.True(t, errors.IsNotFound(err))
 			},
 		},
 		{
 			name: "CleansUpTokenForRegisteredNode",
 			setup: func(s *env) {
-				nodeClaimName := "test-nodeclaim"
+				nodeClaimName := "standard-abc123"
 				token := createBootstrapSecret("bootstrap-token", nodeClaimName)
 				require.NoError(t, s.controller.Create(s.ctx, token))
 
-				node := createNode("test-node", "exoscale://test-instance", nodeClaimName)
+				node := createNode("test-standard-abc123", "exoscale://test-instance", "bootstrap-token")
 				require.NoError(t, s.controller.Create(s.ctx, node))
 			},
 			request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "bootstrap-token",
-					Namespace: "kube-system",
+					Namespace: metav1.NamespaceSystem,
 				},
 			},
 			expectedResult: reconcile.Result{},
 			verify: func(t *testing.T, s *env) {
 				var deletedSecret v1.Secret
-				err := s.controller.Get(s.ctx, types.NamespacedName{Name: "bootstrap-token", Namespace: "kube-system"}, &deletedSecret)
+				err := s.controller.Get(s.ctx, types.NamespacedName{Name: "bootstrap-token", Namespace: metav1.NamespaceSystem}, &deletedSecret)
 				assert.True(t, errors.IsNotFound(err))
 			},
 		},
@@ -225,7 +226,7 @@ func TestReconcile(t *testing.T) {
 			request: reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "active-token",
-					Namespace: "kube-system",
+					Namespace: metav1.NamespaceSystem,
 				},
 			},
 			verify: func(t *testing.T, s *env) {
@@ -251,14 +252,14 @@ func TestReconcile(t *testing.T) {
 			},
 			verify: func(t *testing.T, s *env) {
 				var deletedSecret v1.Secret
-				err := s.controller.Get(s.ctx, types.NamespacedName{Name: "expired-token", Namespace: "kube-system"}, &deletedSecret)
+				err := s.controller.Get(s.ctx, types.NamespacedName{Name: "expired-token", Namespace: metav1.NamespaceSystem}, &deletedSecret)
 				assert.True(t, errors.IsNotFound(err))
 
-				err = s.controller.Get(s.ctx, types.NamespacedName{Name: "registered-token", Namespace: "kube-system"}, &deletedSecret)
+				err = s.controller.Get(s.ctx, types.NamespacedName{Name: "registered-token", Namespace: metav1.NamespaceSystem}, &deletedSecret)
 				assert.True(t, errors.IsNotFound(err))
 
 				var activeSecret v1.Secret
-				err = s.controller.Get(s.ctx, types.NamespacedName{Name: "active-token", Namespace: "kube-system"}, &activeSecret)
+				err = s.controller.Get(s.ctx, types.NamespacedName{Name: "active-token", Namespace: metav1.NamespaceSystem}, &activeSecret)
 				assert.NoError(t, err)
 			},
 		},
@@ -282,9 +283,9 @@ func TestReconcile(t *testing.T) {
 
 			if tt.name == "MonitorsActiveToken" {
 				assert.True(t, result.RequeueAfter > 0)
-				assert.True(t, result.RequeueAfter <= BootstrapTokenTimeout)
+				assert.True(t, result.RequeueAfter <= constants.DefaultBootstrapTokenTTL)
 			} else if tt.name == "PerformCleanupRequest" {
-				assert.Equal(t, CleanupInterval, result.RequeueAfter)
+				assert.Equal(t, constants.DefaultOperationTimeout, result.RequeueAfter)
 			} else {
 				assert.Equal(t, tt.expectedResult, result)
 			}
@@ -308,10 +309,10 @@ func TestIsBootstrapToken(t *testing.T) {
 				Type: "bootstrap.kubernetes.io/token",
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						LabelTokenProvider: TokenProviderName,
+						constants.LabelTokenProvider: constants.ProviderName,
 					},
 					Annotations: map[string]string{
-						AnnotationBootstrapToken: "test-nodeclaim",
+						constants.AnnotationBootstrapToken: "test-nodeclaim",
 					},
 				},
 			},
@@ -323,7 +324,7 @@ func TestIsBootstrapToken(t *testing.T) {
 				Type: "Opaque",
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						LabelTokenProvider: TokenProviderName,
+						constants.LabelTokenProvider: constants.ProviderName,
 					},
 				},
 			},
@@ -335,7 +336,7 @@ func TestIsBootstrapToken(t *testing.T) {
 				Type: "bootstrap.kubernetes.io/token",
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						LabelTokenProvider: "different-provider",
+						constants.LabelTokenProvider: "different-provider",
 					},
 				},
 			},
@@ -371,11 +372,11 @@ func TestIsTokenExpired(t *testing.T) {
 		{
 			name: "ExpiredWithCreatedAnnotation",
 			secret: func() *v1.Secret {
-				expiredTime := time.Now().Add(-BootstrapTokenTimeout - time.Hour)
+				expiredTime := time.Now().Add(-constants.DefaultBootstrapTokenTTL - time.Hour)
 				return &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{
-							AnnotationTokenCreated: expiredTime.Format(time.RFC3339),
+							constants.AnnotationTokenCreated: expiredTime.Format(time.RFC3339),
 						},
 					},
 				}
@@ -389,7 +390,7 @@ func TestIsTokenExpired(t *testing.T) {
 				return &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{
-							AnnotationTokenCreated: recentTime.Format(time.RFC3339),
+							constants.AnnotationTokenCreated: recentTime.Format(time.RFC3339),
 						},
 					},
 				}
@@ -399,7 +400,7 @@ func TestIsTokenExpired(t *testing.T) {
 		{
 			name: "ExpiredByCreationTimestamp",
 			secret: func() *v1.Secret {
-				expiredTime := time.Now().Add(-BootstrapTokenTimeout - time.Hour)
+				expiredTime := time.Now().Add(-constants.DefaultBootstrapTokenTTL - time.Hour)
 				return &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						CreationTimestamp: metav1.Time{Time: expiredTime},
@@ -414,7 +415,7 @@ func TestIsTokenExpired(t *testing.T) {
 				return &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{
-							AnnotationTokenCreated: "invalid-time-format",
+							constants.AnnotationTokenCreated: "invalid-time-format",
 						},
 					},
 				}
@@ -475,58 +476,54 @@ func TestIsNodeAlreadyMarkedRegistered(t *testing.T) {
 	}
 }
 
-func TestIsNodeMatchingNodeClaim(t *testing.T) {
+func TestIsNodeUsingBootstrapToken(t *testing.T) {
 	tests := []struct {
-		name          string
-		node          *v1.Node
-		nodeClaimName string
-		expected      bool
+		name            string
+		node            *v1.Node
+		tokenSecretName string
+		expected        bool
 	}{
 		{
-			name: "ProviderIDMatch",
-			node: &v1.Node{
-				Spec: v1.NodeSpec{
-					ProviderID: "exoscale://test-nodeclaim-123",
-				},
-			},
-			nodeClaimName: "test-nodeclaim",
-			expected:      true,
-		},
-		{
-			name: "AnnotationMatch",
+			name: "MatchingToken",
 			node: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
 					Annotations: map[string]string{
-						"karpenter.sh/node-claim": "test-nodeclaim",
+						"exoscale.com/bootstrap-token": "bootstrap-token-abc123",
 					},
 				},
-				Spec: v1.NodeSpec{
-					ProviderID: "exoscale://different-id",
-				},
 			},
-			nodeClaimName: "test-nodeclaim",
-			expected:      true,
+			tokenSecretName: "bootstrap-token-abc123",
+			expected:        true,
 		},
 		{
-			name: "NoMatch",
+			name: "DifferentToken",
 			node: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
 					Annotations: map[string]string{
-						"karpenter.sh/node-claim": "different-nodeclaim",
+						"exoscale.com/bootstrap-token": "bootstrap-token-xyz789",
 					},
 				},
-				Spec: v1.NodeSpec{
-					ProviderID: "exoscale://different-id",
+			},
+			tokenSecretName: "bootstrap-token-abc123",
+			expected:        false,
+		},
+		{
+			name: "NoAnnotation",
+			node: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
 				},
 			},
-			nodeClaimName: "test-nodeclaim",
-			expected:      false,
+			tokenSecretName: "bootstrap-token-abc123",
+			expected:        false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isNodeMatchingNodeClaim(tt.node, tt.nodeClaimName)
+			result := isNodeUsingBootstrapToken(tt.node, tt.tokenSecretName)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -544,8 +541,8 @@ func TestIsNodeRegistered(t *testing.T) {
 			secret: &v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						AnnotationBootstrapToken: "test-nodeclaim",
-						AnnotationNodeRegistered: "true",
+						constants.AnnotationBootstrapToken: "test-nodeclaim",
+						AnnotationNodeRegistered:           "true",
 					},
 				},
 			},
@@ -554,16 +551,15 @@ func TestIsNodeRegistered(t *testing.T) {
 		{
 			name: "NodeFound",
 			setup: func(s *env) {
-				nodeClaimName := "test-nodeclaim"
-				node := createNode("test-node", "exoscale://test-instance", nodeClaimName)
+				node := createNode("test-standard-abc123", "exoscale://test-instance", "bootstrap-token-xyz")
 				require.NoError(t, s.controller.Create(s.ctx, node))
 			},
 			secret: &v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-token",
-					Namespace: "kube-system",
+					Name:      "bootstrap-token-xyz",
+					Namespace: metav1.NamespaceSystem,
 					Annotations: map[string]string{
-						AnnotationBootstrapToken: "test-nodeclaim",
+						constants.AnnotationBootstrapToken: "standard-abc123",
 					},
 				},
 			},
@@ -574,7 +570,7 @@ func TestIsNodeRegistered(t *testing.T) {
 			secret: &v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						AnnotationBootstrapToken: "non-existent-nodeclaim",
+						constants.AnnotationBootstrapToken: "non-existent-nodeclaim",
 					},
 				},
 			},
@@ -622,7 +618,7 @@ func TestMarkNodeRegistered(t *testing.T) {
 				var updatedSecret v1.Secret
 				err := s.controller.Get(s.ctx, types.NamespacedName{
 					Name:      "test-token",
-					Namespace: "kube-system",
+					Namespace: metav1.NamespaceSystem,
 				}, &updatedSecret)
 
 				require.NoError(t, err)
@@ -651,43 +647,43 @@ func TestCalculateTokenExpiryTime(t *testing.T) {
 		{
 			name: "WithCreatedAnnotation",
 			secret: func() *v1.Secret {
-				tenMinutesAgo := time.Now().Add(-10 * time.Minute)
+				threeMinutesAgo := time.Now().Add(-3 * time.Minute)
 				return &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{
-							AnnotationTokenCreated: tenMinutesAgo.Format(time.RFC3339),
+							constants.AnnotationTokenCreated: threeMinutesAgo.Format(time.RFC3339),
 						},
 					},
 				}
 			},
 			expectedExpiry: func() time.Duration {
-				return BootstrapTokenTimeout - 10*time.Minute
+				return constants.DefaultBootstrapTokenTTL - 3*time.Minute
 			},
 			delta: 5,
 		},
 		{
 			name: "WithCreationTimestamp",
 			secret: func() *v1.Secret {
-				fiveMinutesAgo := time.Now().Add(-5 * time.Minute)
+				twoMinutesAgo := time.Now().Add(-2 * time.Minute)
 				return &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						CreationTimestamp: metav1.Time{Time: fiveMinutesAgo},
+						CreationTimestamp: metav1.Time{Time: twoMinutesAgo},
 					},
 				}
 			},
 			expectedExpiry: func() time.Duration {
-				return BootstrapTokenTimeout - 5*time.Minute
+				return constants.DefaultBootstrapTokenTTL - 2*time.Minute
 			},
 			delta: 5,
 		},
 		{
 			name: "MinimumRequeue",
 			secret: func() *v1.Secret {
-				almostExpired := time.Now().Add(-BootstrapTokenTimeout + 10*time.Second)
+				almostExpired := time.Now().Add(-constants.DefaultBootstrapTokenTTL + 10*time.Second)
 				return &v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{
-							AnnotationTokenCreated: almostExpired.Format(time.RFC3339),
+							constants.AnnotationTokenCreated: almostExpired.Format(time.RFC3339),
 						},
 					},
 				}
@@ -717,27 +713,35 @@ func TestCreateBootstrapToken(t *testing.T) {
 	tests := []struct {
 		name          string
 		nodeClaimName string
-		verify        func(*testing.T, *v1.Secret, error)
+		verify        func(*testing.T, *env, *utils.BootstrapToken, error)
 	}{
 		{
 			name:          "Success",
 			nodeClaimName: "test-nodeclaim",
-			verify: func(t *testing.T, secret *v1.Secret, err error) {
+			verify: func(t *testing.T, s *env, token *utils.BootstrapToken, err error) {
 				require.NoError(t, err)
-				assert.NotNil(t, secret)
-				assert.Equal(t, v1.SecretType("bootstrap.kubernetes.io/token"), secret.Type)
-				assert.Equal(t, TokenProviderName, secret.Labels[LabelTokenProvider])
-				assert.Equal(t, "test-nodeclaim", secret.Annotations[AnnotationBootstrapToken])
-				assert.Contains(t, secret.Name, "bootstrap-token-")
-				assert.Equal(t, "kube-system", secret.Namespace)
+				assert.NotNil(t, token)
+				assert.NotEmpty(t, token.TokenID)
+				assert.NotEmpty(t, token.TokenSecret)
+				assert.Contains(t, token.SecretName, "bootstrap-token-")
+				assert.Len(t, token.TokenID, 6)
+				assert.Len(t, token.TokenSecret, 16)
 
-				assert.Contains(t, secret.Data, "token-id")
-				assert.Contains(t, secret.Data, "token-secret")
-				assert.Contains(t, secret.Data, "description")
-				assert.Contains(t, secret.Data, "expiration")
+				// Verify the secret was actually created
+				secret := &v1.Secret{}
+				err = s.k8sClient.Get(s.ctx, client.ObjectKey{
+					Name:      token.SecretName,
+					Namespace: metav1.NamespaceSystem,
+				}, secret)
+				require.NoError(t, err)
+				assert.Equal(t, v1.SecretType("bootstrap.kubernetes.io/token"), secret.Type)
+				assert.Equal(t, constants.ProviderName, secret.Labels[constants.LabelTokenProvider])
+				assert.Equal(t, "test-nodeclaim", secret.Annotations[constants.AnnotationBootstrapToken])
+				assert.Equal(t, []byte(token.TokenID), secret.Data["token-id"])
+				assert.Equal(t, []byte(token.TokenSecret), secret.Data["token-secret"])
 				assert.Equal(t, []byte("true"), secret.Data["usage-bootstrap-authentication"])
 				assert.Equal(t, []byte("true"), secret.Data["usage-bootstrap-signing"])
-				assert.Equal(t, []byte("system:bootstrappers:karpenter-exoscale"), secret.Data["auth-extra-groups"])
+				assert.Equal(t, []byte(constants.BootstrapTokenExtraGroups), secret.Data["auth-extra-groups"])
 			},
 		},
 	}
@@ -745,8 +749,8 @@ func TestCreateBootstrapToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := setup(t)
-			secret, err := s.controller.CreateBootstrapToken(s.ctx, tt.nodeClaimName)
-			tt.verify(t, secret, err)
+			token, err := s.controller.CreateBootstrapToken(s.ctx, tt.nodeClaimName)
+			tt.verify(t, s, token, err)
 		})
 	}
 }
@@ -765,26 +769,26 @@ func TestBuildBootstrapTokenSecretObject(t *testing.T) {
 			tokenSecret:   "def456",
 			nodeClaimName: "test-nodeclaim",
 			verify: func(t *testing.T, secret *v1.Secret) {
-				assert.Equal(t, fmt.Sprintf("bootstrap-token-%s", "abc123"), secret.Name)
-				assert.Equal(t, "kube-system", secret.Namespace)
+				assert.Equal(t, "bootstrap-token-abc123", secret.Name)
+				assert.Equal(t, metav1.NamespaceSystem, secret.Namespace)
 				assert.Equal(t, v1.SecretType("bootstrap.kubernetes.io/token"), secret.Type)
-				assert.Equal(t, TokenProviderName, secret.Labels[LabelTokenProvider])
-				assert.Equal(t, "test-nodeclaim", secret.Annotations[AnnotationBootstrapToken])
-				assert.NotEmpty(t, secret.Annotations[AnnotationTokenCreated])
+				assert.Equal(t, constants.ProviderName, secret.Labels[constants.LabelTokenProvider])
+				assert.Equal(t, "test-nodeclaim", secret.Annotations[constants.AnnotationBootstrapToken])
+				assert.NotEmpty(t, secret.Annotations[constants.AnnotationTokenCreated])
 
 				assert.Equal(t, []byte("abc123"), secret.Data["token-id"])
 				assert.Equal(t, []byte("def456"), secret.Data["token-secret"])
 				assert.Contains(t, string(secret.Data["description"]), "test-nodeclaim")
 				assert.Equal(t, []byte("true"), secret.Data["usage-bootstrap-authentication"])
 				assert.Equal(t, []byte("true"), secret.Data["usage-bootstrap-signing"])
-				assert.Equal(t, []byte("system:bootstrappers:karpenter-exoscale"), secret.Data["auth-extra-groups"])
+				assert.Equal(t, []byte(constants.BootstrapTokenExtraGroups), secret.Data["auth-extra-groups"])
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			secret := buildBootstrapTokenSecretObject(tt.tokenID, tt.tokenSecret, tt.nodeClaimName)
+			secret := utils.BuildBootstrapTokenSecret(tt.tokenID, tt.tokenSecret, tt.nodeClaimName, constants.DefaultBootstrapTokenTTL, constants.BootstrapTokenExtraGroups)
 			tt.verify(t, secret)
 		})
 	}
@@ -799,17 +803,12 @@ func TestNodeToTokens(t *testing.T) {
 		verify          func(*testing.T, []reconcile.Request)
 	}{
 		{
-			name: "MatchingNode",
-			setup: func(s *env) {
-				nodeClaimName := "test-nodeclaim"
-				token := createBootstrapSecret("test-token", nodeClaimName)
-				require.NoError(t, s.controller.Create(s.ctx, token))
-			},
+			name: "NodeWithBootstrapToken",
 			object: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
 					Annotations: map[string]string{
-						"karpenter.sh/node-claim": "test-nodeclaim",
+						"exoscale.com/bootstrap-token": "bootstrap-token-abc123",
 					},
 				},
 				Spec: v1.NodeSpec{
@@ -819,22 +818,15 @@ func TestNodeToTokens(t *testing.T) {
 			expectedResults: 1,
 			verify: func(t *testing.T, requests []reconcile.Request) {
 				require.Len(t, requests, 1)
-				assert.Equal(t, "test-token", requests[0].Name)
-				assert.Equal(t, "kube-system", requests[0].Namespace)
+				assert.Equal(t, "bootstrap-token-abc123", requests[0].Name)
+				assert.Equal(t, metav1.NamespaceSystem, requests[0].Namespace)
 			},
 		},
 		{
-			name: "NoMatchingTokens",
-			setup: func(s *env) {
-				token := createBootstrapSecret("test-token", "different-nodeclaim")
-				require.NoError(t, s.controller.Create(s.ctx, token))
-			},
+			name: "NodeWithoutBootstrapToken",
 			object: &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
-					Annotations: map[string]string{
-						"karpenter.sh/node-claim": "test-nodeclaim",
-					},
 				},
 				Spec: v1.NodeSpec{
 					ProviderID: "exoscale://test-instance",

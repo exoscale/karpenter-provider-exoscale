@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/exoscale/karpenter-exoscale/pkg/errors"
-	"github.com/exoscale/karpenter-exoscale/pkg/metrics"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -19,8 +18,7 @@ import (
 )
 
 const (
-	GCInterval       = 5 * time.Minute
-	OrphanedDuration = 15 * time.Minute
+	GCInterval = 5 * time.Minute
 )
 
 type Controller struct {
@@ -59,8 +57,7 @@ func NewController(mgr manager.Manager, instanceProvider instance.Provider) erro
 }
 
 func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
-	logger := log.FromContext(ctx)
-	logger.V(1).Info("starting garbage collection")
+	log.FromContext(ctx).V(1).Info("starting garbage collection")
 
 	cloudInstances, err := c.instanceProvider.List(ctx)
 	if err != nil {
@@ -74,14 +71,12 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 
 	nodeClaimProviderIDs := make(map[string]bool)
 	for _, nc := range nodeClaims.Items {
-		if nc.Status.ProviderID != "" {
-			instanceID, err := utils.ParseProviderID(nc.Status.ProviderID)
-			if err != nil {
-				logger.Error(err, "invalid provider ID in NodeClaim", "nodeClaim", nc.Name)
-				continue
-			}
-			nodeClaimProviderIDs[instanceID] = true
+		instanceID, err := utils.ParseProviderID(nc.Status.ProviderID)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "invalid provider ID in NodeClaim", "nodeClaim", nc.Name)
+			continue
 		}
+		nodeClaimProviderIDs[instanceID] = true
 	}
 
 	orphanedCount := 0
@@ -91,45 +86,32 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 			continue
 		}
 
-		orphanedDuration := time.Since(inst.CreatedAt)
-		if orphanedDuration < OrphanedDuration {
-			logger.V(2).Info("instance is orphaned but not old enough for deletion",
-				"instanceID", inst.ID,
-				"name", inst.Name,
-				"age", orphanedDuration,
-				"threshold", OrphanedDuration)
-			orphanedCount++
-			continue
-		}
-
-		logger.Info("deleting orphaned instance",
+		orphanedCount++
+		log.FromContext(ctx).Info("deleting orphaned instance",
 			"instanceID", inst.ID,
 			"name", inst.Name,
-			"age", orphanedDuration)
+			"age", time.Since(inst.CreatedAt))
 
 		if err := c.instanceProvider.Delete(ctx, inst.ID); err != nil {
 			if errors.IsInstanceNotFoundError(err) {
 				// Instance already deleted, ignore
 				continue
 			}
-			logger.Error(err, "failed to delete orphaned instance",
+			log.FromContext(ctx).Error(err, "failed to delete orphaned instance",
 				"instanceID", inst.ID,
 				"name", inst.Name)
 			continue
 		}
 		deletedCount++
-		metrics.OrphanedInstancesCleanedTotal.Inc(map[string]string{})
 	}
 
-	metrics.OrphanedInstancesCount.Set(float64(orphanedCount), map[string]string{})
-
 	if deletedCount > 0 || orphanedCount > 0 {
-		logger.Info("garbage collection completed",
+		log.FromContext(ctx).Info("garbage collection completed",
 			"orphaned", orphanedCount,
 			"deleted", deletedCount,
 			"total", len(cloudInstances))
 	} else {
-		logger.V(1).Info("garbage collection completed, no orphaned instances found",
+		log.FromContext(ctx).V(1).Info("garbage collection completed, no orphaned instances found",
 			"total", len(cloudInstances))
 	}
 

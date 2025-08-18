@@ -19,29 +19,30 @@ func NewInstanceNotFoundError(instanceID string) *InstanceNotFoundError {
 	}
 }
 
-type NetworkAttachmentError struct {
-	InstanceID string
-	NetworkID  string
-	Err        error
-}
-
-func (e *NetworkAttachmentError) Error() string {
-	return fmt.Sprintf("failed to attach network %s to instance %s: %v", e.NetworkID, e.InstanceID, e.Err)
-}
-
-func (e *NetworkAttachmentError) Unwrap() error {
-	return e.Err
-}
-
-func NewNetworkAttachmentError(instanceID, networkID string, err error) *NetworkAttachmentError {
-	return &NetworkAttachmentError{
-		InstanceID: instanceID,
-		NetworkID:  networkID,
-		Err:        err,
-	}
-}
-
 func IsInstanceNotFoundError(err error) bool {
 	var instanceNotFoundErr *InstanceNotFoundError
 	return errors.As(err, &instanceNotFoundErr)
+}
+
+type InsufficientCapacityError struct {
+	Err error
+}
+
+func (e *InsufficientCapacityError) Error() string {
+	return fmt.Sprintf("insufficient capacity: %v", e.Err)
+}
+
+func (e *InsufficientCapacityError) Unwrap() error {
+	return e.Err
+}
+
+func NewInsufficientCapacityError(err error) *InsufficientCapacityError {
+	return &InsufficientCapacityError{
+		Err: err,
+	}
+}
+
+func IsInsufficientCapacityError(err error) bool {
+	var capacityErr *InsufficientCapacityError
+	return errors.As(err, &capacityErr)
 }

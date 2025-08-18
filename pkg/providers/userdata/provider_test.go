@@ -145,7 +145,7 @@ clusters:
 		kubeRootCACM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "kube-root-ca.crt",
-				Namespace: "kube-system",
+				Namespace: metav1.NamespaceSystem,
 			},
 			Data: map[string]string{
 				"ca.crt": "-----BEGIN CERTIFICATE-----\ntest-ca-cert\n-----END CERTIFICATE-----",
@@ -296,7 +296,7 @@ clusters:
 		kubeRootCACM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "kube-root-ca.crt",
-				Namespace: "kube-system",
+				Namespace: metav1.NamespaceSystem,
 			},
 			Data: map[string]string{
 				"ca.crt": "-----BEGIN CERTIFICATE-----\ntest-ca-cert\n-----END CERTIFICATE-----",
@@ -326,7 +326,7 @@ clusters:
 		kubeRootCACM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "kube-root-ca.crt",
-				Namespace: "kube-system",
+				Namespace: metav1.NamespaceSystem,
 			},
 			Data: map[string]string{
 				"other-data": "not-ca-cert",

@@ -3,6 +3,7 @@ package mocks
 import (
 	"time"
 
+	"github.com/awslabs/operatorpkg/status"
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +37,17 @@ func CreateNodeClass(name string, scenario string) *apiv1.ExoscaleNodeClass {
 		Spec: apiv1.ExoscaleNodeClassSpec{
 			TemplateID: string(DefaultTemplateID),
 			DiskSize:   50,
+		},
+		Status: apiv1.ExoscaleNodeClassStatus{
+			Conditions: []status.Condition{
+				{
+					Type:               "Ready",
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Now(),
+					Reason:             "Validated",
+					Message:            "NodeClass is ready",
+				},
+			},
 		},
 	}
 

@@ -9,12 +9,13 @@ import (
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-exoscale/pkg/errors"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/pricing"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -26,12 +27,6 @@ import (
 const (
 	DefaultClusterDNS    = "10.96.0.10"
 	DefaultClusterDomain = "cluster.local"
-
-	AnnotationBootstrapToken = "exoscale.com/bootstrap-token"
-	AnnotationTokenCreated   = "exoscale.com/token-created"
-	LabelTokenProvider       = "exoscale.com/token-provider"
-
-	InstanceDeleteTimeout = 5 * time.Minute
 )
 
 type ExoscaleClient interface {
@@ -50,7 +45,6 @@ type CloudProvider struct {
 	clusterEndpoint      string
 	recorder             karpenterevents.Recorder
 	instanceTypeProvider instancetype.Provider
-	pricingProvider      pricing.Provider
 	instanceProvider     instance.Provider
 	userDataProvider     userdata.Provider
 	clusterName          string
@@ -65,7 +59,6 @@ func NewCloudProvider(
 	clusterEndpoint string,
 	recorder karpenterevents.Recorder,
 	instanceTypeProvider instancetype.Provider,
-	pricingProvider pricing.Provider,
 	instanceProvider instance.Provider,
 	userDataProvider userdata.Provider,
 	zone string,
@@ -86,7 +79,6 @@ func NewCloudProvider(
 		clusterEndpoint:      clusterEndpoint,
 		recorder:             recorder,
 		instanceTypeProvider: instanceTypeProvider,
-		pricingProvider:      pricingProvider,
 		instanceProvider:     instanceProvider,
 		userDataProvider:     userDataProvider,
 		clusterName:          clusterName,
@@ -97,93 +89,117 @@ func NewCloudProvider(
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (*karpenterv1.NodeClaim, error) {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "Create",
 		"nodeClaim", nodeClaim.Name,
-	)
-	logger.Info("creating instance for node claim")
+	))
+	log.FromContext(ctx).Info("creating instance for node claim")
 
 	nodeClass, err := c.GetNodeClass(ctx, nodeClaim)
 	if err != nil {
-		logger.Error(err, "failed to get node class")
-		return nil, fmt.Errorf("failed to get node class: %w", err)
+		log.FromContext(ctx).Error(err, "failed to get node class")
+		if k8serrors.IsNotFound(err) {
+			return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("node class not found: %w", err))
+		}
+		return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("failed to get node class: %w", err))
 	}
-	logger.V(1).Info("retrieved node class", "nodeClass", nodeClass.Name)
 
-	secret, token, err := c.applyBootstrapTokenSecret(ctx, nodeClaim.Name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create bootstrap token: %w", err)
+	if !c.isNodeClassReady(nodeClass) {
+		return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("node class %s is not ready", nodeClass.Name))
 	}
+	log.FromContext(ctx).V(1).Info("retrieved node class", "nodeClass", nodeClass.Name)
+
+	bootstrapToken, err := utils.CreateAndApplyBootstrapTokenSecret(ctx, c.kubeClient, nodeClaim.Name)
+	if err != nil {
+		return nil, cloudprovider.NewCreateError(err, "BootstrapTokenCreationFailed", fmt.Sprintf("failed to create bootstrap token: %s", err))
+	}
+
+	log.FromContext(ctx).V(1).Info("bootstrap token secret created", "secretName", bootstrapToken.SecretName)
+
+	nodeTaints := append([]v1.Taint{}, nodeClaim.Spec.Taints...)
+	nodeTaints = append(nodeTaints, nodeClaim.Spec.StartupTaints...)
 
 	userDataOptions := &userdata.Options{
 		ClusterName:     c.clusterName,
 		ClusterEndpoint: c.clusterEndpoint,
 		ClusterDNS:      c.clusterDNS,
 		ClusterDomain:   c.clusterDomain,
-		BootstrapToken:  token,
-		Taints:          nodeClaim.Spec.Taints,
+		BootstrapToken:  bootstrapToken.Token(),
+		Taints:          nodeTaints,
 		Labels:          nodeClaim.Labels,
 	}
 
 	userData, err := c.userDataProvider.Generate(ctx, nodeClass, nodeClaim, userDataOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate user data: %w", err)
+		return nil, cloudprovider.NewCreateError(err, "UserDataGenerationFailed", fmt.Sprintf("failed to generate user data: %s", err))
 	}
 
 	if nodeClaim.Annotations == nil {
 		nodeClaim.Annotations = make(map[string]string)
 	}
-	nodeClaim.Annotations[AnnotationBootstrapToken] = secret.Name
+	nodeClaim.Annotations[constants.AnnotationBootstrapToken] = bootstrapToken.SecretName
 
 	tags := map[string]string{}
 	createdInstance, err := c.instanceProvider.Create(ctx, nodeClass, nodeClaim, userData, tags)
 	if err != nil {
-		logger.Error(err, "failed to create instance")
-		return nil, err
+		log.FromContext(ctx).Error(err, "failed to create instance")
+
+		if errors.IsInsufficientCapacityError(err) {
+			return nil, cloudprovider.NewInsufficientCapacityError(err)
+		}
+
+		return nil, cloudprovider.NewCreateError(err, "InstanceCreationFailed", err.Error())
 	}
 
 	nodeClaim.Status.ProviderID = utils.FormatProviderID(createdInstance.ID)
 	nodeClaim.Status.Capacity = v1.ResourceList{}
 
 	if createdInstance.InstanceType != nil {
-		setInstanceCapacity(nodeClaim.Status.Capacity, createdInstance.InstanceType)
+		setInstanceCapacity(nodeClaim.Status.Capacity, createdInstance.InstanceType, nodeClass.Spec.DiskSize)
 	}
 
 	if nodeClaim.Labels == nil {
 		nodeClaim.Labels = make(map[string]string)
 	}
 
-	if createdInstance.InstanceType != nil {
-		instanceTypeName := fmt.Sprintf("%s.%s", createdInstance.InstanceType.Family, createdInstance.InstanceType.Size)
-		nodeClaim.Labels[v1.LabelInstanceTypeStable] = instanceTypeName
+	if createdInstance.InstanceTypeName != "" {
+		nodeClaim.Labels[v1.LabelInstanceTypeStable] = createdInstance.InstanceTypeName
 	}
 
 	nodeClaim.Labels[v1.LabelTopologyZone] = c.zone
 	nodeClaim.Labels[constants.LabelClusterName] = c.clusterName
+	nodeClaim.Labels[karpenterv1.CapacityTypeLabelKey] = karpenterv1.CapacityTypeOnDemand
 
 	return nodeClaim, nil
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) error {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "Delete",
 		"nodeClaim", nodeClaim.Name,
-	)
+	))
 
 	instanceID, err := utils.ParseProviderID(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("failed to parse provider ID %s: %w", nodeClaim.Status.ProviderID, err)
 	}
 
-	logger.Info("deleting instance", "instanceID", instanceID)
-	return c.instanceProvider.Delete(ctx, instanceID)
+	log.FromContext(ctx).Info("deleting instance", "instanceID", instanceID)
+	err = c.instanceProvider.Delete(ctx, instanceID)
+	if err != nil {
+		if errors.IsInstanceNotFoundError(err) {
+			return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", instanceID))
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv1.NodeClaim, error) {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "Get",
 		"providerID", providerID,
-	)
+	))
 
 	instanceID, err := utils.ParseProviderID(providerID)
 	if err != nil {
@@ -192,23 +208,27 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv
 
 	inst, err := c.instanceProvider.Get(ctx, instanceID)
 	if err != nil {
-		logger.Error(err, "failed to get instance", "instanceID", instanceID)
+		if errors.IsInstanceNotFoundError(err) {
+			log.FromContext(ctx).V(1).Info("instance not found", "instanceID", instanceID)
+			return nil, cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", instanceID))
+		}
+		log.FromContext(ctx).Error(err, "failed to get instance", "instanceID", instanceID)
 		return nil, fmt.Errorf("failed to get instance %s: %w", instanceID, err)
 	}
 
 	nodeClaim := c.createNodeClaimFromInstanceProvider(inst)
-	logger.V(1).Info("retrieved instance", "instanceID", instanceID, "nodeClaim", nodeClaim.Name)
+	log.FromContext(ctx).V(1).Info("retrieved instance", "instanceID", instanceID, "nodeClaim", nodeClaim.Name)
 	return nodeClaim, nil
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpenterv1.NodeClaim, error) {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "List",
-	)
+	))
 
 	instances, err := c.instanceProvider.List(ctx)
 	if err != nil {
-		logger.Error(err, "failed to list instances")
+		log.FromContext(ctx).Error(err, "failed to list instances")
 		return nil, fmt.Errorf("failed to list instances: %w", err)
 	}
 
@@ -217,7 +237,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpenterv1.NodeClaim, err
 		nodeClaims = append(nodeClaims, c.createNodeClaimFromInstanceProvider(inst))
 	}
 
-	logger.V(1).Info("listed instances", "count", len(nodeClaims))
+	log.FromContext(ctx).V(1).Info("listed instances", "count", len(nodeClaims))
 	return nodeClaims, nil
 }
 
@@ -226,20 +246,20 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpente
 	if nodePool != nil {
 		nodePoolName = nodePool.Name
 	}
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "GetInstanceTypes",
 		"nodePool", nodePoolName,
-	)
+	))
 
 	instanceTypes, err := c.instanceTypeProvider.List(ctx, nil)
 	if err != nil {
-		logger.Error(err, "failed to list instance types")
+		log.FromContext(ctx).Error(err, "failed to list instance types")
 		return nil, fmt.Errorf("failed to list instance types: %w", err)
 	}
 
 	instanceTypes = c.ApplyNodePoolOverhead(ctx, nodePool, instanceTypes)
 
-	logger.V(1).Info("retrieved instance types", "count", len(instanceTypes))
+	log.FromContext(ctx).V(1).Info("retrieved instance types", "count", len(instanceTypes))
 	return instanceTypes, nil
 }
 
@@ -255,14 +275,15 @@ func (c *CloudProvider) ApplyNodePoolOverhead(ctx context.Context, nodePool *kar
 	}
 
 	overhead := c.CalculateInstanceOverhead(ctx, &nodeClass)
+	instanceTypes = c.addEphemeralStorageToInstanceTypes(instanceTypes, nodeClass.Spec.DiskSize)
 	return c.applyOverheadToInstanceTypes(instanceTypes, overhead)
 }
 
 func (c *CloudProvider) CalculateInstanceOverhead(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) cloudprovider.InstanceTypeOverhead {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "calculateInstanceOverhead",
 		"nodeClass", nodeClass.Name,
-	)
+	))
 
 	overhead := cloudprovider.InstanceTypeOverhead{
 		KubeReserved:   v1.ResourceList{},
@@ -272,44 +293,44 @@ func (c *CloudProvider) CalculateInstanceOverhead(ctx context.Context, nodeClass
 	c.applyResourceReservation(ctx, &overhead.KubeReserved, nodeClass.Spec.KubeReserved, "kube-reserved")
 	c.applyResourceReservation(ctx, &overhead.SystemReserved, nodeClass.Spec.SystemReserved, "system-reserved")
 
-	logger.V(2).Info("calculated instance overhead", "overhead", overhead)
+	log.FromContext(ctx).V(2).Info("calculated instance overhead", "overhead", overhead)
 	return overhead
 }
 
 func (c *CloudProvider) applyResourceReservation(ctx context.Context, target *v1.ResourceList, source apiv1.ResourceReservation, reservationType string) {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
-		"method", "applyResourceReservation",
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"type", reservationType,
-	)
+	))
 
-	if source.CPU != "" {
-		if quantity, err := resource.ParseQuantity(source.CPU); err == nil {
-			(*target)[v1.ResourceCPU] = quantity
-		} else {
-			logger.V(1).Info("failed to parse CPU reservation", "value", source.CPU, "error", err)
+	applyResource := func(value string, resourceName v1.ResourceName, resourceType string) {
+		if value != "" {
+			if quantity, err := resource.ParseQuantity(value); err == nil {
+				(*target)[resourceName] = quantity
+			} else {
+				log.FromContext(ctx).V(1).Info("failed to parse reservation", "resource", resourceType, "value", value, "error", err)
+			}
 		}
 	}
 
-	if source.Memory != "" {
-		if quantity, err := resource.ParseQuantity(source.Memory); err == nil {
-			(*target)[v1.ResourceMemory] = quantity
-		} else {
-			logger.V(1).Info("failed to parse memory reservation", "value", source.Memory, "error", err)
-		}
-	}
-
-	if source.EphemeralStorage != "" {
-		if quantity, err := resource.ParseQuantity(source.EphemeralStorage); err == nil {
-			(*target)[v1.ResourceEphemeralStorage] = quantity
-		} else {
-			logger.V(1).Info("failed to parse ephemeral storage reservation", "value", source.EphemeralStorage, "error", err)
-		}
-	}
+	applyResource(source.CPU, v1.ResourceCPU, "CPU")
+	applyResource(source.Memory, v1.ResourceMemory, "memory")
+	applyResource(source.EphemeralStorage, v1.ResourceEphemeralStorage, "ephemeral storage")
 }
 
 func (c *CloudProvider) applyOverheadToInstanceTypes(instanceTypes []*cloudprovider.InstanceType, overhead cloudprovider.InstanceTypeOverhead) []*cloudprovider.InstanceType {
 	for _, instanceType := range instanceTypes {
 		instanceType.Overhead = &overhead
+	}
+	return instanceTypes
+}
+
+func (c *CloudProvider) addEphemeralStorageToInstanceTypes(instanceTypes []*cloudprovider.InstanceType, diskSizeGB int64) []*cloudprovider.InstanceType {
+	ephemeralStorageBytes := calculateEphemeralStorageBytes(diskSizeGB)
+	for _, instanceType := range instanceTypes {
+		if instanceType.Capacity == nil {
+			instanceType.Capacity = v1.ResourceList{}
+		}
+		instanceType.Capacity[v1.ResourceEphemeralStorage] = *resource.NewQuantity(ephemeralStorageBytes, resource.BinarySI)
 	}
 	return instanceTypes
 }
@@ -353,10 +374,10 @@ func (c *CloudProvider) Name() string {
 }
 
 func (c *CloudProvider) GetNodeClass(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (*apiv1.ExoscaleNodeClass, error) {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "getNodeClass",
 		"nodeClaim", nodeClaim.Name,
-	)
+	))
 
 	if nodeClaim.Spec.NodeClassRef == nil {
 		return nil, fmt.Errorf("nodeClassRef not specified in NodeClaim")
@@ -369,102 +390,33 @@ func (c *CloudProvider) GetNodeClass(ctx context.Context, nodeClaim *karpenterv1
 		return nil, fmt.Errorf("failed to get node class %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
 	}
 
-	logger.V(1).Info("retrieved node class", "nodeClass", nodeClass.Name)
+	log.FromContext(ctx).V(1).Info("retrieved node class", "nodeClass", nodeClass.Name)
 	return &nodeClass, nil
 }
 
-func (c *CloudProvider) deleteInstance(ctx context.Context, instanceID string) error {
-	deleteCtx, cancel := context.WithTimeout(ctx, InstanceDeleteTimeout)
-	defer cancel()
-
-	operation, err := c.exoClient.DeleteInstance(deleteCtx, egov3.UUID(instanceID))
-	if err != nil {
-		return fmt.Errorf("failed to delete instance: %w", err)
+func calculateEphemeralStorageBytes(diskSizeGB int64) int64 {
+	if diskSizeGB == 0 {
+		diskSizeGB = 50 // Default
 	}
-
-	if _, err := c.exoClient.Wait(deleteCtx, operation, egov3.OperationStateSuccess); err != nil {
-		return fmt.Errorf("failed waiting for instance deletion: %w", err)
+	ephemeralStorageGiB := diskSizeGB - 5
+	if ephemeralStorageGiB < 0 {
+		ephemeralStorageGiB = 0
 	}
-
-	return nil
+	return ephemeralStorageGiB * 1024 * 1024 * 1024
 }
 
-func setInstanceCapacity(capacity v1.ResourceList, instanceType *egov3.InstanceType) {
+func setInstanceCapacity(capacity v1.ResourceList, instanceType *egov3.InstanceType, diskSizeGB int64) {
 	if instanceType == nil {
 		return
 	}
 
 	capacity[v1.ResourceCPU] = *resource.NewQuantity(instanceType.Cpus, resource.DecimalSI)
-	capacity[v1.ResourceMemory] = *resource.NewQuantity(int64(instanceType.Memory)*1024*1024, resource.BinarySI)
+	capacity[v1.ResourceMemory] = *resource.NewQuantity(instanceType.Memory, resource.BinarySI)
+	capacity[v1.ResourceEphemeralStorage] = *resource.NewQuantity(calculateEphemeralStorageBytes(diskSizeGB), resource.BinarySI)
 
 	if instanceType.Gpus > 0 {
-		capacity["nvidia.com/gpu"] = *resource.NewQuantity(instanceType.Gpus, resource.DecimalSI)
+		capacity[instancetype.ResourceNvidiaGPU] = *resource.NewQuantity(instanceType.Gpus, resource.DecimalSI)
 	}
-}
-
-func (c *CloudProvider) updateNodeClaimWithInstance(nodeClaim *karpenterv1.NodeClaim, instance *egov3.Instance) *karpenterv1.NodeClaim {
-	updatedNodeClaim := nodeClaim.DeepCopy()
-	updatedNodeClaim.Status.ProviderID = utils.FormatProviderID(instance.ID.String())
-	updatedNodeClaim.Status.Capacity = make(v1.ResourceList)
-	setInstanceCapacity(updatedNodeClaim.Status.Capacity, instance.InstanceType)
-	return updatedNodeClaim
-}
-
-func (c *CloudProvider) createNodeClaimFromInstance(instance *egov3.Instance) *karpenterv1.NodeClaim {
-	nodeClaim := &karpenterv1.NodeClaim{
-		Status: karpenterv1.NodeClaimStatus{
-			ProviderID: utils.FormatProviderID(instance.ID.String()),
-			Capacity:   make(v1.ResourceList),
-		},
-	}
-
-	setInstanceCapacity(nodeClaim.Status.Capacity, instance.InstanceType)
-
-	if nodeClaimName, ok := instance.Labels[constants.LabelNodeClaim]; ok {
-		nodeClaim.Name = nodeClaimName
-	}
-
-	return nodeClaim
-}
-
-func (c *CloudProvider) createNodeClaimFromListInstance(instance *egov3.ListInstancesResponseInstances) *karpenterv1.NodeClaim {
-	nodeClaim := &karpenterv1.NodeClaim{
-		Status: karpenterv1.NodeClaimStatus{
-			ProviderID: utils.FormatProviderID(instance.ID.String()),
-			Capacity:   make(v1.ResourceList),
-		},
-	}
-
-	setInstanceCapacity(nodeClaim.Status.Capacity, instance.InstanceType)
-
-	if nodeClaimName, ok := instance.Labels[constants.LabelNodeClaim]; ok {
-		nodeClaim.Name = nodeClaimName
-	}
-
-	return nodeClaim
-}
-
-func (c *CloudProvider) resolveInstanceType(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (string, error) {
-	logger := log.FromContext(ctx).WithName("cloudprovider").WithValues(
-		"method", "resolveInstanceType",
-		"nodeClaim", nodeClaim.Name,
-	)
-
-	if len(nodeClaim.Spec.Requirements) == 0 {
-		return "", fmt.Errorf("no instance type requirements specified")
-	}
-
-	for _, req := range nodeClaim.Spec.Requirements {
-		if req.Key == "node.kubernetes.io/instance-type" {
-			if len(req.Values) > 0 {
-				instanceType := req.Values[0]
-				logger.V(1).Info("selected instance type from requirements", "type", instanceType)
-				return instanceType, nil
-			}
-		}
-	}
-
-	return "", fmt.Errorf("no instance type found in requirements")
 }
 
 func (c *CloudProvider) createNodeClaimFromInstanceProvider(inst *instance.Instance) *karpenterv1.NodeClaim {
@@ -483,9 +435,17 @@ func (c *CloudProvider) createNodeClaimFromInstanceProvider(inst *instance.Insta
 
 	nodeClaim.Status.Capacity = v1.ResourceList{}
 	if inst.InstanceType != nil {
-		setInstanceCapacity(nodeClaim.Status.Capacity, inst.InstanceType)
+		setInstanceCapacity(nodeClaim.Status.Capacity, inst.InstanceType, 0)
 	}
 
 	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
 	return nodeClaim
+}
+
+func (c *CloudProvider) isNodeClassReady(nodeClass *apiv1.ExoscaleNodeClass) bool {
+	if nodeClass == nil {
+		return false
+	}
+
+	return nodeClass.StatusConditions().IsTrue(status.ConditionReady)
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/cloudprovider"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/pricing"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -166,23 +165,6 @@ func (m *MockInstanceTypeProvider) GetInstanceTypeID(name string) (string, bool)
 	return args.String(0), args.Bool(1)
 }
 
-type MockPricingProvider struct {
-	mock.Mock
-}
-
-func (m *MockPricingProvider) GetPrice(ctx context.Context, instanceType string, currency pricing.Currency) (float64, error) {
-	args := m.Called(ctx, instanceType, currency)
-	return args.Get(0).(float64), args.Error(1)
-}
-
-func (m *MockPricingProvider) GetAllPrices(ctx context.Context, currency pricing.Currency) (map[string]float64, error) {
-	args := m.Called(ctx, currency)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(map[string]float64), args.Error(1)
-}
-
 type MockUserDataProvider struct {
 	mock.Mock
 }
@@ -202,7 +184,6 @@ type CloudProviderTestEnvironment struct {
 	MockExoClient        *mocks.MockExoscaleClient
 	MockInstanceProvider *MockInstanceProvider
 	MockInstanceTypes    *MockInstanceTypeProvider
-	MockPricing          *MockPricingProvider
 	MockUserData         *MockUserDataProvider
 }
 
@@ -222,7 +203,6 @@ func SetupCloudProviderTestEnvironment(t *testing.T) *CloudProviderTestEnvironme
 	mockExoClient := &mocks.MockExoscaleClient{}
 	mockInstanceProvider := &MockInstanceProvider{}
 	mockInstanceTypes := &MockInstanceTypeProvider{}
-	mockPricing := &MockPricingProvider{}
 	mockUserData := &MockUserDataProvider{}
 
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -235,7 +215,6 @@ func SetupCloudProviderTestEnvironment(t *testing.T) *CloudProviderTestEnvironme
 		"https://api-ch-gva-2.exoscale.com/v1",
 		eventRecorder,
 		mockInstanceTypes,
-		mockPricing,
 		mockInstanceProvider,
 		mockUserData,
 		"ch-gva-2",
@@ -254,7 +233,6 @@ func SetupCloudProviderTestEnvironment(t *testing.T) *CloudProviderTestEnvironme
 		MockExoClient:        mockExoClient,
 		MockInstanceProvider: mockInstanceProvider,
 		MockInstanceTypes:    mockInstanceTypes,
-		MockPricing:          mockPricing,
 		MockUserData:         mockUserData,
 	}
 }

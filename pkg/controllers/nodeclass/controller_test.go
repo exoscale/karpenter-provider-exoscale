@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/awslabs/operatorpkg/status"
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-exoscale/internal/testing/mocks"
@@ -235,7 +236,7 @@ func TestReconcile(t *testing.T) {
 				}
 
 				if tt.expectedReady && err == nil {
-					condition := updatedNC.StatusConditions().Get(ConditionTypeReady)
+					condition := updatedNC.StatusConditions().Get(status.ConditionReady)
 					assert.NotNil(t, condition)
 					assert.Equal(t, "True", string(condition.Status))
 				}

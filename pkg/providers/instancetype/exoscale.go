@@ -2,13 +2,16 @@ package instancetype
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 
 	egov3 "github.com/exoscale/egoscale/v3"
-	"github.com/exoscale/karpenter-exoscale/pkg/metrics"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/pricing"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -17,29 +20,39 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
-const (
-	ResourceNvidiaGPU = "nvidia.com/gpu"
-)
+const ResourceNvidiaGPU = "nvidia.com/gpu"
+
+//go:embed prices.json
+var pricesJSON []byte
+
+type rawPricingData struct {
+	CHF map[string]string `json:"chf"`
+	EUR map[string]string `json:"eur"`
+	USD map[string]string `json:"usd"`
+}
 
 type exoscaleProvider struct {
-	client          ExoscaleClient
-	zone            string
-	pricingProvider pricing.Provider
+	client ExoscaleClient
+	zone   string
 
 	mu              sync.RWMutex
 	instanceTypes   []*cloudprovider.InstanceType
 	instanceTypeMap map[string]*cloudprovider.InstanceType
 	instanceIDMap   map[string]string
+	prices          map[string]float64 // EUR prices
 }
 
-func NewExoscaleProvider(client ExoscaleClient, zone string, pricingProvider pricing.Provider) Provider {
-	return &exoscaleProvider{
+func NewExoscaleProvider(client ExoscaleClient, zone string) Provider {
+	p := &exoscaleProvider{
 		client:          client,
 		zone:            zone,
-		pricingProvider: pricingProvider,
 		instanceTypeMap: make(map[string]*cloudprovider.InstanceType),
 		instanceIDMap:   make(map[string]string),
+		prices:          make(map[string]float64),
 	}
+	// Load static prices on initialization
+	_ = p.loadPrices()
+	return p
 }
 
 func (p *exoscaleProvider) Get(_ context.Context, name string) (*cloudprovider.InstanceType, error) {
@@ -82,7 +95,7 @@ func (p *exoscaleProvider) List(ctx context.Context, filters *Filters) ([]*cloud
 }
 
 func (p *exoscaleProvider) Refresh(ctx context.Context) error {
-	logger := log.FromContext(ctx).WithName("instance-type-provider")
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("provider", "instancetype"))
 
 	exoTypes, err := p.client.ListInstanceTypes(ctx)
 	if err != nil {
@@ -98,34 +111,7 @@ func (p *exoscaleProvider) Refresh(ctx context.Context) error {
 	p.instanceTypeMap = instanceTypeMap
 	p.instanceIDMap = instanceIDMap
 
-	metrics.InstanceTypesDiscovered.Set(float64(len(instanceTypes)), map[string]string{
-		metrics.ZoneLabel: p.zone,
-	})
-
-	for name, instanceType := range instanceTypeMap {
-		if cpuQuantity, ok := instanceType.Capacity[corev1.ResourceCPU]; ok {
-			cpuCores, _ := cpuQuantity.AsInt64()
-			metrics.InstanceTypeCPU.Set(float64(cpuCores), map[string]string{
-				metrics.InstanceTypeLabel: name,
-			})
-		}
-		if memQuantity, ok := instanceType.Capacity[corev1.ResourceMemory]; ok {
-			memBytes, _ := memQuantity.AsInt64()
-			metrics.InstanceTypeMemory.Set(float64(memBytes), map[string]string{
-				metrics.InstanceTypeLabel: name,
-			})
-		}
-		if len(instanceType.Offerings) > 0 && instanceType.Offerings[0].Price > 0 {
-			metrics.InstanceTypePriceEstimate.Set(instanceType.Offerings[0].Price,
-				map[string]string{
-					metrics.InstanceTypeLabel: name,
-					metrics.ZoneLabel:         p.zone,
-				},
-			)
-		}
-	}
-
-	logger.Info("refreshed instance types", "count", len(instanceTypes), "zone", p.zone)
+	log.FromContext(ctx).Info("refreshed instance types", "count", len(instanceTypes), "zone", p.zone)
 	return nil
 }
 
@@ -141,7 +127,6 @@ func isInstanceTypeAvailableInZone(exoType egov3.InstanceType, zone string) bool
 }
 
 func (p *exoscaleProvider) buildInstanceTypes(ctx context.Context, exoTypes *egov3.ListInstanceTypesResponse) ([]*cloudprovider.InstanceType, map[string]*cloudprovider.InstanceType, map[string]string) {
-	logger := log.FromContext(ctx).WithName("instance-type-provider")
 
 	var instanceTypes []*cloudprovider.InstanceType
 	instanceTypeMap := make(map[string]*cloudprovider.InstanceType)
@@ -149,31 +134,46 @@ func (p *exoscaleProvider) buildInstanceTypes(ctx context.Context, exoTypes *ego
 
 	for _, exoType := range exoTypes.InstanceTypes {
 		if !isInstanceTypeAuthorized(exoType) {
-			logger.V(1).Info("skipping unauthorized instance type", "family", exoType.Family, "size", exoType.Size)
+			log.FromContext(ctx).V(1).Info("skipping unauthorized instance type", "family", exoType.Family, "size", exoType.Size)
 			continue
 		}
 
 		if !isInstanceTypeAvailableInZone(exoType, p.zone) {
-			logger.V(1).Info("skipping instance type not available in zone", "family", exoType.Family, "size", exoType.Size, "zone", p.zone)
+			log.FromContext(ctx).V(1).Info("skipping instance type not available in zone", "family", exoType.Family, "size", exoType.Size, "zone", p.zone)
 			continue
 		}
 
-		instanceType, name := p.createInstanceType(ctx, exoType)
+		instanceType, name := p.createInstanceType(exoType)
 		instanceTypes = append(instanceTypes, instanceType)
 		instanceTypeMap[name] = instanceType
 		instanceIDMap[name] = string(exoType.ID)
 	}
+
+	// Sort by price (cheapest first) for better cost optimization
+	sort.Slice(instanceTypes, func(i, j int) bool {
+		priceI := 0.0
+		priceJ := 0.0
+		if len(instanceTypes[i].Offerings) > 0 {
+			priceI = instanceTypes[i].Offerings[0].Price
+		}
+		if len(instanceTypes[j].Offerings) > 0 {
+			priceJ = instanceTypes[j].Offerings[0].Price
+		}
+		return priceI < priceJ
+	})
 
 	return instanceTypes, instanceTypeMap, instanceIDMap
 }
 
 func buildResourceList(cpus, memory, gpus int64) corev1.ResourceList {
 	resources := corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse(fmt.Sprintf("%d", cpus)),
-		corev1.ResourceMemory: resource.MustParse(fmt.Sprintf("%d", memory)),
+		corev1.ResourceCPU:    *resource.NewQuantity(cpus, resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(memory, resource.BinarySI),
+		corev1.ResourcePods:   *resource.NewQuantity(110, resource.DecimalSI),
 	}
+
 	if gpus > 0 {
-		resources[ResourceNvidiaGPU] = resource.MustParse(fmt.Sprintf("%d", gpus))
+		resources[ResourceNvidiaGPU] = *resource.NewQuantity(gpus, resource.DecimalSI)
 	}
 	return resources
 }
@@ -194,23 +194,28 @@ func buildInstanceRequirements(name string, hasGPU bool) scheduling.Requirements
 	return scheduling.NewRequirements(reqs...)
 }
 
-func (p *exoscaleProvider) createInstanceType(ctx context.Context, exoType egov3.InstanceType) (*cloudprovider.InstanceType, string) {
-	name := fmt.Sprintf("%s.%s", exoType.Family, exoType.Size)
+func (p *exoscaleProvider) createInstanceType(exoType egov3.InstanceType) (*cloudprovider.InstanceType, string) {
+	family := string(exoType.Family)
+	if family == "" {
+		family = "standard"
+	}
+	name := family + "." + string(exoType.Size)
 	resources := buildResourceList(exoType.Cpus, exoType.Memory, exoType.Gpus)
 	requirements := buildInstanceRequirements(name, exoType.Gpus > 0)
 
 	price := 0.0
-	if p.pricingProvider != nil {
-		if p, err := p.pricingProvider.GetPrice(ctx, name, pricing.EUR); err == nil {
-			price = p
-		}
+	priceLookupKey := normalizeInstanceType(name)
+	if priceVal, ok := p.prices[priceLookupKey]; ok {
+		price = priceVal
 	}
 
 	offerings := cloudprovider.Offerings{
 		&cloudprovider.Offering{
-			Requirements: scheduling.NewRequirements(),
-			Price:        price,
-			Available:    true,
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpentercore.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpentercore.CapacityTypeOnDemand),
+			),
+			Price:     price,
+			Available: true,
 		},
 	}
 
@@ -224,15 +229,10 @@ func (p *exoscaleProvider) createInstanceType(ctx context.Context, exoType egov3
 }
 
 func matchesInstanceTypeList(instanceName string, typeList []string) bool {
-	if typeList == nil || len(typeList) == 0 {
+	if len(typeList) == 0 {
 		return true
 	}
-	for _, name := range typeList {
-		if instanceName == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(typeList, instanceName)
 }
 
 func checkResourceBounds(value resource.Quantity, min, max *resource.Quantity) bool {
@@ -282,4 +282,55 @@ func (p *exoscaleProvider) GetInstanceTypeID(name string) (string, bool) {
 
 	id, ok := p.instanceIDMap[name]
 	return id, ok
+}
+
+func (p *exoscaleProvider) loadPrices() error {
+	var rawData rawPricingData
+	if err := json.Unmarshal(pricesJSON, &rawData); err != nil {
+		return fmt.Errorf("failed to unmarshal pricing data: %w", err)
+	}
+
+	// Parse EUR prices (default currency)
+	for rawKey, rawPrice := range rawData.EUR {
+		price, err := strconv.ParseFloat(rawPrice, 64)
+		if err != nil {
+			continue // Skip invalid prices
+		}
+		normalizedKey := normalizeInstanceType(rawKey)
+		p.prices[normalizedKey] = price
+	}
+
+	return nil
+}
+
+func normalizeInstanceType(rawKey string) string {
+	if strings.Contains(rawKey, ".") {
+		if strings.HasPrefix(rawKey, "gpua30.") {
+			// In gva2, gpu became gpua30, however the original price file didn't changed
+			return strings.Replace(rawKey, "gpua30.", "gpu.", 1)
+		}
+		return rawKey
+	}
+
+	// Process raw price keys from prices.json
+	key := strings.TrimPrefix(rawKey, "running_")
+	key = strings.ToLower(key)
+	key = strings.ReplaceAll(key, "_", "-")
+
+	sizes := []string{"extra-large", "colossus", "jumbo", "titan", "micro", "tiny", "small", "medium", "large", "huge", "mega"}
+
+	for _, size := range sizes {
+		if key == size {
+			return "standard." + size
+		}
+
+		suffix := "-" + size
+		if strings.HasSuffix(key, suffix) {
+			family := strings.TrimSuffix(key, suffix)
+			family = strings.ReplaceAll(family, "-", "")
+			return family + "." + size
+		}
+	}
+
+	return key
 }

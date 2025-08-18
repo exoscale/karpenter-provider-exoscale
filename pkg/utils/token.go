@@ -17,11 +17,3 @@ func GenerateSecureRandomString(length int) (string, error) {
 	}
 	return "", fmt.Errorf("failed to generate secure random string: crypto/rand unavailable")
 }
-
-func GenerateBootstrapTokenID() (string, error) {
-	return GenerateSecureRandomString(6)
-}
-
-func GenerateBootstrapTokenSecret() (string, error) {
-	return GenerateSecureRandomString(16)
-}

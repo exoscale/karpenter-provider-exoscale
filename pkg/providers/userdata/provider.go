@@ -9,6 +9,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata/bootstrap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -41,10 +42,11 @@ func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.Exoscal
 		return "", fmt.Errorf("options cannot be nil")
 	}
 
-	logger := log.FromContext(ctx).WithName("userdata").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
+		"provider", "userdata",
 		"nodeClass", nodeClass.Name,
 		"nodeClaim", nodeClaim.Name,
-	)
+	))
 
 	if options.ClusterEndpoint == "" {
 		options.ClusterEndpoint = p.clusterEndpoint
@@ -72,27 +74,13 @@ func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.Exoscal
 		BootstrapToken:              options.BootstrapToken,
 		CABundle:                    options.CABundle,
 		Labels:                      options.Labels,
+		Taints:                      options.Taints,
 		ImageGCHighThresholdPercent: options.ImageGCHighThresholdPercent,
 		ImageGCLowThresholdPercent:  options.ImageGCLowThresholdPercent,
 		ImageMinimumGCAge:           options.ImageMinimumGCAge,
-		KubeletMaxPods:              options.KubeletMaxPods,
 	}
 
-	for _, taint := range options.Taints {
-		bootstrapOptions.Taints = append(bootstrapOptions.Taints, apiv1.NodeTaint{
-			Key:    taint.Key,
-			Value:  taint.Value,
-			Effect: string(taint.Effect),
-		})
-	}
-
-	for _, taint := range nodeClaim.Spec.Taints {
-		bootstrapOptions.Taints = append(bootstrapOptions.Taints, apiv1.NodeTaint{
-			Key:    taint.Key,
-			Value:  taint.Value,
-			Effect: string(taint.Effect),
-		})
-	}
+	bootstrapOptions.Taints = append(bootstrapOptions.Taints, nodeClaim.Spec.Taints...)
 
 	if bootstrapOptions.Labels == nil {
 		bootstrapOptions.Labels = make(map[string]string)
@@ -103,26 +91,26 @@ func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.Exoscal
 
 	userData, err := p.sksBootstrap.Generate(bootstrapOptions, nodeClass)
 	if err != nil {
-		logger.Error(err, "failed to generate user data")
+		log.FromContext(ctx).Error(err, "failed to generate user data")
 		return "", fmt.Errorf("failed to generate user data: %w", err)
 	}
 
-	logger.V(2).Info("generated user data", "size", len(userData))
+	log.FromContext(ctx).V(2).Info("generated user data", "size", len(userData))
 	return userData, nil
 }
 
 func (p *DefaultProvider) getClusterCA(ctx context.Context) ([]byte, error) {
-	logger := log.FromContext(ctx).WithName("userdata").WithValues(
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "getClusterCA",
-	)
+	))
 
 	caCert, err := p.getCACertFromClusterInfo(ctx)
 	if err == nil {
-		logger.V(2).Info("retrieved CA certificate from cluster-info")
+		log.FromContext(ctx).V(2).Info("retrieved CA certificate from cluster-info")
 		return caCert, nil
 	}
 
-	logger.V(1).Info("failed to get CA from cluster-info, trying kube-root-ca.crt", "error", err)
+	log.FromContext(ctx).V(1).Info("failed to get CA from cluster-info, trying kube-root-ca.crt", "error", err)
 	return p.getCACertFromKubeRootCA(ctx)
 }
 
@@ -150,7 +138,7 @@ func (p *DefaultProvider) getCACertFromKubeRootCA(ctx context.Context) ([]byte, 
 	cm := &v1.ConfigMap{}
 	if err := p.kubeClient.Get(ctx, client.ObjectKey{
 		Name:      "kube-root-ca.crt",
-		Namespace: "kube-system",
+		Namespace: metav1.NamespaceSystem,
 	}, cm); err != nil {
 		return nil, fmt.Errorf("failed to get kube-root-ca.crt ConfigMap: %w", err)
 	}

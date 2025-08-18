@@ -91,34 +91,34 @@ func TestReconcile(t *testing.T) {
 		{
 			name: "no orphaned instances",
 			instances: []*instance.Instance{
-				createInstance("inst-1", "node-1", time.Now().Add(-5*time.Minute)),
-				createInstance("inst-2", "node-2", time.Now().Add(-10*time.Minute)),
+				createInstance("11111111-1111-1111-1111-111111111111", "node-1", time.Now().Add(-5*time.Minute)),
+				createInstance("22222222-2222-2222-2222-222222222222", "node-2", time.Now().Add(-10*time.Minute)),
 			},
 			nodeClaims: []struct{ name, providerID string }{
-				{"claim-1", "exoscale://inst-1"},
-				{"claim-2", "exoscale://inst-2"},
+				{"claim-1", "exoscale://11111111-1111-1111-1111-111111111111"},
+				{"claim-2", "exoscale://22222222-2222-2222-2222-222222222222"},
 			},
 		},
 		{
-			name: "delete old orphaned instance",
+			name: "delete orphaned instance",
 			instances: []*instance.Instance{
-				createInstance("inst-1", "node-1", time.Now().Add(-5*time.Minute)),
-				createInstance("inst-2", "node-2", time.Now().Add(-20*time.Minute)),
+				createInstance("11111111-1111-1111-1111-111111111111", "node-1", time.Now().Add(-5*time.Minute)),
+				createInstance("22222222-2222-2222-2222-222222222222", "node-2", time.Now().Add(-20*time.Minute)),
 			},
 			nodeClaims: []struct{ name, providerID string }{
-				{"claim-1", "exoscale://inst-1"},
+				{"claim-1", "exoscale://11111111-1111-1111-1111-111111111111"},
 			},
-			expectedDeletes: []string{"inst-2"},
+			expectedDeletes: []string{"22222222-2222-2222-2222-222222222222"},
 		},
 		{
 			name: "multiple orphaned instances",
 			instances: []*instance.Instance{
-				createInstance("inst-1", "node-1", time.Now().Add(-30*time.Minute)),
-				createInstance("inst-2", "node-2", time.Now().Add(-25*time.Minute)),
-				createInstance("inst-3", "node-3", time.Now().Add(-20*time.Minute)),
-				createInstance("inst-4", "node-4", time.Now().Add(-5*time.Minute)),
+				createInstance("11111111-1111-1111-1111-111111111111", "node-1", time.Now().Add(-30*time.Minute)),
+				createInstance("22222222-2222-2222-2222-222222222222", "node-2", time.Now().Add(-25*time.Minute)),
+				createInstance("33333333-3333-3333-3333-333333333333", "node-3", time.Now().Add(-20*time.Minute)),
+				createInstance("44444444-4444-4444-4444-444444444444", "node-4", time.Now().Add(-5*time.Minute)),
 			},
-			expectedDeletes: []string{"inst-1", "inst-2", "inst-3"},
+			expectedDeletes: []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", "33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"},
 		},
 		{
 			name:              "list instances error",
@@ -128,7 +128,7 @@ func TestReconcile(t *testing.T) {
 		{
 			name: "list nodeclaims error",
 			instances: []*instance.Instance{
-				createInstance("inst-1", "node-1", time.Now()),
+				createInstance("66666666-6666-6666-6666-666666666666", "node-1", time.Now()),
 			},
 			listClaimError: errors.New("API error"),
 			expectedError:  "failed to list NodeClaims",
@@ -136,12 +136,12 @@ func TestReconcile(t *testing.T) {
 		{
 			name: "delete fails with regular error",
 			instances: []*instance.Instance{
-				createInstance("inst-1", "node-1", time.Now().Add(-30*time.Minute)),
+				createInstance("55555555-5555-5555-5555-555555555555", "node-1", time.Now().Add(-30*time.Minute)),
 			},
 			deleteErrors: map[string]error{
-				"inst-1": errors.New("delete failed"),
+				"55555555-5555-5555-5555-555555555555": errors.New("delete failed"),
 			},
-			expectedDeletes: []string{"inst-1"},
+			expectedDeletes: []string{"55555555-5555-5555-5555-555555555555"},
 		},
 	}
 

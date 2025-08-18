@@ -26,7 +26,6 @@ type Options struct {
 	ImageGCHighThresholdPercent *int32
 	ImageGCLowThresholdPercent  *int32
 	ImageMinimumGCAge           string
-	KubeletMaxPods              *int32
 }
 
 type CAProvider interface {

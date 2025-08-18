@@ -11,11 +11,11 @@ const ExoscaleProviderIDPrefix = "exoscale://"
 var uuidRegex = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func ParseProviderID(providerID string) (string, error) {
-	if !strings.HasPrefix(providerID, ExoscaleProviderIDPrefix) {
+	instanceID, found := strings.CutPrefix(providerID, ExoscaleProviderIDPrefix)
+	if !found {
 		return "", fmt.Errorf("invalid provider ID format: %s (must start with %s)", providerID, ExoscaleProviderIDPrefix)
 	}
 
-	instanceID := strings.TrimPrefix(providerID, ExoscaleProviderIDPrefix)
 	if instanceID == "" {
 		return "", fmt.Errorf("invalid provider ID format: %s (missing instance ID)", providerID)
 	}
@@ -28,5 +28,5 @@ func ParseProviderID(providerID string) (string, error) {
 }
 
 func FormatProviderID(instanceID string) string {
-	return fmt.Sprintf("%s%s", ExoscaleProviderIDPrefix, instanceID)
+	return ExoscaleProviderIDPrefix + instanceID
 }

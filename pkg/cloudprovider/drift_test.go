@@ -1,13 +1,13 @@
 package cloudprovider_test
 
 import (
-	"errors"
 	"testing"
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	internaltesting "github.com/exoscale/karpenter-exoscale/internal/testing"
 	"github.com/exoscale/karpenter-exoscale/internal/testing/mocks"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	kerrors "github.com/exoscale/karpenter-exoscale/pkg/errors"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -88,7 +88,7 @@ func TestCloudProvider_IsDrifted(t *testing.T) {
 		{"NoDrift", true, nil, nil, false, "", ""},
 		{"NodeClassNotFound", false, nil, nil, false, "", "failed to get node class"},
 		{"InvalidProviderID", true, nil, nil, true, "", "failed to parse provider ID"},
-		{"InstanceNotFound", true, nil, errors.New("instance not found"), false, "", "failed to get instance"},
+		{"InstanceNotFound", true, nil, kerrors.NewInstanceNotFoundError(string(mocks.InstanceID1)), false, "", ""},
 		{"TemplateDrift", true, []driftModifier{withTemplateDrift("different-template-id")}, nil, false, "TemplateID", ""},
 		{"SecurityGroupsDrift", true, []driftModifier{withSecurityGroupsDrift([]string{"different-sg-id"})}, nil, false, "SecurityGroups", ""},
 		{"PrivateNetworksDrift", true, []driftModifier{withPrivateNetworksDrift([]string{"different-network-id"})}, nil, false, "PrivateNetworks", ""},
@@ -128,73 +128,13 @@ func TestCloudProvider_IsDrifted(t *testing.T) {
 			if tt.expectedError != "" {
 				assert.Error(t, err)
 				assert.Contains(t, err.Error(), tt.expectedError)
+			} else if tt.name == "InstanceNotFound" {
+				assert.Error(t, err)
+				assert.True(t, karpentercloudprovider.IsNodeClaimNotFoundError(err))
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedReason, reason)
 			}
-		})
-	}
-}
-
-func TestToStringSet(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []string
-		expected map[string]bool
-	}{
-		{"Empty", []string{}, map[string]bool{}},
-		{"Single", []string{"item-1"}, map[string]bool{"item-1": true}},
-		{"Multiple", []string{"item-1", "item-2", "item-3"}, map[string]bool{"item-1": true, "item-2": true, "item-3": true}},
-		{"Duplicate", []string{"item-1", "item-2", "item-1"}, map[string]bool{"item-1": true, "item-2": true}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, utils.ToStringSet(tt.input))
-		})
-	}
-}
-
-func TestToStringSetFiltered(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []string
-		expected map[string]bool
-	}{
-		{"Empty", []string{}, map[string]bool{}},
-		{"Single", []string{"item-1"}, map[string]bool{"item-1": true}},
-		{"Multiple", []string{"item-1", "item-2", "item-3"}, map[string]bool{"item-1": true, "item-2": true, "item-3": true}},
-		{"WithEmpty", []string{"item-1", "", "item-2", ""}, map[string]bool{"item-1": true, "item-2": true}},
-		{"OnlyEmpty", []string{"", "", ""}, map[string]bool{}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, utils.ToStringSetFiltered(tt.input))
-		})
-	}
-}
-
-func TestCompareSets(t *testing.T) {
-	tests := []struct {
-		name     string
-		expected map[string]bool
-		actual   map[string]bool
-		equal    bool
-	}{
-		{"BothEmpty", map[string]bool{}, map[string]bool{}, true},
-		{"Identical", map[string]bool{"a": true, "b": true}, map[string]bool{"a": true, "b": true}, true},
-		{"DifferentOrder", map[string]bool{"a": true, "b": true, "c": true}, map[string]bool{"c": true, "a": true, "b": true}, true},
-		{"ExpectedEmpty", map[string]bool{}, map[string]bool{"a": true}, false},
-		{"ActualEmpty", map[string]bool{"a": true}, map[string]bool{}, false},
-		{"Different", map[string]bool{"a": true, "b": true}, map[string]bool{"a": true, "c": true}, false},
-		{"ExtraInActual", map[string]bool{"a": true}, map[string]bool{"a": true, "b": true}, false},
-		{"MissingInActual", map[string]bool{"a": true, "b": true}, map[string]bool{"a": true}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.equal, utils.CompareSets(tt.expected, tt.actual))
 		})
 	}
 }

@@ -23,6 +23,7 @@ type Instance struct {
 	Name               string
 	State              egov3.InstanceState
 	InstanceType       *egov3.InstanceType
+	InstanceTypeName   string
 	Template           *egov3.Template
 	Zone               string
 	Labels             map[string]string
@@ -46,6 +47,12 @@ func FromExoscaleInstance(instance *egov3.Instance, zone string) *Instance {
 		Zone:         zone,
 		Labels:       instance.Labels,
 		CreatedAt:    instance.CreatedAT,
+	}
+
+	if instance.InstanceType != nil {
+		family := string(instance.InstanceType.Family)
+		size := string(instance.InstanceType.Size)
+		i.InstanceTypeName = family + "." + size
 	}
 
 	for _, sg := range instance.SecurityGroups {

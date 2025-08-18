@@ -10,6 +10,7 @@ import (
 	internaltesting "github.com/exoscale/karpenter-exoscale/internal/testing"
 	"github.com/exoscale/karpenter-exoscale/internal/testing/mocks"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	kerrors "github.com/exoscale/karpenter-exoscale/pkg/errors"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -32,9 +33,10 @@ var (
 	}
 
 	testInstance = &instance.Instance{
-		ID:           string(mocks.InstanceID1),
-		InstanceType: testInstanceType,
-		Labels:       map[string]string{"exoscale.com/node-claim": "test-node-claim"},
+		ID:               string(mocks.InstanceID1),
+		InstanceType:     testInstanceType,
+		InstanceTypeName: "standard.small",
+		Labels:           map[string]string{"exoscale.com/node-claim": "test-node-claim"},
 	}
 
 	testInstances = []*instance.Instance{
@@ -88,6 +90,7 @@ func TestCloudProvider_Create(t *testing.T) {
 		assert.Equal(t, "standard.small", result.Labels[corev1.LabelInstanceTypeStable])
 		assert.Equal(t, "ch-gva-2", result.Labels[corev1.LabelTopologyZone])
 		assert.Equal(t, "test-cluster", result.Labels[constants.LabelClusterName])
+		assert.Equal(t, karpenterv1.CapacityTypeOnDemand, result.Labels[karpenterv1.CapacityTypeLabelKey])
 	})
 
 	t.Run("NodeClassNotFound", func(t *testing.T) {
@@ -117,7 +120,9 @@ func TestCloudProvider_Create(t *testing.T) {
 		_, err := env.CloudProvider.Create(env.Ctx, nodeClaim)
 
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to generate user data")
+		var createErr *karpentercloudprovider.CreateError
+		assert.ErrorAs(t, err, &createErr)
+		assert.Contains(t, err.Error(), "creating nodeclaim")
 	})
 
 	t.Run("InstanceCreationFails", func(t *testing.T) {
@@ -169,11 +174,11 @@ func TestCloudProvider_Delete(t *testing.T) {
 		nodeClaim.Status.ProviderID = utils.FormatProviderID(string(mocks.InstanceID1))
 
 		env.MockInstanceProvider.On("Delete", mock.Anything, string(mocks.InstanceID1)).
-			Return(errors.New("instance not found"))
+			Return(kerrors.NewInstanceNotFoundError(string(mocks.InstanceID1)))
 
 		err := env.CloudProvider.Delete(env.Ctx, nodeClaim)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "instance not found")
+		assert.True(t, karpentercloudprovider.IsNodeClaimNotFoundError(err))
 	})
 }
 

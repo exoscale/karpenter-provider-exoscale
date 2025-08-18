@@ -110,29 +110,29 @@ func TestBuildResourceList(t *testing.T) {
 		{
 			name:    "standard instance",
 			cpus:    4,
-			memory:  8589934592, // 8Gi
+			memory:  8589934592, // 8 GiB in bytes
 			gpus:    0,
 			wantCPU: "4",
-			wantMem: "8589934592",
+			wantMem: "8Gi",
 			hasGPU:  false,
 		},
 		{
 			name:    "gpu instance",
 			cpus:    8,
-			memory:  17179869184, // 16Gi
+			memory:  17179869184, // 16 GiB in bytes
 			gpus:    2,
 			wantCPU: "8",
-			wantMem: "17179869184",
+			wantMem: "16Gi",
 			wantGPU: "2",
 			hasGPU:  true,
 		},
 		{
 			name:    "micro instance",
 			cpus:    1,
-			memory:  536870912, // 512Mi
+			memory:  536870912, // 512 MiB in bytes
 			gpus:    0,
 			wantCPU: "1",
-			wantMem: "536870912",
+			wantMem: "512Mi",
 			hasGPU:  false,
 		},
 	}
@@ -158,6 +158,13 @@ func TestBuildResourceList(t *testing.T) {
 			if hasGPU && gpu.String() != tt.wantGPU {
 				t.Errorf("GPU = %v, want %v", gpu.String(), tt.wantGPU)
 			}
+
+			// Check that pods resource is set
+			pods := got[corev1.ResourcePods]
+			if pods.String() != "110" {
+				t.Errorf("Pods = %v, want 110", pods.String())
+			}
+
 		})
 	}
 }

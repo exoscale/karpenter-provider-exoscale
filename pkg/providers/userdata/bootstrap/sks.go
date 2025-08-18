@@ -6,9 +6,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
-	"text/template"
 
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	"github.com/pelletier/go-toml/v2"
+	v1 "k8s.io/api/core/v1"
 )
 
 type Options struct {
@@ -18,103 +19,44 @@ type Options struct {
 	ClusterDomain               string
 	BootstrapToken              string
 	CABundle                    []byte
-	Taints                      []apiv1.NodeTaint
+	Taints                      []v1.Taint
 	Labels                      map[string]string
 	ImageGCHighThresholdPercent *int32
 	ImageGCLowThresholdPercent  *int32
 	ImageMinimumGCAge           string
-	KubeletMaxPods              *int32
+}
+
+type KubernetesSettings struct {
+	APIServer                   string               `toml:"api-server"`
+	BootstrapToken              string               `toml:"bootstrap-token"`
+	CloudProvider               string               `toml:"cloud-provider"`
+	ClusterCertificate          string               `toml:"cluster-certificate"`
+	ClusterDNSIP                []string             `toml:"cluster-dns-ip,omitempty"`
+	ClusterDomain               string               `toml:"cluster-domain,omitempty"`
+	ImageGCHighThresholdPercent *int32               `toml:"image-gc-high-threshold-percent,omitempty"`
+	ImageGCLowThresholdPercent  *int32               `toml:"image-gc-low-threshold-percent,omitempty"`
+	ImageMinimumGCAge           string               `toml:"image-minimum-gc-age,omitempty"`
+	KubeReserved                *ResourceReservation `toml:"kube-reserved,omitempty"`
+	SystemReserved              *ResourceReservation `toml:"system-reserved,omitempty"`
+	NodeTaints                  map[string][]string  `toml:"node-taints,omitempty"`
+	NodeLabels                  map[string]string    `toml:"node-labels,omitempty"`
+}
+
+type ResourceReservation struct {
+	CPU              string `toml:"cpu,omitempty"`
+	Memory           string `toml:"memory,omitempty"`
+	EphemeralStorage string `toml:"ephemeral-storage,omitempty"`
+}
+
+type Settings struct {
+	Kubernetes KubernetesSettings `toml:"kubernetes"`
+}
+
+type Config struct {
+	Settings Settings `toml:"settings"`
 }
 
 type SKSBootstrap struct{}
-
-const SKSUserDataTemplate = `[settings.kubernetes]
-api-server = "{{ .APIServer }}"
-bootstrap-token = "{{ .BootstrapToken }}"
-cloud-provider = "{{ .CloudProvider }}"
-cluster-certificate = "{{ .ClusterCertificate }}"
-{{- if .ClusterDNSIP }}
-cluster-dns-ip = {{ .ClusterDNSIP }}
-{{- end }}
-{{- if .ClusterDomain }}
-cluster-domain = "{{ .ClusterDomain }}"
-{{- end }}
-{{- if .ImageGCHighThresholdPercent }}
-image-gc-high-threshold-percent = {{ .ImageGCHighThresholdPercent }}
-{{- end }}
-{{- if .ImageGCLowThresholdPercent }}
-image-gc-low-threshold-percent = {{ .ImageGCLowThresholdPercent }}
-{{- end }}
-{{- if .ImageMinimumGCAge }}
-image-minimum-gc-age = "{{ .ImageMinimumGCAge }}"
-{{- end }}
-{{- if .KubeReserved }}
-
-[settings.kubernetes.kube-reserved]
-{{- if .KubeReserved.CPU }}
-cpu = "{{ .KubeReserved.CPU }}"
-{{- end }}
-{{- if .KubeReserved.Memory }}
-memory = "{{ .KubeReserved.Memory }}"
-{{- end }}
-{{- if .KubeReserved.EphemeralStorage }}
-ephemeral-storage = "{{ .KubeReserved.EphemeralStorage }}"
-{{- end }}
-{{- end }}
-{{- if .SystemReserved }}
-
-[settings.kubernetes.system-reserved]
-{{- if .SystemReserved.CPU }}
-cpu = "{{ .SystemReserved.CPU }}"
-{{- end }}
-{{- if .SystemReserved.Memory }}
-memory = "{{ .SystemReserved.Memory }}"
-{{- end }}
-{{- if .SystemReserved.EphemeralStorage }}
-ephemeral-storage = "{{ .SystemReserved.EphemeralStorage }}"
-{{- end }}
-{{- end }}
-{{- if .EvictionHard }}
-
-[settings.kubernetes.eviction-hard]
-{{- if .EvictionHard.MemoryAvailable }}
-memory-available = "{{ .EvictionHard.MemoryAvailable }}"
-{{- end }}
-{{- if .EvictionHard.NodeFSAvailable }}
-nodefs-available = "{{ .EvictionHard.NodeFSAvailable }}"
-{{- end }}
-{{- if .EvictionHard.NodeFSInodesFree }}
-nodefs-inodes-free = "{{ .EvictionHard.NodeFSInodesFree }}"
-{{- end }}
-{{- if .EvictionHard.ImageFSAvailable }}
-imagefs-available = "{{ .EvictionHard.ImageFSAvailable }}"
-{{- end }}
-{{- if .EvictionHard.ImageFSInodesFree }}
-imagefs-inodes-free = "{{ .EvictionHard.ImageFSInodesFree }}"
-{{- end }}
-{{- if .EvictionHard.PIDAvailable }}
-pid-available = "{{ .EvictionHard.PIDAvailable }}"
-{{- end }}
-{{- end }}
-{{- if .KubeletMaxPods }}
-
-[settings.kubernetes.kubelet]
-max-pods = {{ .KubeletMaxPods }}
-{{- end }}
-{{- if .Taints }}
-
-[settings.kubernetes.taints]
-{{- range $index, $taint := .Taints }}
-{{ $index }} = "{{ $taint.Key }}={{ $taint.Value }}:{{ $taint.Effect }}"
-{{- end }}
-{{- end }}
-{{- if .Labels }}
-
-[settings.kubernetes.labels]
-{{- range $key, $value := .Labels }}
-"{{ $key }}" = "{{ $value }}"
-{{- end }}
-{{- end }}`
 
 func New() *SKSBootstrap {
 	return &SKSBootstrap{}
@@ -131,11 +73,11 @@ func (s *SKSBootstrap) Generate(options *Options, nodeClass *apiv1.ExoscaleNodeC
 		return "", fmt.Errorf("CA bundle is required")
 	}
 
-	templateData := s.buildTemplateData(options, nodeClass)
+	config := s.buildConfig(options, nodeClass)
 
-	userData, err := s.renderTemplate(templateData)
+	userData, err := s.marshalTOML(config)
 	if err != nil {
-		return "", fmt.Errorf("failed to render user data template: %w", err)
+		return "", fmt.Errorf("failed to marshal user data to TOML: %w", err)
 	}
 
 	encodedUserData, err := s.compressAndEncode(userData)
@@ -146,98 +88,129 @@ func (s *SKSBootstrap) Generate(options *Options, nodeClass *apiv1.ExoscaleNodeC
 	return encodedUserData, nil
 }
 
-func (s *SKSBootstrap) buildTemplateData(options *Options, nodeClass *apiv1.ExoscaleNodeClass) interface{} {
+func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNodeClass) *Config {
+	config := &Config{
+		Settings: Settings{
+			Kubernetes: KubernetesSettings{
+				APIServer:          options.ClusterEndpoint,
+				BootstrapToken:     options.BootstrapToken,
+				CloudProvider:      "external",
+				ClusterCertificate: base64.StdEncoding.EncodeToString(options.CABundle),
+			},
+		},
+	}
 
-	data := struct {
-		APIServer                   string
-		BootstrapToken              string
-		CloudProvider               string
-		ClusterCertificate          string
-		ClusterDNSIP                interface{}
-		ClusterDomain               string
-		ImageGCHighThresholdPercent *int32
-		ImageGCLowThresholdPercent  *int32
-		ImageMinimumGCAge           string
-		KubeReserved                apiv1.ResourceReservation
-		SystemReserved              apiv1.ResourceReservation
-		EvictionHard                interface{}
-		KubeletMaxPods              interface{}
-		Taints                      []apiv1.NodeTaint
-		Labels                      map[string]string
-	}{
-		APIServer:          options.ClusterEndpoint,
-		BootstrapToken:     options.BootstrapToken,
-		CloudProvider:      "external",
-		ClusterCertificate: base64.StdEncoding.EncodeToString(options.CABundle),
-		ClusterDNSIP:       s.formatClusterDNSIP(options.ClusterDNS),
-		ClusterDomain:      options.ClusterDomain,
-		Taints:             options.Taints,
-		Labels:             options.Labels,
+	if options.ClusterDNS != "" {
+		ips := strings.Split(options.ClusterDNS, ",")
+		for i, ip := range ips {
+			ips[i] = strings.TrimSpace(ip)
+		}
+		config.Settings.Kubernetes.ClusterDNSIP = ips
+	}
+
+	if options.ClusterDomain != "" {
+		config.Settings.Kubernetes.ClusterDomain = options.ClusterDomain
 	}
 
 	if nodeClass != nil {
-		data.ImageGCHighThresholdPercent = nodeClass.Spec.ImageGCHighThresholdPercent
-		data.ImageGCLowThresholdPercent = nodeClass.Spec.ImageGCLowThresholdPercent
-		data.ImageMinimumGCAge = nodeClass.Spec.ImageMinimumGCAge
-		data.KubeReserved = nodeClass.Spec.KubeReserved
-		data.SystemReserved = nodeClass.Spec.SystemReserved
+		if nodeClass.Spec.ImageGCHighThresholdPercent != nil {
+			config.Settings.Kubernetes.ImageGCHighThresholdPercent = nodeClass.Spec.ImageGCHighThresholdPercent
+		}
+		if nodeClass.Spec.ImageGCLowThresholdPercent != nil {
+			config.Settings.Kubernetes.ImageGCLowThresholdPercent = nodeClass.Spec.ImageGCLowThresholdPercent
+		}
+		if nodeClass.Spec.ImageMinimumGCAge != "" {
+			config.Settings.Kubernetes.ImageMinimumGCAge = nodeClass.Spec.ImageMinimumGCAge
+		}
 
+		if !isEmptyResourceReservation(nodeClass.Spec.KubeReserved) {
+			config.Settings.Kubernetes.KubeReserved = convertResourceReservation(nodeClass.Spec.KubeReserved)
+		}
+		if !isEmptyResourceReservation(nodeClass.Spec.SystemReserved) {
+			config.Settings.Kubernetes.SystemReserved = convertResourceReservation(nodeClass.Spec.SystemReserved)
+		}
+
+		// Node Taints - format: key -> ["value:effect", ...]
 		if len(nodeClass.Spec.NodeTaints) > 0 {
-			data.Taints = nodeClass.Spec.NodeTaints
+			config.Settings.Kubernetes.NodeTaints = make(map[string][]string)
+			for _, taint := range nodeClass.Spec.NodeTaints {
+				taintString := fmt.Sprintf("%s:%s", taint.Value, taint.Effect)
+				config.Settings.Kubernetes.NodeTaints[taint.Key] = append(config.Settings.Kubernetes.NodeTaints[taint.Key], taintString)
+			}
 		}
 
 		if len(nodeClass.Spec.NodeLabels) > 0 {
-			if data.Labels == nil {
-				data.Labels = make(map[string]string)
-			}
-			for k, v := range nodeClass.Spec.NodeLabels {
-				data.Labels[k] = v
-			}
+			config.Settings.Kubernetes.NodeLabels = nodeClass.Spec.NodeLabels
 		}
 	}
 
 	if options.ImageGCHighThresholdPercent != nil {
-		data.ImageGCHighThresholdPercent = options.ImageGCHighThresholdPercent
+		config.Settings.Kubernetes.ImageGCHighThresholdPercent = options.ImageGCHighThresholdPercent
 	}
 	if options.ImageGCLowThresholdPercent != nil {
-		data.ImageGCLowThresholdPercent = options.ImageGCLowThresholdPercent
+		config.Settings.Kubernetes.ImageGCLowThresholdPercent = options.ImageGCLowThresholdPercent
 	}
 	if options.ImageMinimumGCAge != "" {
-		data.ImageMinimumGCAge = options.ImageMinimumGCAge
-	}
-	if options.KubeletMaxPods != nil {
-		data.KubeletMaxPods = *options.KubeletMaxPods
+		config.Settings.Kubernetes.ImageMinimumGCAge = options.ImageMinimumGCAge
 	}
 
-	return data
+	if len(options.Taints) > 0 {
+		if config.Settings.Kubernetes.NodeTaints == nil {
+			config.Settings.Kubernetes.NodeTaints = make(map[string][]string)
+		}
+		for _, taint := range options.Taints {
+			taintString := fmt.Sprintf("%s:%s", taint.Value, string(taint.Effect))
+			// Check if this taint already exists to avoid duplicates
+			exists := false
+			for _, existing := range config.Settings.Kubernetes.NodeTaints[taint.Key] {
+				if existing == taintString {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				config.Settings.Kubernetes.NodeTaints[taint.Key] = append(config.Settings.Kubernetes.NodeTaints[taint.Key], taintString)
+			}
+		}
+	}
+
+	if len(options.Labels) > 0 {
+		if config.Settings.Kubernetes.NodeLabels == nil {
+			config.Settings.Kubernetes.NodeLabels = make(map[string]string)
+		}
+		for k, v := range options.Labels {
+			config.Settings.Kubernetes.NodeLabels[k] = v
+		}
+	}
+
+	return config
 }
 
-func (s *SKSBootstrap) formatClusterDNSIP(clusterDNS string) interface{} {
-	if clusterDNS == "" {
-		return nil
-	}
-
-	ips := strings.Split(clusterDNS, ",")
-	if len(ips) == 1 {
-		return fmt.Sprintf(`"%s"`, strings.TrimSpace(ips[0]))
-	}
-
-	var formatted []string
-	for _, ip := range ips {
-		formatted = append(formatted, fmt.Sprintf(`"%s"`, strings.TrimSpace(ip)))
-	}
-	return fmt.Sprintf("[%s]", strings.Join(formatted, ", "))
+func isEmptyResourceReservation(rr apiv1.ResourceReservation) bool {
+	return rr.CPU == "" && rr.Memory == "" && rr.EphemeralStorage == ""
 }
 
-func (s *SKSBootstrap) renderTemplate(data interface{}) ([]byte, error) {
-	tmpl, err := template.New("userdata").Parse(SKSUserDataTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse user data template: %w", err)
+func convertResourceReservation(rr apiv1.ResourceReservation) *ResourceReservation {
+	result := &ResourceReservation{}
+	if rr.CPU != "" {
+		result.CPU = rr.CPU
 	}
+	if rr.Memory != "" {
+		result.Memory = rr.Memory
+	}
+	if rr.EphemeralStorage != "" {
+		result.EphemeralStorage = rr.EphemeralStorage
+	}
+	return result
+}
 
+func (s *SKSBootstrap) marshalTOML(config *Config) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return nil, fmt.Errorf("failed to execute user data template: %w", err)
+	encoder := toml.NewEncoder(&buf)
+	encoder.SetIndentTables(false)
+
+	if err := encoder.Encode(config); err != nil {
+		return nil, fmt.Errorf("failed to encode config to TOML: %w", err)
 	}
 
 	return buf.Bytes(), nil
