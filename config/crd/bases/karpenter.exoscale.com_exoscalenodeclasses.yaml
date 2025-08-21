@@ -49,10 +49,10 @@ spec:
             description: ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
             properties:
               antiAffinityGroups:
-                description: AntiAffinityGroups is a list of anti-affinity group IDs
+                description: |-
+                  AntiAffinityGroups is a list of anti-affinity group IDs
                 items:
                   type: string
-                maxItems: 8
                 type: array
               diskSize:
                 default: 50
@@ -181,9 +181,6 @@ spec:
             - message: imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent
               rule: '!has(self.imageGCHighThresholdPercent) || !has(self.imageGCLowThresholdPercent)
                 || self.imageGCLowThresholdPercent < self.imageGCHighThresholdPercent'
-            - message: maximum 8 anti-affinity groups allowed
-              rule: '!has(self.antiAffinityGroups) || size(self.antiAffinityGroups)
-                <= 8'
           status:
             description: ExoscaleNodeClassStatus defines the observed state of ExoscaleNodeClass
             properties:

@@ -33,7 +33,6 @@ type ExoscaleNodeClass struct {
 
 // ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
 // +kubebuilder:validation:XValidation:rule="!has(self.imageGCHighThresholdPercent) || !has(self.imageGCLowThresholdPercent) || self.imageGCLowThresholdPercent < self.imageGCHighThresholdPercent",message="imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent"
-// +kubebuilder:validation:XValidation:rule="!has(self.antiAffinityGroups) || size(self.antiAffinityGroups) <= 8",message="maximum 8 anti-affinity groups allowed"
 type ExoscaleNodeClassSpec struct {
 	// TemplateID is the ID of the template to use for instances
 	// +kubebuilder:validation:Required
@@ -55,7 +54,6 @@ type ExoscaleNodeClassSpec struct {
 
 	// AntiAffinityGroups is a list of anti-affinity group IDs
 	// +optional
-	// +kubebuilder:validation:MaxItems=8
 	AntiAffinityGroups []string `json:"antiAffinityGroups,omitempty"`
 
 	// PrivateNetworks is a list of private network IDs to attach to instances

@@ -65,6 +65,10 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleN
 
 	instanceName := fmt.Sprintf("%s-%s", p.clusterName, nodeClaim.Name)
 
+	if err := p.checkAntiAffinityGroups(ctx, nodeClass.Spec.AntiAffinityGroups); err != nil {
+		return nil, fmt.Errorf("anti-affinity group capacity check failed: %w", err)
+	}
+
 	createRequest := egov3.CreateInstanceRequest{
 		Name:         instanceName,
 		InstanceType: &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
@@ -420,4 +424,33 @@ func (p *DefaultProvider) convertAntiAffinityGroups(ids []string) []egov3.AntiAf
 		result[i] = egov3.AntiAffinityGroup{ID: egov3.UUID(id)}
 	}
 	return result
+}
+
+// checkAntiAffinityGroups checks if the anti-affinity groups have capacity for new instances
+// It returns an error if any group is at or over the MaxInstancesPerAntiAffinityGroup limit
+func (p *DefaultProvider) checkAntiAffinityGroups(ctx context.Context, requestedGroups []string) error {
+	if len(requestedGroups) == 0 {
+		return nil
+	}
+
+	for _, groupID := range requestedGroups {
+		group, err := p.exoClient.GetAntiAffinityGroup(ctx, egov3.UUID(groupID))
+		if err != nil {
+			return fmt.Errorf("failed to get anti-affinity group %s: %w", groupID, err)
+		}
+
+		currentCount := len(group.Instances)
+		if currentCount >= constants.MaxInstancesPerAntiAffinityGroup {
+			return fmt.Errorf("anti-affinity group %s (%s) is at capacity: %d/%d instances",
+				groupID, group.Name, currentCount, constants.MaxInstancesPerAntiAffinityGroup)
+		}
+
+		log.FromContext(ctx).V(1).Info("anti-affinity group has capacity",
+			"groupID", groupID,
+			"groupName", group.Name,
+			"currentCount", currentCount,
+			"maxCount", constants.MaxInstancesPerAntiAffinityGroup)
+	}
+
+	return nil
 }

@@ -666,3 +666,196 @@ func TestProvider_UpdateTags_CacheInvalidation(t *testing.T) {
 
 	mockClient.AssertExpectations(t)
 }
+
+func TestProvider_Create_AntiAffinityGroupCapacity(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name                      string
+		antiAffinityGroups        []string
+		mockAntiAffinityGroups    map[string]*egov3.AntiAffinityGroup
+		expectedAntiAffinityCount int
+		expectError               bool
+	}{
+		{
+			name:               "anti-affinity group with capacity",
+			antiAffinityGroups: []string{"aag-1"},
+			mockAntiAffinityGroups: map[string]*egov3.AntiAffinityGroup{
+				"aag-1": {
+					ID:        egov3.UUID("aag-1"),
+					Name:      "test-aag-1",
+					Instances: make([]egov3.Instance, 3),
+				},
+			},
+			expectedAntiAffinityCount: 1,
+			expectError:               false,
+		},
+		{
+			name:               "anti-affinity group at capacity",
+			antiAffinityGroups: []string{"aag-1"},
+			mockAntiAffinityGroups: map[string]*egov3.AntiAffinityGroup{
+				"aag-1": {
+					ID:        egov3.UUID("aag-1"),
+					Name:      "test-aag-1",
+					Instances: make([]egov3.Instance, constants.MaxInstancesPerAntiAffinityGroup),
+				},
+			},
+			expectedAntiAffinityCount: 0,
+			expectError:               true,
+		},
+		{
+			name:               "one group at capacity in list",
+			antiAffinityGroups: []string{"aag-1", "aag-2", "aag-3"},
+			mockAntiAffinityGroups: map[string]*egov3.AntiAffinityGroup{
+				"aag-1": {
+					ID:        egov3.UUID("aag-1"),
+					Name:      "test-aag-1",
+					Instances: make([]egov3.Instance, constants.MaxInstancesPerAntiAffinityGroup),
+				},
+				"aag-2": {
+					ID:        egov3.UUID("aag-2"),
+					Name:      "test-aag-2",
+					Instances: make([]egov3.Instance, 5),
+				},
+				"aag-3": {
+					ID:        egov3.UUID("aag-3"),
+					Name:      "test-aag-3",
+					Instances: make([]egov3.Instance, 3),
+				},
+			},
+			expectedAntiAffinityCount: 0,
+			expectError:               true,
+		},
+		{
+			name:               "all groups have capacity",
+			antiAffinityGroups: []string{"aag-1", "aag-2"},
+			mockAntiAffinityGroups: map[string]*egov3.AntiAffinityGroup{
+				"aag-1": {
+					ID:        egov3.UUID("aag-1"),
+					Name:      "test-aag-1",
+					Instances: make([]egov3.Instance, 3),
+				},
+				"aag-2": {
+					ID:        egov3.UUID("aag-2"),
+					Name:      "test-aag-2",
+					Instances: make([]egov3.Instance, 5),
+				},
+			},
+			expectedAntiAffinityCount: 2,
+			expectError:               false,
+		},
+		{
+			name:                      "no anti-affinity groups",
+			antiAffinityGroups:        []string{},
+			mockAntiAffinityGroups:    map[string]*egov3.AntiAffinityGroup{},
+			expectedAntiAffinityCount: 0,
+			expectError:               false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &mocks.MockExoscaleClient{}
+			mockInstanceTypeProvider := &mocks.MockInstanceTypeProvider{}
+
+			mockInstanceTypeProvider.On("Get", mock.Anything, "standard.medium").Return(&cloudprovider.InstanceType{
+				Name: "standard.medium",
+			}, nil)
+			mockInstanceTypeProvider.On("GetInstanceTypeID", "standard.medium").Return("it-123", true)
+
+			provider := &DefaultProvider{
+				exoClient:            mockClient,
+				zone:                 "ch-gva-2",
+				clusterName:          "test-cluster",
+				cache:                cache.New(30*time.Second, 60*time.Second),
+				instanceTypeProvider: mockInstanceTypeProvider,
+			}
+
+			foundFullGroup := false
+			for _, groupID := range tt.antiAffinityGroups {
+				group, exists := tt.mockAntiAffinityGroups[groupID]
+				if exists {
+					if foundFullGroup {
+						mockClient.On("GetAntiAffinityGroup", mock.Anything, egov3.UUID(groupID)).Return(group, nil).Maybe()
+					} else {
+						mockClient.On("GetAntiAffinityGroup", mock.Anything, egov3.UUID(groupID)).Return(group, nil)
+						if len(group.Instances) >= constants.MaxInstancesPerAntiAffinityGroup {
+							foundFullGroup = true
+						}
+					}
+				}
+			}
+
+			operation := &egov3.Operation{
+				ID:        egov3.UUID("op-123"),
+				State:     egov3.OperationStateSuccess,
+				Reference: &egov3.OperationReference{ID: mocks.InstanceID1},
+			}
+
+			instance := &egov3.Instance{
+				ID:    mocks.InstanceID1,
+				Name:  "test-cluster-test-nodeclaim",
+				State: egov3.InstanceStateRunning,
+				Manager: &egov3.Manager{
+					ID:   mocks.InstanceID1,
+					Type: "instance",
+				},
+				CreatedAT: time.Now(),
+				Labels: map[string]string{
+					constants.LabelManagedBy:   constants.ManagedByKarpenter,
+					constants.LabelClusterName: "test-cluster",
+					constants.LabelNodeClaim:   "test-nodeclaim",
+				},
+				InstanceType: &egov3.InstanceType{
+					ID:     egov3.UUID("it-123"),
+					Family: "standard",
+					Size:   "medium",
+				},
+			}
+
+			if !tt.expectError {
+				mockClient.On("CreateInstance", mock.Anything, mock.MatchedBy(func(req egov3.CreateInstanceRequest) bool {
+					return len(req.AntiAffinityGroups) == tt.expectedAntiAffinityCount
+				})).Return(operation, nil)
+
+				mockClient.On("Wait", mock.Anything, operation, mock.Anything).Return(operation, nil)
+				mockClient.On("GetInstance", mock.Anything, mocks.InstanceID1).Return(instance, nil)
+			}
+
+			nodeClass := &apiv1.ExoscaleNodeClass{
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					TemplateID:         string(mocks.DefaultTemplateID),
+					AntiAffinityGroups: tt.antiAffinityGroups,
+				},
+			}
+
+			nodeClaim := &karpenterv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclaim",
+				},
+				Spec: karpenterv1.NodeClaimSpec{
+					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelInstanceTypeStable,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"standard.medium"},
+							},
+						},
+					},
+				},
+			}
+
+			result, err := provider.Create(ctx, nodeClass, nodeClaim, "test-user-data", nil)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, result)
+			}
+
+			mockClient.AssertExpectations(t)
+		})
+	}
+}

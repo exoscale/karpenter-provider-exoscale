@@ -267,8 +267,7 @@ func (r *ExoscaleNodeClassReconciler) verifyExoscaleResources(ctx context.Contex
 			return fmt.Errorf("anti-affinity group %s not found or not accessible: %w", aagID, err)
 		}
 
-		// Exoscale has a limit of 8 instances per anti-affinity group
-		if len(aag.Instances) >= 8 {
+		if len(aag.Instances) >= constants.MaxInstancesPerAntiAffinityGroup {
 			log.FromContext(ctx).Info("anti-affinity group at capacity", "antiAffinityGroupID", aagID, "instances", len(aag.Instances))
 		}
 	}
