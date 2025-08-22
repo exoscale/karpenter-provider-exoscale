@@ -1,4 +1,0 @@
-kind: ExoscaleNodeClass
-apiVersion: karpenter.exoscale.com/v1
-metadata:
-  name: exoscale

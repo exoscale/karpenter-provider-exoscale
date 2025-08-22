@@ -11,3 +11,19 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+// Package v1 contains API Schema definitions for the karpenter.exoscale.com v1 API group
+// +kubebuilder:object:generate=true
+// +groupName=karpenter.exoscale.com
+package v1
+
+import (
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/scheme"
+)
+
+var (
+	GroupVersion  = schema.GroupVersion{Group: "karpenter.exoscale.com", Version: "v1"}
+	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
+	AddToScheme   = SchemeBuilder.AddToScheme
+)

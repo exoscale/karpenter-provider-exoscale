@@ -1,0 +1,52 @@
+# Git files
+.git
+.gitignore
+
+# Go build artifacts
+bin/
+vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+karpenter-exoscale
+
+# Test binaries
+*.test
+*.out
+coverage.html
+coverage.out
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Kubernetes manifests (not needed for build)
+config/
+Makefile
+PROJECT
+
+# Local env files
+.env
+.env.local
+
+# Temporary files
+tmp/
+temp/
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+
+# Development files
+.netrc
