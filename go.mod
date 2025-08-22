@@ -6,7 +6,7 @@ require (
 	github.com/awslabs/operatorpkg v0.0.0-20250624064700-e9977193119b
 	github.com/exoscale/egoscale/v3 v3.1.25
 	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/pelletier/go-toml/v2 v2.1.0
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/stretchr/testify v1.10.0
 	k8s.io/api v0.33.3
 	k8s.io/apimachinery v0.33.3
