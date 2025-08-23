@@ -158,6 +158,9 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		setInstanceCapacity(nodeClaim.Status.Capacity, createdInstance.InstanceType, nodeClass.Spec.DiskSize)
 	}
 
+	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
+	nodeClaim.Status.NodeName = fmt.Sprintf("%s-%s", c.clusterName, nodeClaim.Name)
+
 	if nodeClaim.Labels == nil {
 		nodeClaim.Labels = make(map[string]string)
 	}
@@ -413,6 +416,7 @@ func setInstanceCapacity(capacity v1.ResourceList, instanceType *egov3.InstanceT
 	capacity[v1.ResourceCPU] = *resource.NewQuantity(instanceType.Cpus, resource.DecimalSI)
 	capacity[v1.ResourceMemory] = *resource.NewQuantity(instanceType.Memory, resource.BinarySI)
 	capacity[v1.ResourceEphemeralStorage] = *resource.NewQuantity(calculateEphemeralStorageBytes(diskSizeGB), resource.BinarySI)
+	capacity[v1.ResourcePods] = *resource.NewQuantity(110, resource.DecimalSI)
 
 	if instanceType.Gpus > 0 {
 		capacity[instancetype.ResourceNvidiaGPU] = *resource.NewQuantity(instanceType.Gpus, resource.DecimalSI)

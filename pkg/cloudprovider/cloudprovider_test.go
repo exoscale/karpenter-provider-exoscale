@@ -91,6 +91,11 @@ func TestCloudProvider_Create(t *testing.T) {
 		assert.Equal(t, "ch-gva-2", result.Labels[corev1.LabelTopologyZone])
 		assert.Equal(t, "test-cluster", result.Labels[constants.LabelClusterName])
 		assert.Equal(t, karpenterv1.CapacityTypeOnDemand, result.Labels[karpenterv1.CapacityTypeLabelKey])
+
+		assert.Equal(t, "test-cluster-test-claim", result.Status.NodeName, "NodeName should be set to <cluster>-<nodeclaim>")
+		assert.NotEmpty(t, result.Status.Capacity, "Capacity should be set")
+		assert.NotEmpty(t, result.Status.Allocatable, "Allocatable should be set")
+		assert.Equal(t, result.Status.Capacity, result.Status.Allocatable, "Allocatable should match Capacity initially")
 	})
 
 	t.Run("NodeClassNotFound", func(t *testing.T) {
