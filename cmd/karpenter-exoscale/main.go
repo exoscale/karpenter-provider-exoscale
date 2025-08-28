@@ -20,9 +20,19 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator"
 )
 
+// These variables are populated via ldflags in the goreleaser config.
+var (
+	commit    string
+	branch    string
+	buildDate string
+	version   string
+)
+
 func main() {
 	ctx := context.Background()
 	ctxOp, op := operator.NewOperator()
+
+	op.GetLogger().V(0).Info("starting operator", "version", version, "commit", commit, "branch", branch, "buildDate", buildDate)
 
 	if err := run(ctx, ctxOp, op); err != nil {
 		op.GetLogger().Error(err, "operator failed")

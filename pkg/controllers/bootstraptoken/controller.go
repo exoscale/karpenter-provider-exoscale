@@ -89,10 +89,7 @@ func (r *Controller) isBootstrapToken(secret *v1.Secret) bool {
 func (r *Controller) isTokenExpired(secret *v1.Secret) bool {
 	createdStr, ok := secret.Annotations[constants.AnnotationTokenCreated]
 	if !ok {
-		if time.Since(secret.CreationTimestamp.Time) > constants.DefaultBootstrapTokenTTL {
-			return true
-		}
-		return false
+		return time.Since(secret.CreationTimestamp.Time) > constants.DefaultBootstrapTokenTTL
 	}
 
 	created, err := time.Parse(time.RFC3339, createdStr)
