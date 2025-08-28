@@ -17,10 +17,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/build
+      - run: make go.mk
 
-      - run: make clean
-        shell: bash
+      - uses: ./go.mk/.github/actions/setup
+
+      - uses: ./go.mk/.github/actions/pre-check
 
       - name: Import GPG key
         # This is a third-party GitHub action and we trust it with our GPG key.
