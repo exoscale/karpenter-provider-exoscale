@@ -23,7 +23,7 @@ dockers:
       - "exoscale/karpenter:{{ .Major }}"
       - "exoscale/karpenter:{{ .Major }}.{{ .Minor }}"
       - "exoscale/karpenter:{{ .Major }}.{{ .Minor }}.{{ .Patch }}"
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     build_flag_templates:
       - --pull
       - --build-arg="VERSION={{.Version}}"
