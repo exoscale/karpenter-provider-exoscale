@@ -4,6 +4,7 @@
 
 # Go build artifacts
 bin/
+vendor/
 *.exe
 *.exe~
 *.dll
