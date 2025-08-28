@@ -1,0 +1,27 @@
+## Project
+
+# Dependencies
+# (do not pull the entire Go build environment in)
+go.mk/version.mk:
+include go.mk/version.mk
+
+
+## Targets
+
+# Docker
+
+.PHONY: docker
+docker:
+	docker build --rm \
+	  -t exoscale/karpenter \
+	  --build-arg VERSION="${VERSION}" \
+	  --build-arg VCS_REF="${GIT_REVISION}" \
+      --build-arg VCS_BRANCH="${GIT_BRANCH}" \
+	  --build-arg BUILD_DATE="$(shell date -u +"%Y-%m-%dT%H:%m:%SZ")" \
+	  .
+	docker tag exoscale/karpenter:latest exoscale/karpenter:${VERSION}
+
+.PHONY: docker-push
+docker-push:
+	docker push exoscale/karpenter:latest \
+	  && docker push exoscale/karpenter:${VERSION}

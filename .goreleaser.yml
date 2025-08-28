@@ -1,0 +1,53 @@
+builds:
+  - id: karpenter-exoscale
+    binary: karpenter-exoscale
+    main: ./cmd/karpenter-exoscale
+    env:
+      - CGO_ENABLED=0
+      - GO_PKG=github.com/exoscale/karpenter-exoscale
+    flags:
+      # - -mod=vendor
+      - -trimpath
+    ldflags:
+      - -s -w -X {{.Env.GO_PKG}}/exoscale.version={{.Version}} -X {{.Env.GO_PKG}}/exoscale.commit={{.ShortCommit}}
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+dockers:
+  - goos: linux
+    goarch: amd64
+    image_templates:
+      - "exoscale/karpenter:latest"
+      - "exoscale/karpenter:{{ .Major }}"
+      - "exoscale/karpenter:{{ .Major }}.{{ .Minor }}"
+      - "exoscale/karpenter:{{ .Major }}.{{ .Minor }}.{{ .Patch }}"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - --pull
+      - --build-arg="VERSION={{.Version}}"
+      - --build-arg="VCS_REF={{.ShortCommit}}"
+      - --build-arg="BUILD_DATE={{.Date}}"
+
+signs:
+  - cmd: gpg
+    args:
+      [
+        "--default-key",
+        "7100E8BFD6199CE0374CB7F003686F8CDE378D41",
+        "--detach-sign",
+        "${artifact}",
+      ]
+    artifacts: all
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ .Tag }}-snapshot"
+
+release:
+  github:
+    owner: exoscale
+    name: karpenter-exoscale
