@@ -1,0 +1,11 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: karpenter-exoscale
+spec:
+  selector:
+    matchLabels:
+      app: karpenter-exoscale
+  endpoints:
+    - port: metrics
+      interval: 30s

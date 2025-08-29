@@ -1,0 +1,25 @@
+name: kubeconform
+on:
+  push:
+    branches:
+      - "**"
+    # paths:
+    #   - "config/**"
+jobs:
+  kubeconform:
+    runs-on: ubuntu-latest
+    steps:
+      - name: login to Github Packages
+        run: echo "${{ github.token }}" | docker login https://ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+      - uses: actions/checkout@v2
+      - uses: docker://ghcr.io/yannh/kubeconform:latest
+        with:
+          entrypoint: "/kubeconform"
+          args: >
+            -summary -output json
+            -schema-location default
+            -schema-location https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+            -schema-location https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.85.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml 
+            -schema-location https://raw.githubusercontent.com/kubernetes/autoscaler/refs/heads/master/vertical-pod-autoscaler/deploy/vpa-crd.yaml 
+            -ignore-missing-schemas
+            config/
