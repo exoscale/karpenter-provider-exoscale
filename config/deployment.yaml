@@ -37,6 +37,9 @@ spec:
               drop: ["ALL"]
           ports:
             - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
               name: http
               protocol: TCP
           resources:
@@ -48,13 +51,13 @@ spec:
               memory: 256Mi
           livenessProbe:
             httpGet:
-              path: /healthz # TODO Validate it
+              path: /healthz
               port: http
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /ready # TODO Validate it
+              path: /readyz
               port: http
             initialDelaySeconds: 5
             periodSeconds: 15

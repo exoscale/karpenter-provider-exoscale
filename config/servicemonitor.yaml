@@ -7,5 +7,5 @@ spec:
     matchLabels:
       app: karpenter-exoscale
   endpoints:
-    - port: http
+    - port: metrics
       interval: 30s

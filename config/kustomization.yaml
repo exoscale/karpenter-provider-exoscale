@@ -1,0 +1,10 @@
+kind: Kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+
+# Don't include CRDs here, it's only for the target cluster
+resources:
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
+  - poddisruptionbudget.yaml
+  - verticalpodautoscaler.yaml
