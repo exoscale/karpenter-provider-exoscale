@@ -5,3 +5,8 @@ resources:
   - https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.5.4/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
   - https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.5.4/pkg/apis/crds/karpenter.sh_nodepools.yaml
   - karpenter.exoscale.com_exoscalenodeclasses.yaml
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
+  - poddisruptionbudget.yaml
+  - verticalpodautoscaler.yaml
