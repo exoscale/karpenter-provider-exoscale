@@ -13,7 +13,6 @@ import (
 )
 
 type Options struct {
-	ClusterName                 string
 	ClusterEndpoint             string
 	ClusterDNS                  string
 	ClusterDomain               string

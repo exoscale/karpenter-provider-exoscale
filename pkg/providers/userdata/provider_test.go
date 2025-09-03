@@ -107,7 +107,6 @@ clusters:
 		}
 
 		options := &Options{
-			ClusterName:    "test-cluster",
 			BootstrapToken: "abcdef.1234567890abcdef",
 		}
 
@@ -130,7 +129,6 @@ clusters:
 		}
 
 		options := &Options{
-			ClusterName:    "test-cluster",
 			BootstrapToken: "abcdef.1234567890abcdef",
 			CABundle:       []byte("provided-ca-cert"),
 		}
@@ -164,7 +162,6 @@ clusters:
 		}
 
 		options := &Options{
-			ClusterName:    "test-cluster",
 			BootstrapToken: "abcdef.1234567890abcdef",
 		}
 
@@ -183,7 +180,6 @@ clusters:
 		}
 
 		options := &Options{
-			ClusterName:    "test-cluster",
 			BootstrapToken: "abcdef.1234567890abcdef",
 		}
 
@@ -226,7 +222,6 @@ clusters:
 		}
 
 		options := &Options{
-			ClusterName:    "test-cluster",
 			BootstrapToken: "abcdef.1234567890abcdef",
 			CABundle:       []byte("test-ca-cert"),
 		}
@@ -254,7 +249,6 @@ clusters:
 		}
 
 		options := &Options{
-			ClusterName:    "test-cluster",
 			BootstrapToken: "abcdef.1234567890abcdef",
 		}
 

@@ -13,7 +13,6 @@ type Provider interface {
 }
 
 type Options struct {
-	ClusterName                 string
 	ClusterEndpoint             string
 	ClusterDNS                  string
 	ClusterDomain               string

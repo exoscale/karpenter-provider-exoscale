@@ -67,7 +67,6 @@ func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.Exoscal
 	}
 
 	bootstrapOptions := &bootstrap.Options{
-		ClusterName:                 options.ClusterName,
 		ClusterEndpoint:             options.ClusterEndpoint,
 		ClusterDNS:                  options.ClusterDNS,
 		ClusterDomain:               options.ClusterDomain,
