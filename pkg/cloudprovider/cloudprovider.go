@@ -47,7 +47,7 @@ type CloudProvider struct {
 	instanceTypeProvider instancetype.Provider
 	instanceProvider     instance.Provider
 	userDataProvider     userdata.Provider
-	clusterName          string
+	clusterID            string
 	zone                 string
 	clusterDNS           string
 	clusterDomain        string
@@ -62,7 +62,7 @@ func NewCloudProvider(
 	instanceProvider instance.Provider,
 	userDataProvider userdata.Provider,
 	zone string,
-	clusterName string,
+	clusterID string,
 	clusterDNS string,
 	clusterDomain string,
 ) *CloudProvider {
@@ -81,7 +81,7 @@ func NewCloudProvider(
 		instanceTypeProvider: instanceTypeProvider,
 		instanceProvider:     instanceProvider,
 		userDataProvider:     userDataProvider,
-		clusterName:          clusterName,
+		clusterID:            clusterID,
 		zone:                 zone,
 		clusterDNS:           clusterDNS,
 		clusterDomain:        clusterDomain,
@@ -158,7 +158,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	}
 
 	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
-	nodeClaim.Status.NodeName = fmt.Sprintf("%s-%s", c.clusterName, nodeClaim.Name)
+	nodeClaim.Status.NodeName = utils.GenerateInstanceName(c.clusterID, nodeClaim.Name)
 
 	if nodeClaim.Labels == nil {
 		nodeClaim.Labels = make(map[string]string)
@@ -169,7 +169,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	}
 
 	nodeClaim.Labels[v1.LabelTopologyZone] = c.zone
-	nodeClaim.Labels[constants.LabelClusterName] = c.clusterName
+	nodeClaim.Labels[constants.LabelClusterID] = c.clusterID
 	nodeClaim.Labels[karpenterv1.CapacityTypeLabelKey] = karpenterv1.CapacityTypeOnDemand
 
 	return nodeClaim, nil

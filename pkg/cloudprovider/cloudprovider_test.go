@@ -89,10 +89,10 @@ func TestCloudProvider_Create(t *testing.T) {
 		assert.Equal(t, utils.FormatProviderID(string(mocks.InstanceID1)), result.Status.ProviderID)
 		assert.Equal(t, "standard.small", result.Labels[corev1.LabelInstanceTypeStable])
 		assert.Equal(t, "ch-gva-2", result.Labels[corev1.LabelTopologyZone])
-		assert.Equal(t, "test-cluster", result.Labels[constants.LabelClusterName])
+		assert.Equal(t, "25f39e1e-c8fa-4143-9e5f-63a9e45115fa", result.Labels[constants.LabelClusterID])
 		assert.Equal(t, karpenterv1.CapacityTypeOnDemand, result.Labels[karpenterv1.CapacityTypeLabelKey])
 
-		assert.Equal(t, "test-cluster-test-claim", result.Status.NodeName, "NodeName should be set to <cluster>-<nodeclaim>")
+		assert.Equal(t, "25f39e1e-c8fa-4143-9e5f-63a9e45115fa-test-claim", result.Status.NodeName, "NodeName should be set to <cluster>-<nodeclaim>")
 		assert.NotEmpty(t, result.Status.Capacity, "Capacity should be set")
 		assert.NotEmpty(t, result.Status.Allocatable, "Allocatable should be set")
 		assert.Equal(t, result.Status.Capacity, result.Status.Allocatable, "Allocatable should match Capacity initially")

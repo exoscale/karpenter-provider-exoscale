@@ -26,7 +26,7 @@ This provider enables Karpenter to provision and manage Exoscale compute instanc
 Karpenter Exoscale implementation requires some configuration to work properly.
 
 Here is the required environment variables:
-* `CLUSTER_NAME`: Name of your Kubernetes cluster. It will be used to filter nodes in Exoscale APIs.
+* `EXOSCALE_SKS_CLUSTER_ID`: unique identifier (UUID) of your Kubernetes cluster. It will be used to filter nodes in Exoscale APIs.
 * `CLUSTER_DNS_IP`: DNS IP of your Kubernetes cluster. It will be setup in Kubelet configuration.
 * `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be setup in Kubelet configuration.
 * `EXOSCALE_API_KEY`: Your Exoscale API key
