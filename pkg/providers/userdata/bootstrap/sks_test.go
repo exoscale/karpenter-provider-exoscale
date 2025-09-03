@@ -19,7 +19,6 @@ func TestSKSBootstrap_Generate(t *testing.T) {
 		bootstrap := New()
 
 		options := &Options{
-			ClusterName:     "test-cluster",
 			ClusterEndpoint: "https://test-api.example.com",
 			ClusterDNS:      "10.96.0.10",
 			ClusterDomain:   "cluster.local",
@@ -73,7 +72,6 @@ func TestSKSBootstrap_Generate(t *testing.T) {
 		bootstrap := New()
 
 		options := &Options{
-			ClusterName:     "test-cluster",
 			ClusterEndpoint: "https://test-api.example.com",
 			ClusterDNS:      "10.96.0.10,10.96.0.11",
 			ClusterDomain:   "cluster.local",
@@ -105,7 +103,6 @@ func TestSKSBootstrap_Generate(t *testing.T) {
 		bootstrap := New()
 
 		options := &Options{
-			ClusterName:     "test-cluster",
 			ClusterEndpoint: "https://test-api.example.com",
 			ClusterDNS:      "10.96.0.10",
 			ClusterDomain:   "cluster.local",
@@ -158,7 +155,6 @@ func TestSKSBootstrap_Generate(t *testing.T) {
 
 		// Options also has the same GPU taint
 		options := &Options{
-			ClusterName:     "test-cluster",
 			ClusterEndpoint: "https://test-api.example.com",
 			ClusterDNS:      "10.96.0.10",
 			ClusterDomain:   "cluster.local",
@@ -199,7 +195,6 @@ func TestSKSBootstrap_Generate(t *testing.T) {
 		bootstrap := New()
 
 		options := &Options{
-			ClusterName:     "test-cluster",
 			ClusterEndpoint: "https://test-api.example.com",
 			ClusterDNS:      "10.96.0.10",
 			ClusterDomain:   "cluster.local",
@@ -215,7 +210,6 @@ func TestSKSBootstrap_Generate(t *testing.T) {
 		bootstrap := New()
 
 		options := &Options{
-			ClusterName:     "test-cluster",
 			ClusterEndpoint: "https://test-api.example.com",
 			ClusterDNS:      "10.96.0.10",
 			ClusterDomain:   "cluster.local",

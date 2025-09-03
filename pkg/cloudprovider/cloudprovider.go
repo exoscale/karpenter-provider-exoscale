@@ -120,7 +120,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	nodeTaints = append(nodeTaints, nodeClaim.Spec.StartupTaints...)
 
 	userDataOptions := &userdata.Options{
-		ClusterName:     c.clusterName,
 		ClusterEndpoint: c.clusterEndpoint,
 		ClusterDNS:      c.clusterDNS,
 		ClusterDomain:   c.clusterDomain,

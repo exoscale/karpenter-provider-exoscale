@@ -21,6 +21,22 @@ This provider enables Karpenter to provision and manage Exoscale compute instanc
 - **Providers**: Instance, Instance Type, Pricing, User Data
 - **Features**: Drift detection, self-healing, secure bootstrapping, cost optimization
 
+## Configuration
+
+Karpenter Exoscale implementation requires some configuration to work properly.
+
+Here is the required environment variables:
+* `CLUSTER_NAME`: Name of your Kubernetes cluster. It will be used to filter nodes in Exoscale APIs.
+* `CLUSTER_DNS_IP`: DNS IP of your Kubernetes cluster. It will be setup in Kubelet configuration.
+* `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be setup in Kubelet configuration.
+* `EXOSCALE_API_KEY`: Your Exoscale API key
+* `EXOSCALE_API_SECRET`: Your Exoscale API secret
+* `EXOSCALE_ZONE`: SKS zone hosting your SKS cluster
+
+Only if out-of-cluster:
+* `KUBECONFIG`: Path to your kubeconfig file.
+
+
 ## License
 
 Apache License 2.0
