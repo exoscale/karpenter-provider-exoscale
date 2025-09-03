@@ -34,8 +34,8 @@ Here is the required environment variables:
 * `EXOSCALE_ZONE`: SKS zone hosting your SKS cluster
 
 Only if out-of-cluster:
-* `KUBECONFIG`: Path to your kubeconfig file.
-
+* `KUBECONFIG`: Path to your kubeconfig file. You can extract it from your cluster view in our
+  [console](https://portal.exoscale.com)
 
 ## License
 
