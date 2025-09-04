@@ -29,15 +29,17 @@ type DefaultProvider struct {
 	exoClient            EgoscaleClient
 	zone                 string
 	clusterID            string
+	instancePrefix       string
 	cache                *cache.Cache
 	instanceTypeProvider instancetype.Provider
 }
 
-func NewProvider(exoClient EgoscaleClient, zone, clusterID string, instanceTypeProvider instancetype.Provider) Provider {
+func NewProvider(exoClient EgoscaleClient, zone, clusterID, instancePrefix string, instanceTypeProvider instancetype.Provider) Provider {
 	return &DefaultProvider{
 		exoClient:            exoClient,
 		zone:                 zone,
 		clusterID:            clusterID,
+		instancePrefix:       instancePrefix,
 		cache:                cache.New(cacheTTL, cacheCleanup),
 		instanceTypeProvider: instanceTypeProvider,
 	}
@@ -64,7 +66,7 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleN
 		return nil, fmt.Errorf("failed to find instance type ID for %s", instanceTypeName)
 	}
 
-	instanceName := utils.GenerateInstanceName(p.clusterID, nodeClaim.Name)
+	instanceName := utils.GenerateInstanceName(p.instancePrefix, nodeClaim.Name)
 
 	if err := p.checkAntiAffinityGroups(ctx, nodeClass.Spec.AntiAffinityGroups); err != nil {
 		return nil, fmt.Errorf("anti-affinity group capacity check failed: %w", err)

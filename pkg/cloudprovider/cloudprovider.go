@@ -51,6 +51,7 @@ type CloudProvider struct {
 	zone                 string
 	clusterDNS           string
 	clusterDomain        string
+	instancePrefix       string
 }
 
 func NewCloudProvider(
@@ -65,6 +66,7 @@ func NewCloudProvider(
 	clusterID string,
 	clusterDNS string,
 	clusterDomain string,
+	instancePrefix string,
 ) *CloudProvider {
 	if clusterDNS == "" {
 		clusterDNS = DefaultClusterDNS
@@ -85,6 +87,7 @@ func NewCloudProvider(
 		zone:                 zone,
 		clusterDNS:           clusterDNS,
 		clusterDomain:        clusterDomain,
+		instancePrefix:       instancePrefix,
 	}
 }
 
@@ -158,7 +161,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	}
 
 	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
-	nodeClaim.Status.NodeName = utils.GenerateInstanceName(c.clusterID, nodeClaim.Name)
+	nodeClaim.Status.NodeName = utils.GenerateInstanceName(c.instancePrefix, nodeClaim.Name)
 
 	if nodeClaim.Labels == nil {
 		nodeClaim.Labels = make(map[string]string)

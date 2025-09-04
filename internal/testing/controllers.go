@@ -221,6 +221,7 @@ func SetupCloudProviderTestEnvironment(t *testing.T) *CloudProviderTestEnvironme
 		"25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		"10.96.0.10",
 		"cluster.local",
+		"karpenter",
 	)
 
 	return &CloudProviderTestEnvironment{

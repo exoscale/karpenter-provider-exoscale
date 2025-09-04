@@ -37,6 +37,7 @@ func TestProvider_Create(t *testing.T) {
 		clusterID:            "test-cluster",
 		cache:                cacheInstance,
 		instanceTypeProvider: mockInstanceTypeProvider,
+		instancePrefix:       "karpenter",
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -112,6 +113,7 @@ func TestProvider_Delete(t *testing.T) {
 			zone:                 "ch-gva-2",
 			clusterID:            "test-cluster",
 			cache:                cache.New(30*time.Second, 60*time.Second),
+			instancePrefix:       "karpenter",
 		}
 
 		operation := &egov3.Operation{
@@ -139,6 +141,7 @@ func TestProvider_Delete(t *testing.T) {
 			zone:                 "ch-gva-2",
 			clusterID:            "test-cluster",
 			cache:                cache.New(30*time.Second, 60*time.Second),
+			instancePrefix:       "karpenter",
 		}
 
 		mockClient.On("DeleteInstance", mock.Anything, mocks.InstanceID1).Return(nil, egov3.ErrNotFound)
@@ -160,6 +163,7 @@ func TestProvider_Delete(t *testing.T) {
 			zone:                 "ch-gva-2",
 			clusterID:            "test-cluster",
 			cache:                cache.New(30*time.Second, 60*time.Second),
+			instancePrefix:       "karpenter",
 		}
 
 		// Network error when deleting
@@ -184,6 +188,7 @@ func TestProvider_Get(t *testing.T) {
 		zone:                 "ch-gva-2",
 		clusterID:            "test-cluster",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	createdAt := time.Now()
@@ -216,6 +221,7 @@ func TestProvider_List(t *testing.T) {
 		zone:                 "ch-gva-2",
 		clusterID:            "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	instances := []egov3.ListInstancesResponseInstances{
@@ -293,6 +299,7 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 		zone:                 "ch-gva-2",
 		clusterID:            "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -334,7 +341,7 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 
 	instance := &egov3.Instance{
 		ID:    mocks.InstanceID1,
-		Name:  "25f39e1e-c8fa-4143-9e5f-63a9e45115fa-test-nodeclaim",
+		Name:  "karpenter-test-nodeclaim",
 		State: egov3.InstanceStateRunning,
 	}
 
@@ -362,7 +369,7 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 			return false
 		}
 
-		return req.Name == "25f39e1e-c8fa-4143-9e5f-63a9e45115fa-test-nodeclaim" &&
+		return req.Name == "karpenter-test-nodeclaim" &&
 			req.Template.ID == mocks.DefaultTemplateID &&
 			req.UserData == "test-user-data"
 	})).Return(operation, nil)
@@ -391,6 +398,7 @@ func TestProvider_Create_ErrorOnCreateInstance(t *testing.T) {
 		clusterID:            "test-cluster",
 		cache:                cache.New(30*time.Second, 60*time.Second),
 		instanceTypeProvider: mockInstanceTypeProvider,
+		instancePrefix:       "karpenter",
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -440,6 +448,7 @@ func TestProvider_Get_NotFound(t *testing.T) {
 		zone:                 "ch-gva-2",
 		clusterID:            "test-cluster",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	mockClient.On("GetInstance", mock.Anything, mocks.InstanceID1).
@@ -564,6 +573,7 @@ func TestProvider_UpdateTags(t *testing.T) {
 				zone:                 "ch-gva-2",
 				clusterID:            "test-cluster",
 				cache:                cache.New(30*time.Second, 60*time.Second),
+				instancePrefix:       "karpenter",
 			}
 
 			if tt.getInstanceError != nil {
@@ -625,6 +635,7 @@ func TestProvider_UpdateTags_CacheInvalidation(t *testing.T) {
 		zone:                 "ch-gva-2",
 		clusterID:            "test-cluster",
 		cache:                cacheInstance,
+		instancePrefix:       "karpenter",
 	}
 
 	instanceID := string(mocks.InstanceID1)
@@ -769,6 +780,7 @@ func TestProvider_Create_AntiAffinityGroupCapacity(t *testing.T) {
 				clusterID:            "test-cluster",
 				cache:                cache.New(30*time.Second, 60*time.Second),
 				instanceTypeProvider: mockInstanceTypeProvider,
+				instancePrefix:       "karpenter",
 			}
 
 			foundFullGroup := false

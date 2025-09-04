@@ -61,7 +61,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		return fmt.Errorf("failed to refresh instance types: %w", err)
 	}
 
-	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, instanceTypeProvider)
+	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider)
 
 	userDataProvider := userdata.NewProvider(op.GetClient(), op.GetConfig().Host, config.ClusterDNS, config.ClusterDomain)
 
@@ -77,6 +77,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		config.ClusterID,
 		config.ClusterDNS,
 		config.ClusterDomain,
+		config.InstancePrefix,
 	)
 
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
@@ -101,12 +102,13 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 }
 
 type Config struct {
-	Zone          string
-	ClusterID     string
-	APIKey        string
-	APISecret     string
-	ClusterDNS    string
-	ClusterDomain string
+	Zone           string
+	ClusterID      string
+	InstancePrefix string
+	APIKey         string
+	APISecret      string
+	ClusterDNS     string
+	ClusterDomain  string
 }
 
 func loadConfiguration() (*Config, error) {
@@ -125,6 +127,11 @@ func loadConfiguration() (*Config, error) {
 
 	if _, err := uuid.Parse(config.ClusterID); err != nil {
 		return nil, fmt.Errorf("EXOSCALE_SKS_CLUSTER_ID environment variable is not a valid UUID")
+	}
+
+	config.InstancePrefix = os.Getenv("EXOSCALE_COMPUTE_INSTANCE_PREFIX")
+	if config.InstancePrefix == "" {
+		config.InstancePrefix = "karpenter-"
 	}
 
 	config.APIKey, err = getRequiredEnv("EXOSCALE_API_KEY")
