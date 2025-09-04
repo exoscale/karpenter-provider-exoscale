@@ -1,7 +1,7 @@
 Changelog
 =========
 
-Unreleased
+0.0.2
 ----------
 
 - Add Karpenter deployment manifests
