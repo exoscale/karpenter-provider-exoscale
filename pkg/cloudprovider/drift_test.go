@@ -33,9 +33,9 @@ func createBaseInstance() *instance.Instance {
 		AntiAffinityGroups: []string{string(mocks.DefaultAntiAffinityGroupID)},
 		Zone:               "ch-gva-2",
 		Labels: map[string]string{
-			constants.LabelManagedBy:   constants.ManagedByKarpenter,
-			constants.LabelClusterName: "test-cluster",
-			constants.LabelNodeClaim:   "test-node-claim",
+			constants.LabelManagedBy: constants.ManagedByKarpenter,
+			constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
+			constants.LabelNodeClaim: "test-node-claim",
 		},
 	}
 }

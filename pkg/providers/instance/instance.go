@@ -12,6 +12,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-exoscale/pkg/errors"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
+	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -27,16 +28,18 @@ const (
 type DefaultProvider struct {
 	exoClient            EgoscaleClient
 	zone                 string
-	clusterName          string
+	clusterID            string
+	instancePrefix       string
 	cache                *cache.Cache
 	instanceTypeProvider instancetype.Provider
 }
 
-func NewProvider(exoClient EgoscaleClient, zone, clusterName string, instanceTypeProvider instancetype.Provider) Provider {
+func NewProvider(exoClient EgoscaleClient, zone, clusterID, instancePrefix string, instanceTypeProvider instancetype.Provider) Provider {
 	return &DefaultProvider{
 		exoClient:            exoClient,
 		zone:                 zone,
-		clusterName:          clusterName,
+		clusterID:            clusterID,
+		instancePrefix:       instancePrefix,
 		cache:                cache.New(cacheTTL, cacheCleanup),
 		instanceTypeProvider: instanceTypeProvider,
 	}
@@ -63,7 +66,7 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleN
 		return nil, fmt.Errorf("failed to find instance type ID for %s", instanceTypeName)
 	}
 
-	instanceName := fmt.Sprintf("%s-%s", p.clusterName, nodeClaim.Name)
+	instanceName := utils.GenerateInstanceName(p.instancePrefix, nodeClaim.Name)
 
 	if err := p.checkAntiAffinityGroups(ctx, nodeClass.Spec.AntiAffinityGroups); err != nil {
 		return nil, fmt.Errorf("anti-affinity group capacity check failed: %w", err)
@@ -76,9 +79,9 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleN
 		DiskSize:     nodeClass.Spec.DiskSize,
 		UserData:     userData,
 		Labels: map[string]string{
-			constants.LabelManagedBy:   constants.ManagedByKarpenter,
-			constants.LabelClusterName: p.clusterName,
-			constants.LabelNodeClaim:   nodeClaim.Name,
+			constants.LabelManagedBy: constants.ManagedByKarpenter,
+			constants.LabelClusterID: p.clusterID,
+			constants.LabelNodeClaim: nodeClaim.Name,
 		},
 		SecurityGroups:     p.convertSecurityGroups(nodeClass.Spec.SecurityGroups),
 		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Spec.AntiAffinityGroups),
@@ -209,12 +212,12 @@ func (p *DefaultProvider) List(ctx context.Context) ([]*Instance, error) {
 			continue
 		}
 		managedBy, hasManagedBy := instance.Labels[constants.LabelManagedBy]
-		clusterName, hasClusterName := instance.Labels[constants.LabelClusterName]
+		clusterID, hasClusterName := instance.Labels[constants.LabelClusterID]
 
 		if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
 			continue
 		}
-		if !hasClusterName || clusterName != p.clusterName {
+		if !hasClusterName || clusterID != p.clusterID {
 			continue
 		}
 

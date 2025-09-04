@@ -3,9 +3,9 @@ package constants
 import "time"
 
 const (
-	LabelManagedBy   = "exoscale.com/managed-by"
-	LabelClusterName = "exoscale.com/cluster-name"
-	LabelNodeClaim   = "exoscale.com/node-claim"
+	LabelManagedBy = "exoscale.com/managed-by"
+	LabelClusterID = "exoscale.com/cluster-id"
+	LabelNodeClaim = "exoscale.com/node-claim"
 
 	ManagedByKarpenter = "karpenter"
 

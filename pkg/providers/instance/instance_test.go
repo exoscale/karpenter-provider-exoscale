@@ -34,9 +34,10 @@ func TestProvider_Create(t *testing.T) {
 	provider := &DefaultProvider{
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
-		clusterName:          "test-cluster",
+		clusterID:            "test-cluster",
 		cache:                cacheInstance,
 		instanceTypeProvider: mockInstanceTypeProvider,
+		instancePrefix:       "karpenter",
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -85,7 +86,7 @@ func TestProvider_Create(t *testing.T) {
 
 	mockClient.On("CreateInstance", mock.Anything, mock.MatchedBy(func(req egov3.CreateInstanceRequest) bool {
 		return req.Labels[constants.LabelManagedBy] == constants.ManagedByKarpenter &&
-			req.Labels[constants.LabelClusterName] == "test-cluster" &&
+			req.Labels[constants.LabelClusterID] == "test-cluster" &&
 			req.Labels[constants.LabelNodeClaim] == "test-nodeclaim"
 	})).Return(operation, nil)
 	mockClient.On("Wait", mock.Anything, operation, mock.Anything).Return(operation, nil)
@@ -110,8 +111,9 @@ func TestProvider_Delete(t *testing.T) {
 			instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 			exoClient:            mockClient,
 			zone:                 "ch-gva-2",
-			clusterName:          "test-cluster",
+			clusterID:            "test-cluster",
 			cache:                cache.New(30*time.Second, 60*time.Second),
+			instancePrefix:       "karpenter",
 		}
 
 		operation := &egov3.Operation{
@@ -137,8 +139,9 @@ func TestProvider_Delete(t *testing.T) {
 			instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 			exoClient:            mockClient,
 			zone:                 "ch-gva-2",
-			clusterName:          "test-cluster",
+			clusterID:            "test-cluster",
 			cache:                cache.New(30*time.Second, 60*time.Second),
+			instancePrefix:       "karpenter",
 		}
 
 		mockClient.On("DeleteInstance", mock.Anything, mocks.InstanceID1).Return(nil, egov3.ErrNotFound)
@@ -158,8 +161,9 @@ func TestProvider_Delete(t *testing.T) {
 			instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 			exoClient:            mockClient,
 			zone:                 "ch-gva-2",
-			clusterName:          "test-cluster",
+			clusterID:            "test-cluster",
 			cache:                cache.New(30*time.Second, 60*time.Second),
+			instancePrefix:       "karpenter",
 		}
 
 		// Network error when deleting
@@ -182,8 +186,9 @@ func TestProvider_Get(t *testing.T) {
 		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
-		clusterName:          "test-cluster",
+		clusterID:            "test-cluster",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	createdAt := time.Now()
@@ -214,8 +219,9 @@ func TestProvider_List(t *testing.T) {
 		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
-		clusterName:          "test-cluster",
+		clusterID:            "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	instances := []egov3.ListInstancesResponseInstances{
@@ -223,24 +229,24 @@ func TestProvider_List(t *testing.T) {
 			ID:   mocks.InstanceID1,
 			Name: "test-cluster-node-1",
 			Labels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 			},
 		},
 		{
 			ID:   mocks.InstanceID2,
 			Name: "test-cluster-node-2",
 			Labels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 			},
 		},
 		{
 			ID:   mocks.InstanceID3,
 			Name: "other-cluster-node",
 			Labels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "other-cluster",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "other-cluster",
 			},
 		},
 	}
@@ -255,8 +261,8 @@ func TestProvider_List(t *testing.T) {
 		ID:   mocks.InstanceID1,
 		Name: "test-cluster-node-1",
 		Labels: map[string]string{
-			constants.LabelManagedBy:   constants.ManagedByKarpenter,
-			constants.LabelClusterName: "test-cluster",
+			constants.LabelManagedBy: constants.ManagedByKarpenter,
+			constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		},
 		AntiAffinityGroups: []egov3.AntiAffinityGroup{},
 	}
@@ -264,8 +270,8 @@ func TestProvider_List(t *testing.T) {
 		ID:   mocks.InstanceID2,
 		Name: "test-cluster-node-2",
 		Labels: map[string]string{
-			constants.LabelManagedBy:   constants.ManagedByKarpenter,
-			constants.LabelClusterName: "test-cluster",
+			constants.LabelManagedBy: constants.ManagedByKarpenter,
+			constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		},
 		AntiAffinityGroups: []egov3.AntiAffinityGroup{},
 	}
@@ -291,8 +297,9 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 		instanceTypeProvider: mockInstanceTypeProvider,
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
-		clusterName:          "test-cluster",
+		clusterID:            "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -334,16 +341,16 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 
 	instance := &egov3.Instance{
 		ID:    mocks.InstanceID1,
-		Name:  "test-cluster-test-nodeclaim",
+		Name:  "karpenter-test-nodeclaim",
 		State: egov3.InstanceStateRunning,
 	}
 
 	expectedLabels := map[string]string{
-		constants.LabelManagedBy:   constants.ManagedByKarpenter,
-		constants.LabelClusterName: "test-cluster",
-		constants.LabelNodeClaim:   "test-nodeclaim",
-		"custom-tag-1":             "value1",
-		"custom-tag-2":             "value2",
+		constants.LabelManagedBy: constants.ManagedByKarpenter,
+		constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
+		constants.LabelNodeClaim: "test-nodeclaim",
+		"custom-tag-1":           "value1",
+		"custom-tag-2":           "value2",
 	}
 
 	mockInstanceTypeProvider.On("GetInstanceTypeID", "standard.medium").Return(string(mocks.StandardMediumTypeID), true)
@@ -362,7 +369,7 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 			return false
 		}
 
-		return req.Name == "test-cluster-test-nodeclaim" &&
+		return req.Name == "karpenter-test-nodeclaim" &&
 			req.Template.ID == mocks.DefaultTemplateID &&
 			req.UserData == "test-user-data"
 	})).Return(operation, nil)
@@ -388,9 +395,10 @@ func TestProvider_Create_ErrorOnCreateInstance(t *testing.T) {
 	provider := &DefaultProvider{
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
-		clusterName:          "test-cluster",
+		clusterID:            "test-cluster",
 		cache:                cache.New(30*time.Second, 60*time.Second),
 		instanceTypeProvider: mockInstanceTypeProvider,
+		instancePrefix:       "karpenter",
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -438,8 +446,9 @@ func TestProvider_Get_NotFound(t *testing.T) {
 		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
-		clusterName:          "test-cluster",
+		clusterID:            "test-cluster",
 		cache:                cache.New(30*time.Second, 60*time.Second),
+		instancePrefix:       "karpenter",
 	}
 
 	mockClient.On("GetInstance", mock.Anything, mocks.InstanceID1).
@@ -470,9 +479,9 @@ func TestProvider_UpdateTags(t *testing.T) {
 			name:       "successful update with new tags",
 			instanceID: string(mocks.InstanceID1),
 			existingLabels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
-				constants.LabelNodeClaim:   "test-claim",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
+				constants.LabelNodeClaim: "test-claim",
 			},
 			newTags: map[string]string{
 				"env":       "production",
@@ -480,42 +489,42 @@ func TestProvider_UpdateTags(t *testing.T) {
 				"component": "worker",
 			},
 			expectedLabels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
-				constants.LabelNodeClaim:   "test-claim",
-				"env":                      "production",
-				"team":                     "platform",
-				"component":                "worker",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
+				constants.LabelNodeClaim: "test-claim",
+				"env":                    "production",
+				"team":                   "platform",
+				"component":              "worker",
 			},
 		},
 		{
 			name:       "successful update overriding existing tag",
 			instanceID: string(mocks.InstanceID1),
 			existingLabels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
-				"env":                      "staging",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
+				"env":                    "staging",
 			},
 			newTags: map[string]string{
 				"env": "production",
 			},
 			expectedLabels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
-				"env":                      "production",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
+				"env":                    "production",
 			},
 		},
 		{
 			name:       "successful update with empty tags",
 			instanceID: string(mocks.InstanceID1),
 			existingLabels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 			},
 			newTags: map[string]string{},
 			expectedLabels: map[string]string{
-				constants.LabelManagedBy:   constants.ManagedByKarpenter,
-				constants.LabelClusterName: "test-cluster",
+				constants.LabelManagedBy: constants.ManagedByKarpenter,
+				constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 			},
 		},
 		{
@@ -562,8 +571,9 @@ func TestProvider_UpdateTags(t *testing.T) {
 				instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 				exoClient:            mockClient,
 				zone:                 "ch-gva-2",
-				clusterName:          "test-cluster",
+				clusterID:            "test-cluster",
 				cache:                cache.New(30*time.Second, 60*time.Second),
+				instancePrefix:       "karpenter",
 			}
 
 			if tt.getInstanceError != nil {
@@ -623,8 +633,9 @@ func TestProvider_UpdateTags_CacheInvalidation(t *testing.T) {
 		instanceTypeProvider: &mocks.MockInstanceTypeProvider{},
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
-		clusterName:          "test-cluster",
+		clusterID:            "test-cluster",
 		cache:                cacheInstance,
+		instancePrefix:       "karpenter",
 	}
 
 	instanceID := string(mocks.InstanceID1)
@@ -766,9 +777,10 @@ func TestProvider_Create_AntiAffinityGroupCapacity(t *testing.T) {
 			provider := &DefaultProvider{
 				exoClient:            mockClient,
 				zone:                 "ch-gva-2",
-				clusterName:          "test-cluster",
+				clusterID:            "test-cluster",
 				cache:                cache.New(30*time.Second, 60*time.Second),
 				instanceTypeProvider: mockInstanceTypeProvider,
+				instancePrefix:       "karpenter",
 			}
 
 			foundFullGroup := false
@@ -802,9 +814,9 @@ func TestProvider_Create_AntiAffinityGroupCapacity(t *testing.T) {
 				},
 				CreatedAT: time.Now(),
 				Labels: map[string]string{
-					constants.LabelManagedBy:   constants.ManagedByKarpenter,
-					constants.LabelClusterName: "test-cluster",
-					constants.LabelNodeClaim:   "test-nodeclaim",
+					constants.LabelManagedBy: constants.ManagedByKarpenter,
+					constants.LabelClusterID: "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
+					constants.LabelNodeClaim: "test-nodeclaim",
 				},
 				InstanceType: &egov3.InstanceType{
 					ID:     egov3.UUID("it-123"),

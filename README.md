@@ -26,7 +26,8 @@ This provider enables Karpenter to provision and manage Exoscale compute instanc
 Karpenter Exoscale implementation requires some configuration to work properly.
 
 Here is the required environment variables:
-* `CLUSTER_NAME`: Name of your Kubernetes cluster. It will be used to filter nodes in Exoscale APIs.
+* `EXOSCALE_SKS_CLUSTER_ID`: unique identifier (UUID) of your Kubernetes cluster. It will be used to filter nodes in Exoscale APIs.
+* `EXOSCALE_COMPUTE_INSTANCE_PREFIX`: prefix used to name instances created by Karpenter. Defaults to `karpenter`.
 * `CLUSTER_DNS_IP`: DNS IP of your Kubernetes cluster. It will be setup in Kubelet configuration.
 * `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be setup in Kubelet configuration.
 * `EXOSCALE_API_KEY`: Your Exoscale API key
@@ -36,6 +37,193 @@ Here is the required environment variables:
 Only if out-of-cluster:
 * `KUBECONFIG`: Path to your kubeconfig file. You can extract it from your cluster view in our
   [console](https://portal.exoscale.com)
+
+
+## NodeClasses and NodeClaims
+
+Karpenter uses NodeClasses and NodeClaims to define and manage the desired state of nodes in the cluster.
+
+- **NodeClass**: A NodeClass defines a set of requirements for a group of nodes, such as instance type, disk size, and network configuration. It acts as a template for creating nodes.
+- **NodeClaim**: A NodeClaim represents a request for a specific node to be created. It references a NodeClass and includes additional information such as workload requirements and user data.
+
+Here is an example NodeClass for regular compute:
+
+```yaml
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: standard
+spec:
+  # Template ID for the instance (required)
+  # This should be a valid Exoscale template ID from your zone
+  templateID: "<setme>"
+  
+  # Disk size in GB (default: 50, min: 10, max: 8000)
+  diskSize: 100
+  
+  # Security groups (optional)
+  # List the security group IDs to attach to instances
+  securityGroups: []
+  antiAffinityGroups: []
+  privateNetworks: []
+
+  # Kubelet exposed configuration (all those parameters are optional)
+  # https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
+#   imageGCHighThresholdPercent: 80
+#   imageGCLowThresholdPercent: 70
+#   imageMinimumGCAge: 5m
+#   kubeReserved:
+#     cpu: "100m"
+#     memory: "256Mi"
+#     ephemeralStorage: "1Gi"
+#   systemReserved:
+#     cpu: "100m"
+#     memory: "256Mi"
+#     ephemeralStorage: "1Gi"
+
+  # Node labels (optional)
+  # These labels will be applied to all nodes using this NodeClass
+  # nodeLabels:
+  #   environment: "production"
+  #   team: "platform"
+  
+  # Node taints (optional)
+  # These taints will be applied to all nodes using this NodeClass
+  # nodeTaints:
+  #   - key: "dedicated"
+  #     value: "gpu"
+  #     effect: "NoSchedule"
+```
+
+If you want GPU nodes, here is an example NodeClass for GPU instances:
+
+```yaml
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: gpu
+spec:
+  # Template ID for GPU instances (required)
+  # Replace with actual GPU-enabled template UUID
+  templateID: "<setme>"
+  
+  # Minimal disk to save costs
+  diskSize: 50  # Minimum viable disk size
+  
+  securityGroups: []
+  
+  # Anti-affinity groups for spreading GPU nodes
+  antiAffinityGroups: []
+
+  privateNetworks: []
+  
+  # GPU-specific labels
+  nodeLabels:
+    workload-type: "gpu"
+    gpu-enabled: "true"
+    environment: "production"
+    "nvidia.com/gpu.present": "true"
+  
+  # GPU-specific taints
+  nodeTaints:
+    - key: "nvidia.com/gpu"
+      value: "true"
+      effect: "NoSchedule"
+```
+
+When ExoscaleNodeClasses are defined you can now create NodeClaims that reference them:
+
+```yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: standard
+spec:
+  template:
+    metadata:
+      labels:
+        nodepool: standard
+    spec:
+      nodeClassRef:
+        group: karpenter.exoscale.com
+        kind: ExoscaleNodeClass
+        name: standard
+      
+
+      startupTaints:
+        - key: karpenter.sh/unregistered
+          effect: NoExecute
+      
+      requirements:
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values:
+            # - "standard.small"
+            - "standard.medium"
+            - "standard.large"
+            - "standard.extra-large"
+
+      expireAfter: 30m
+  
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    
+    consolidateAfter: 30m
+    
+    budgets:
+    - nodes: "10%"  # Disrupt at most 10% of nodes at once
+
+  weight: 50
+```
+
+Here is a GPU one:
+
+```yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu
+spec:
+  template:
+    metadata:
+      labels:
+        nodepool: gpu
+        workload-type: gpu
+    spec:
+      nodeClassRef:
+        group: karpenter.exoscale.com
+        kind: ExoscaleNodeClass
+        name: gpu
+
+      startupTaints:
+        - key: karpenter.sh/unregistered
+          effect: NoExecute
+
+      requirements:
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values:
+            - "gpua30.small"
+            - "gpua30.medium"
+            - "gpua30.large"
+
+      taints:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NoSchedule"
+      
+      expireAfter: 30m
+  
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+
+    consolidateAfter: 1m
+    
+    budgets:
+    - nodes: "100%"
+
+  weight: 10
+```
 
 ## License
 

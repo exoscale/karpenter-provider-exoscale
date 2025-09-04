@@ -14,6 +14,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
+	"github.com/google/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -60,7 +61,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		return fmt.Errorf("failed to refresh instance types: %w", err)
 	}
 
-	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterName, instanceTypeProvider)
+	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider)
 
 	userDataProvider := userdata.NewProvider(op.GetClient(), op.GetConfig().Host, config.ClusterDNS, config.ClusterDomain)
 
@@ -73,9 +74,10 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		instanceProvider,
 		userDataProvider,
 		config.Zone,
-		config.ClusterName,
+		config.ClusterID,
 		config.ClusterDNS,
 		config.ClusterDomain,
+		config.InstancePrefix,
 	)
 
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
@@ -100,12 +102,13 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 }
 
 type Config struct {
-	Zone          string
-	ClusterName   string
-	APIKey        string
-	APISecret     string
-	ClusterDNS    string
-	ClusterDomain string
+	Zone           string
+	ClusterID      string
+	InstancePrefix string
+	APIKey         string
+	APISecret      string
+	ClusterDNS     string
+	ClusterDomain  string
 }
 
 func loadConfiguration() (*Config, error) {
@@ -117,9 +120,18 @@ func loadConfiguration() (*Config, error) {
 		return nil, err
 	}
 
-	config.ClusterName, err = getRequiredEnv("CLUSTER_NAME")
+	config.ClusterID, err = getRequiredEnv("EXOSCALE_SKS_CLUSTER_ID")
 	if err != nil {
 		return nil, err
+	}
+
+	if _, err := uuid.Parse(config.ClusterID); err != nil {
+		return nil, fmt.Errorf("EXOSCALE_SKS_CLUSTER_ID environment variable is not a valid UUID")
+	}
+
+	config.InstancePrefix = os.Getenv("EXOSCALE_COMPUTE_INSTANCE_PREFIX")
+	if config.InstancePrefix == "" {
+		config.InstancePrefix = "karpenter-"
 	}
 
 	config.APIKey, err = getRequiredEnv("EXOSCALE_API_KEY")
