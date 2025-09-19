@@ -37,7 +37,6 @@ type ExoscaleNodeClassSpec struct {
 	// TemplateID is the ID of the template to use for instances
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="templateID is immutable"
 	TemplateID string `json:"templateID"`
 
 	// DiskSize is the size of the root disk in GB
