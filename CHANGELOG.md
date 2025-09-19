@@ -7,6 +7,8 @@ Unreleased
 - Make ExoscaleNodeClass templateID mutable
 - chore(deps): update golang docker tag to v1.25.1
 - fix(deps): update kubernetes packages to v0.34.1
+- fix(deps): update module sigs.k8s.io/controller-runtime to v0.22.1
+- fix(deps): update module sigs.k8s.io/karpenter to v1.7.1
 
 0.0.2
 ----------

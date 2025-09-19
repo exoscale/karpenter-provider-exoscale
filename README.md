@@ -39,6 +39,16 @@ Only if out-of-cluster:
   [console](https://portal.exoscale.com)
 
 
+## In-Cluster CRDs
+
+If you are deploying Karpenter Exoscale provider yourself, you'll need to install the required CRDs:
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.7.1/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.7.1/pkg/apis/crds/karpenter.sh_nodepools.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.7.1/pkg/apis/crds/karpenter.sh_nodeoverlays.yaml
+```
+
 ## NodeClasses and NodeClaims
 
 Karpenter uses NodeClasses and NodeClaims to define and manage the desired state of nodes in the cluster.
