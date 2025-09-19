@@ -15,8 +15,10 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -184,6 +186,16 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		"nodeClaim", nodeClaim.Name,
 	))
 
+	// karpenter has its own draining logic when it decides to downscale a nodepool,
+	// but we want to be very conservative for people deleting nodeclaims directly
+	log.FromContext(ctx).Info("draining node", "nodeName", nodeClaim.Status.NodeName)
+	if err := c.drainNode(ctx, nodeClaim.Status.NodeName); err != nil {
+		log.FromContext(ctx).Error(err, "failed to drain node", "nodeName", nodeClaim.Status.NodeName)
+		return fmt.Errorf("failed to drain node %s: %w", nodeClaim.Status.NodeName, err)
+	}
+
+	log.FromContext(ctx).Info("node drained", "nodeName", nodeClaim.Status.NodeName)
+
 	instanceID, err := utils.ParseProviderID(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("failed to parse provider ID %s: %w", nodeClaim.Status.ProviderID, err)
@@ -197,6 +209,90 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		}
 		return err
 	}
+	return nil
+}
+
+func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {
+	var node v1.Node
+	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, &node); err != nil {
+		if k8serrors.IsNotFound(err) {
+			// Node already removed, nothing to do
+			return nil
+		}
+		return err
+	}
+
+	if !node.Spec.Unschedulable {
+		patch := client.MergeFrom(node.DeepCopy())
+		node.Spec.Unschedulable = true
+		if err := c.kubeClient.Patch(ctx, &node, patch); err != nil {
+			return err
+		}
+	}
+
+	evictStartTime := time.Now()
+	for {
+		if time.Since(evictStartTime) > 15*time.Minute {
+			log.FromContext(ctx).Error(fmt.Errorf("timed out waiting for pods to be evicted"), "nodeName", nodeName, "timeout", 5*time.Minute)
+			return nil
+		}
+
+		evictionFailed := false
+		foundInDeletionPods := false
+		justEvictedPod := false
+
+		// List pods on the node
+		var podList v1.PodList
+		if err := c.kubeClient.List(ctx, &podList, client.MatchingFields{"spec.nodeName": nodeName}); err != nil {
+			goto nextAttempt
+		}
+
+		for _, pod := range podList.Items {
+			// Ignore DaemonSet pods
+			isDaemonSet := false
+			for _, owner := range pod.OwnerReferences {
+				if owner.Kind == "DaemonSet" {
+					isDaemonSet = true
+					break
+				}
+			}
+			if isDaemonSet {
+				continue
+			}
+
+			// Ignore in deletion pods
+			if pod.DeletionTimestamp != nil {
+				foundInDeletionPods = true
+				continue
+			}
+
+			// Evict pod
+			if err := c.kubeClient.SubResource("eviction").Create(ctx, &pod, &policyv1.Eviction{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      pod.Name,
+					Namespace: pod.Namespace,
+				},
+			}); err != nil {
+				if !k8serrors.IsNotFound(err) {
+					log.FromContext(ctx).Error(err, "failed to evict pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+					evictionFailed = true
+				}
+			} else {
+				log.FromContext(ctx).Info("evicted pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+				justEvictedPod = true
+			}
+		}
+
+		// No more pods to evict and we didn't evicted one now, we can delete node
+		if !evictionFailed && !foundInDeletionPods && !justEvictedPod || len(podList.Items) == 0 {
+			break
+		}
+
+		// Wait before next eviction attempt
+	nextAttempt:
+		time.Sleep(time.Second * 5)
+	}
+
 	return nil
 }
 
