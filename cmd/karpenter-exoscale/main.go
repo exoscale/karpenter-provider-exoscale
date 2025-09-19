@@ -16,6 +16,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/google/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider/overlay"
 	"sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/operator"
@@ -65,7 +66,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 
 	userDataProvider := userdata.NewProvider(op.GetClient(), op.GetConfig().Host, config.ClusterDNS, config.ClusterDomain)
 
-	cloudProvider := exoscale.NewCloudProvider(
+	overlayUndecoratedCloudProvider := exoscale.NewCloudProvider(
 		op.GetClient(),
 		exoClient,
 		op.GetConfig().Host,
@@ -80,6 +81,8 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		config.InstancePrefix,
 	)
 
+	cloudProvider := overlay.Decorate(overlayUndecoratedCloudProvider, op.GetClient(), op.InstanceTypeStore)
+
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
 	controllerList := controllers.NewControllers(
@@ -89,7 +92,9 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		op.GetClient(),
 		op.EventRecorder,
 		cloudProvider,
+		overlayUndecoratedCloudProvider,
 		clusterState,
+		op.InstanceTypeStore,
 	)
 
 	if err := registerCustomControllers(op.Manager, exoClient, instanceProvider, config.Zone); err != nil {
