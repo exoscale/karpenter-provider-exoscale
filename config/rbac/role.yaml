@@ -1,0 +1,69 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karpenter.exoscale.com
+  resources:
+  - exoscalenodeclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - karpenter.exoscale.com
+  resources:
+  - exoscalenodeclasses/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - karpenter.exoscale.com
+  resources:
+  - exoscalenodeclasses/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - karpenter.sh
+  resources:
+  - nodeclaims
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch

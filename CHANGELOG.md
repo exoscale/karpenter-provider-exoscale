@@ -1,6 +1,13 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- Make ExoscaleNodeClass templateID mutable
+- chore(deps): update golang docker tag to v1.25.1
+- fix(deps): update kubernetes packages to v0.34.1
+
 0.0.2
 ----------
 
