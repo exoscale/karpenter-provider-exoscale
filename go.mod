@@ -3,7 +3,7 @@ module github.com/exoscale/karpenter-exoscale
 go 1.25.1
 
 require (
-	github.com/awslabs/operatorpkg v0.0.0-20250909182303-e8e550b6f339
+	github.com/awslabs/operatorpkg v0.0.0-20250916074601-4250f4c35c6b
 	github.com/exoscale/egoscale/v3 v3.1.26
 	github.com/google/uuid v1.6.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
