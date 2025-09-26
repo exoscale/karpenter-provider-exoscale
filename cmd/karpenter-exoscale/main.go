@@ -13,6 +13,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/nodeclass"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
+	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/google/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -62,7 +63,8 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		return fmt.Errorf("failed to refresh instance types: %w", err)
 	}
 
-	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider)
+	templateResolver := template.NewResolver(exoClient, config.Zone, op.GetConfig())
+	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider, templateResolver)
 
 	userDataProvider := userdata.NewProvider(op.GetClient(), op.GetConfig().Host, config.ClusterDNS, config.ClusterDomain)
 
@@ -73,6 +75,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		op.EventRecorder,
 		instanceTypeProvider,
 		instanceProvider,
+		templateResolver,
 		userDataProvider,
 		config.Zone,
 		config.ClusterID,

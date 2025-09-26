@@ -4,7 +4,8 @@ go 1.25.1
 
 require (
 	github.com/awslabs/operatorpkg v0.0.0-20250916074601-4250f4c35c6b
-	github.com/exoscale/egoscale/v3 v3.1.26
+	// TODO: release a new version of egoscale and update this
+	github.com/exoscale/egoscale/v3 v3.0.0-20250930083145-d53e107e0db5
 	github.com/google/uuid v1.6.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pelletier/go-toml/v2 v2.2.4

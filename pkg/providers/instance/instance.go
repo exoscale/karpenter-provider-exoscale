@@ -12,6 +12,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-exoscale/pkg/errors"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
+	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
@@ -32,9 +33,10 @@ type DefaultProvider struct {
 	instancePrefix       string
 	cache                *cache.Cache
 	instanceTypeProvider instancetype.Provider
+	templateResolver     template.Resolver
 }
 
-func NewProvider(exoClient EgoscaleClient, zone, clusterID, instancePrefix string, instanceTypeProvider instancetype.Provider) Provider {
+func NewProvider(exoClient EgoscaleClient, zone, clusterID, instancePrefix string, instanceTypeProvider instancetype.Provider, templateResolver template.Resolver) Provider {
 	return &DefaultProvider{
 		exoClient:            exoClient,
 		zone:                 zone,
@@ -42,6 +44,7 @@ func NewProvider(exoClient EgoscaleClient, zone, clusterID, instancePrefix strin
 		instancePrefix:       instancePrefix,
 		cache:                cache.New(cacheTTL, cacheCleanup),
 		instanceTypeProvider: instanceTypeProvider,
+		templateResolver:     templateResolver,
 	}
 }
 
@@ -72,10 +75,15 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleN
 		return nil, fmt.Errorf("anti-affinity group capacity check failed: %w", err)
 	}
 
+	templateID, err := p.templateResolver.ResolveTemplateID(ctx, nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve template ID: %w", err)
+	}
+
 	createRequest := egov3.CreateInstanceRequest{
 		Name:         instanceName,
 		InstanceType: &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
-		Template:     &egov3.Template{ID: egov3.UUID(nodeClass.Spec.TemplateID)},
+		Template:     &egov3.Template{ID: egov3.UUID(templateID)},
 		DiskSize:     nodeClass.Spec.DiskSize,
 		UserData:     userData,
 		Labels: map[string]string{

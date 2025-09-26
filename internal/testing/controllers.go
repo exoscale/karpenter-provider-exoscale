@@ -184,6 +184,7 @@ type CloudProviderTestEnvironment struct {
 	MockExoClient        *mocks.MockExoscaleClient
 	MockInstanceProvider *MockInstanceProvider
 	MockInstanceTypes    *MockInstanceTypeProvider
+	MockTemplateResolver *mocks.MockTemplateResolver
 	MockUserData         *MockUserDataProvider
 }
 
@@ -203,6 +204,7 @@ func SetupCloudProviderTestEnvironment(t *testing.T) *CloudProviderTestEnvironme
 	mockExoClient := &mocks.MockExoscaleClient{}
 	mockInstanceProvider := &MockInstanceProvider{}
 	mockInstanceTypes := &MockInstanceTypeProvider{}
+	mockTemplateResolver := &mocks.MockTemplateResolver{}
 	mockUserData := &MockUserDataProvider{}
 
 	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -216,6 +218,7 @@ func SetupCloudProviderTestEnvironment(t *testing.T) *CloudProviderTestEnvironme
 		eventRecorder,
 		mockInstanceTypes,
 		mockInstanceProvider,
+		mockTemplateResolver,
 		mockUserData,
 		"ch-gva-2",
 		"25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
@@ -234,6 +237,7 @@ func SetupCloudProviderTestEnvironment(t *testing.T) *CloudProviderTestEnvironme
 		MockExoClient:        mockExoClient,
 		MockInstanceProvider: mockInstanceProvider,
 		MockInstanceTypes:    mockInstanceTypes,
+		MockTemplateResolver: mockTemplateResolver,
 		MockUserData:         mockUserData,
 	}
 }

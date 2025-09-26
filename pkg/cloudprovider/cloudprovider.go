@@ -12,6 +12,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/errors"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
+	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
@@ -48,6 +49,7 @@ type CloudProvider struct {
 	recorder             karpenterevents.Recorder
 	instanceTypeProvider instancetype.Provider
 	instanceProvider     instance.Provider
+	templateResolver     template.Resolver
 	userDataProvider     userdata.Provider
 	clusterID            string
 	zone                 string
@@ -63,6 +65,7 @@ func NewCloudProvider(
 	recorder karpenterevents.Recorder,
 	instanceTypeProvider instancetype.Provider,
 	instanceProvider instance.Provider,
+	templateResolver template.Resolver,
 	userDataProvider userdata.Provider,
 	zone string,
 	clusterID string,
@@ -84,6 +87,7 @@ func NewCloudProvider(
 		recorder:             recorder,
 		instanceTypeProvider: instanceTypeProvider,
 		instanceProvider:     instanceProvider,
+		templateResolver:     templateResolver,
 		userDataProvider:     userDataProvider,
 		clusterID:            clusterID,
 		zone:                 zone,
