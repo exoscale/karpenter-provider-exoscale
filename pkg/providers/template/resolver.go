@@ -12,12 +12,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+var gitVersionRegex = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)`)
+
 type Resolver interface {
 	ResolveTemplateID(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (string, error)
 }
 
+type exoscaleClient interface {
+	GetActiveNodepoolTemplate(ctx context.Context, version string, variant egov3.GetActiveNodepoolTemplateVariant) (*egov3.GetActiveNodepoolTemplateResponse, error)
+}
+
 type DefaultResolver struct {
-	client     *egov3.Client
+	client     exoscaleClient
 	zone       string
 	kubeConfig *rest.Config
 }
@@ -82,22 +88,26 @@ func (r *DefaultResolver) getKubernetesVersion() (string, error) {
 		return "", fmt.Errorf("failed to get server version: %w", err)
 	}
 
-	// Extract semver from GitVersion (e.g., "v1.33.2-eks.1" -> "1.33.2")
-	re := regexp.MustCompile(`^v?(\d+\.\d+\.\d+)`)
-	matches := re.FindStringSubmatch(serverVersion.GitVersion)
+	return extractSemVer(serverVersion.GitVersion)
+}
+
+func extractSemVer(gitVersion string) (string, error) {
+	matches := gitVersionRegex.FindStringSubmatch(gitVersion)
 	if len(matches) != 2 {
-		return "", fmt.Errorf("unable to parse version from: %s", serverVersion.GitVersion)
+		return "", fmt.Errorf("unable to parse version from: %s", gitVersion)
 	}
 
 	return matches[1], nil
 }
 
 func (r *DefaultResolver) lookupTemplate(ctx context.Context, version, variant string) (string, error) {
-	templateVariant := egov3.GetActiveNodepoolTemplateVariantStandard
+	variantMap := map[string]egov3.GetActiveNodepoolTemplateVariant{
+		"standard": egov3.GetActiveNodepoolTemplateVariantStandard,
+		"nvidia":   egov3.GetActiveNodepoolTemplateVariantNvidia,
+	}
 
-	if variant != "nvidia" {
-		templateVariant = egov3.GetActiveNodepoolTemplateVariantNvidia
-	} else if variant != "standard" {
+	templateVariant, ok := variantMap[variant]
+	if !ok {
 		return "", fmt.Errorf("unknown template variant: %s", variant)
 	}
 
