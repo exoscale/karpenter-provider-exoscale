@@ -83,6 +83,18 @@ spec:
                   Example: "5m" for 5 minutes
                 pattern: ^[0-9]+(s|m|h)$
                 type: string
+              imageTemplateSelector:
+                properties:
+                  variant:
+                    default: standard
+                    enum:
+                    - standard
+                    - nvidia
+                    type: string
+                  version:
+                    pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
+                    type: string
+                type: object
               kubeReserved:
                 description: KubeReserved is resources reserved for Kubernetes system
                   components
@@ -167,16 +179,17 @@ spec:
                     type: string
                 type: object
               templateID:
-                description: TemplateID is the ID of the template to use for instances
                 pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
                 type: string
-            required:
-            - templateID
             type: object
             x-kubernetes-validations:
             - message: imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent
               rule: '!has(self.imageGCHighThresholdPercent) || !has(self.imageGCLowThresholdPercent)
                 || self.imageGCLowThresholdPercent < self.imageGCHighThresholdPercent'
+            - message: exactly one of templateID or imageTemplateSelector must be
+                specified
+              rule: (has(self.templateID) && !has(self.imageTemplateSelector)) ||
+                (!has(self.templateID) && has(self.imageTemplateSelector))
           status:
             description: ExoscaleNodeClassStatus defines the observed state of ExoscaleNodeClass
             properties:
