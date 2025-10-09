@@ -13,6 +13,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/nodeclass"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
+	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/google/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -62,7 +63,8 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		return fmt.Errorf("failed to refresh instance types: %w", err)
 	}
 
-	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider)
+	templateResolver := template.NewResolver(exoClient, config.Zone, op.GetConfig())
+	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider, templateResolver)
 
 	userDataProvider := userdata.NewProvider(op.GetClient(), op.GetConfig().Host, config.ClusterDNS, config.ClusterDomain)
 
@@ -73,6 +75,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		op.EventRecorder,
 		instanceTypeProvider,
 		instanceProvider,
+		templateResolver,
 		userDataProvider,
 		config.Zone,
 		config.ClusterID,
@@ -97,7 +100,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		op.InstanceTypeStore,
 	)
 
-	if err := registerCustomControllers(op.Manager, exoClient, instanceProvider, config.Zone); err != nil {
+	if err := registerCustomControllers(op.Manager, exoClient, instanceProvider, templateResolver, config.Zone); err != nil {
 		return fmt.Errorf("failed to register custom controllers: %w", err)
 	}
 
@@ -202,7 +205,7 @@ func validateZone(ctx context.Context, client *egov3.Client, zone string) error 
 	return fmt.Errorf("zone %s not found. Available zones: %v", zone, availableZones)
 }
 
-func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProvider instance.Provider, zone string) error {
+func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProvider instance.Provider, templateResolver template.Resolver, zone string) error {
 	if err := (&bootstraptoken.Controller{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -212,11 +215,12 @@ func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, instan
 	}
 
 	if err := (&nodeclass.ExoscaleNodeClassReconciler{
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		ExoscaleClient: exoClient,
-		Recorder:       mgr.GetEventRecorderFor("nodeclass-controller"),
-		Zone:           zone,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		ExoscaleClient:   exoClient,
+		TemplateResolver: templateResolver,
+		Recorder:         mgr.GetEventRecorderFor("nodeclass-controller"),
+		Zone:             zone,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create nodeclass controller: %w", err)
 	}

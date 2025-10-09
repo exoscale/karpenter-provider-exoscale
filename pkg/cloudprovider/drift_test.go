@@ -107,6 +107,9 @@ func TestCloudProvider_IsDrifted(t *testing.T) {
 				nodeClass.Spec.PrivateNetworks = []string{string(mocks.PrivateNetworkID1)}
 				nodeClass.Spec.AntiAffinityGroups = []string{string(mocks.DefaultAntiAffinityGroupID)}
 				require.NoError(t, env.KubeClient.Create(env.Ctx, nodeClass))
+
+				env.MockTemplateResolver.On("ResolveTemplateID", mock.Anything, mock.Anything).
+					Return(string(mocks.DefaultTemplateID), nil)
 			}
 
 			nodeClaim := mocks.CreateNodeClaim("test-claim", "test-nodeclass", "small-instance")

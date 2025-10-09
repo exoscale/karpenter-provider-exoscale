@@ -24,10 +24,11 @@ import (
 )
 
 type env struct {
-	ctx        context.Context
-	k8sClient  client.Client
-	controller *ExoscaleNodeClassReconciler
-	exo        *mocks.MockExoscaleClient
+	ctx              context.Context
+	k8sClient        client.Client
+	controller       *ExoscaleNodeClassReconciler
+	exo              *mocks.MockExoscaleClient
+	templateResolver *mocks.MockTemplateResolver
 }
 
 func setup(t *testing.T, objects ...client.Object) *env {
@@ -46,20 +47,23 @@ func setup(t *testing.T, objects ...client.Object) *env {
 	}
 	k8sClient := builder.Build()
 	exo := &mocks.MockExoscaleClient{}
+	templateResolver := &mocks.MockTemplateResolver{}
 
 	controller := &ExoscaleNodeClassReconciler{
-		Client:         k8sClient,
-		Scheme:         s,
-		ExoscaleClient: exo,
-		Recorder:       record.NewFakeRecorder(100),
-		Zone:           "ch-gva-2",
+		Client:           k8sClient,
+		Scheme:           s,
+		ExoscaleClient:   exo,
+		TemplateResolver: templateResolver,
+		Recorder:         record.NewFakeRecorder(100),
+		Zone:             "ch-gva-2",
 	}
 
 	return &env{
-		ctx:        context.Background(),
-		k8sClient:  k8sClient,
-		controller: controller,
-		exo:        exo,
+		ctx:              context.Background(),
+		k8sClient:        k8sClient,
+		controller:       controller,
+		exo:              exo,
+		templateResolver: templateResolver,
 	}
 }
 
@@ -162,6 +166,30 @@ func TestReconcile(t *testing.T) {
 			privateNetworkExists: true,
 			antiAffinityExists:   true,
 		},
+		{
+			name: "imageTemplateSelector resolves template",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nc-selector",
+				},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &apiv1.ImageTemplateSelector{
+						Version: "1.30.0",
+						Variant: "standard",
+					},
+					DiskSize:           50,
+					SecurityGroups:     []string{string(mocks.DefaultSecurityGroupID)},
+					PrivateNetworks:    []string{string(mocks.PrivateNetworkID1)},
+					AntiAffinityGroups: []string{string(mocks.DefaultAntiAffinityGroupID)},
+				},
+			},
+			templateExists:       true,
+			securityGroupExists:  true,
+			privateNetworkExists: true,
+			antiAffinityExists:   true,
+			expectedRequeue:      true,
+			expectedFinalizer:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -185,6 +213,8 @@ func TestReconcile(t *testing.T) {
 			}
 
 			if tt.nodeClass != nil && len(tt.nodeClass.Finalizers) > 0 {
+				env.templateResolver.On("ResolveTemplateID", mock.Anything, mock.Anything).Return(string(mocks.DefaultTemplateID), nil)
+
 				if tt.templateExists {
 					env.exo.On("GetTemplate", mock.Anything, mocks.DefaultTemplateID).Return(&egov3.Template{}, nil)
 				} else {

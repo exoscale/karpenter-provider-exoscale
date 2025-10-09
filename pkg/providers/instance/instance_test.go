@@ -30,6 +30,7 @@ func TestProvider_Create(t *testing.T) {
 	}, nil)
 
 	cacheInstance := cache.New(30*time.Second, 60*time.Second)
+	mockTemplateResolver := &mocks.MockTemplateResolver{}
 
 	provider := &DefaultProvider{
 		exoClient:            mockClient,
@@ -38,6 +39,7 @@ func TestProvider_Create(t *testing.T) {
 		cache:                cacheInstance,
 		instanceTypeProvider: mockInstanceTypeProvider,
 		instancePrefix:       "karpenter",
+		templateResolver:     mockTemplateResolver,
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -83,6 +85,8 @@ func TestProvider_Create(t *testing.T) {
 	mockInstanceTypeProvider.On("Get", mock.Anything, "standard.medium").Return(&cloudprovider.InstanceType{
 		Name: "standard.medium",
 	}, nil)
+
+	mockTemplateResolver.On("ResolveTemplateID", mock.Anything, nodeClass).Return(string(mocks.DefaultTemplateID), nil)
 
 	mockClient.On("CreateInstance", mock.Anything, mock.MatchedBy(func(req egov3.CreateInstanceRequest) bool {
 		return req.Labels[constants.LabelManagedBy] == constants.ManagedByKarpenter &&
@@ -292,6 +296,7 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 	ctx := context.Background()
 	mockClient := &mocks.MockExoscaleClient{}
 	mockInstanceTypeProvider := &mocks.MockInstanceTypeProvider{}
+	mockTemplateResolver := &mocks.MockTemplateResolver{}
 
 	provider := &DefaultProvider{
 		instanceTypeProvider: mockInstanceTypeProvider,
@@ -300,6 +305,7 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 		clusterID:            "25f39e1e-c8fa-4143-9e5f-63a9e45115fa",
 		cache:                cache.New(30*time.Second, 60*time.Second),
 		instancePrefix:       "karpenter",
+		templateResolver:     mockTemplateResolver,
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -308,6 +314,8 @@ func TestProvider_buildInstanceLabels(t *testing.T) {
 			SecurityGroups: []string{string(mocks.DefaultSecurityGroupID)},
 		},
 	}
+
+	mockTemplateResolver.On("ResolveTemplateID", mock.Anything, nodeClass).Return(string(mocks.DefaultTemplateID), nil)
 
 	nodeClaim := &karpenterv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -392,6 +400,8 @@ func TestProvider_Create_ErrorOnCreateInstance(t *testing.T) {
 		Name: "standard.medium",
 	}, nil)
 
+	mockTemplateResolver := &mocks.MockTemplateResolver{}
+
 	provider := &DefaultProvider{
 		exoClient:            mockClient,
 		zone:                 "ch-gva-2",
@@ -399,6 +409,7 @@ func TestProvider_Create_ErrorOnCreateInstance(t *testing.T) {
 		cache:                cache.New(30*time.Second, 60*time.Second),
 		instanceTypeProvider: mockInstanceTypeProvider,
 		instancePrefix:       "karpenter",
+		templateResolver:     mockTemplateResolver,
 	}
 
 	nodeClass := &apiv1.ExoscaleNodeClass{
@@ -406,6 +417,8 @@ func TestProvider_Create_ErrorOnCreateInstance(t *testing.T) {
 			TemplateID: string(mocks.DefaultTemplateID),
 		},
 	}
+
+	mockTemplateResolver.On("ResolveTemplateID", mock.Anything, nodeClass).Return(string(mocks.DefaultTemplateID), nil)
 
 	nodeClaim := &karpenterv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -774,6 +787,8 @@ func TestProvider_Create_AntiAffinityGroupCapacity(t *testing.T) {
 			}, nil)
 			mockInstanceTypeProvider.On("GetInstanceTypeID", "standard.medium").Return("it-123", true)
 
+			mockTemplateResolver := &mocks.MockTemplateResolver{}
+
 			provider := &DefaultProvider{
 				exoClient:            mockClient,
 				zone:                 "ch-gva-2",
@@ -781,6 +796,7 @@ func TestProvider_Create_AntiAffinityGroupCapacity(t *testing.T) {
 				cache:                cache.New(30*time.Second, 60*time.Second),
 				instanceTypeProvider: mockInstanceTypeProvider,
 				instancePrefix:       "karpenter",
+				templateResolver:     mockTemplateResolver,
 			}
 
 			foundFullGroup := false
@@ -840,6 +856,8 @@ func TestProvider_Create_AntiAffinityGroupCapacity(t *testing.T) {
 					AntiAffinityGroups: tt.antiAffinityGroups,
 				},
 			}
+
+			mockTemplateResolver.On("ResolveTemplateID", mock.Anything, nodeClass).Return(string(mocks.DefaultTemplateID), nil)
 
 			nodeClaim := &karpenterv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{

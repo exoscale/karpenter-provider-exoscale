@@ -4,7 +4,6 @@ import (
 	"slices"
 )
 
-// InstanceData represents the required instance data for drift detection
 type InstanceData struct {
 	TemplateID         string
 	SecurityGroups     []string
@@ -12,20 +11,6 @@ type InstanceData struct {
 	AntiAffinityGroups []string
 }
 
-// HasTemplateDrifted checks if the instance template has drifted from the NodeClass spec
-func (in *ExoscaleNodeClass) HasTemplateDrifted(instanceData *InstanceData) (bool, string) {
-	if instanceData.TemplateID == "" {
-		return false, ""
-	}
-
-	if instanceData.TemplateID != in.Spec.TemplateID {
-		return true, "TemplateID"
-	}
-
-	return false, ""
-}
-
-// compareStringSlices compares two string slices for equality (order-independent)
 func compareStringSlices(expected, actual []string) bool {
 	if len(expected) != len(actual) {
 		return false

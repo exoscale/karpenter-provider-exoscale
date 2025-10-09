@@ -252,6 +252,118 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 			wantValid: false,
 			testField: "nodeTaints",
 		},
+		{
+			name: "valid nodeclass with imageTemplateSelector",
+			nodeClass: &ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &ImageTemplateSelector{
+						Version: "1.33.0",
+						Variant: "standard",
+					},
+					DiskSize: 50,
+				},
+			},
+			wantValid: true,
+		},
+		{
+			name: "imageTemplateSelector with nvidia variant",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &ImageTemplateSelector{
+						Version: "1.33.0",
+						Variant: "nvidia",
+					},
+				},
+			},
+			wantValid: true,
+		},
+		{
+			name: "imageTemplateSelector with default values",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &ImageTemplateSelector{},
+				},
+			},
+			wantValid: true,
+		},
+		{
+			name: "both templateID and imageTemplateSelector specified",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					TemplateID: "20000000-0000-0000-0000-000000000001",
+					ImageTemplateSelector: &ImageTemplateSelector{
+						Version: "1.33.0",
+						Variant: "standard",
+					},
+				},
+			},
+			wantValid: false,
+			testField: "mutual-exclusivity",
+		},
+		{
+			name: "neither templateID nor imageTemplateSelector specified",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					DiskSize: 50,
+				},
+			},
+			wantValid: false,
+			testField: "required-field",
+		},
+		{
+			name: "invalid version format in imageTemplateSelector - major only",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &ImageTemplateSelector{
+						Version: "1", // Should be major.minor.patch
+						Variant: "standard",
+					},
+				},
+			},
+			wantValid: false,
+			testField: "version-format",
+		},
+		{
+			name: "invalid version format in imageTemplateSelector - major.minor only",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &ImageTemplateSelector{
+						Version: "1.33", // Should be major.minor.patch
+						Variant: "standard",
+					},
+				},
+			},
+			wantValid: false,
+			testField: "version-format",
+		},
+		{
+			name: "valid semver version format in imageTemplateSelector",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &ImageTemplateSelector{
+						Version: "1.33.0",
+						Variant: "standard",
+					},
+				},
+			},
+			wantValid: true,
+		},
+		{
+			name: "invalid variant in imageTemplateSelector",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					ImageTemplateSelector: &ImageTemplateSelector{
+						Version: "1.33.0",
+						Variant: "invalid-variant", // Only standard and nvidia are valid
+					},
+				},
+			},
+			wantValid: false,
+			testField: "variant",
+		},
 	}
 
 	for _, tt := range tests {

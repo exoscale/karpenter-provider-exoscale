@@ -11,6 +11,7 @@ import (
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
+	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,10 +31,11 @@ const (
 
 type ExoscaleNodeClassReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	ExoscaleClient instance.EgoscaleClient
-	Recorder       record.EventRecorder
-	Zone           string
+	Scheme           *runtime.Scheme
+	ExoscaleClient   instance.EgoscaleClient
+	TemplateResolver template.Resolver
+	Recorder         record.EventRecorder
+	Zone             string
 }
 
 // +kubebuilder:rbac:groups=karpenter.exoscale.com,resources=exoscalenodeclasses,verbs=get;list;watch;create;update;patch;delete
@@ -241,9 +243,14 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 func (r *ExoscaleNodeClassReconciler) verifyExoscaleResources(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
 
-	log.FromContext(ctx).V(1).Info("verifying template", "templateID", nodeClass.Spec.TemplateID)
-	if _, err := r.ExoscaleClient.GetTemplate(ctx, egov3.UUID(nodeClass.Spec.TemplateID)); err != nil {
-		return fmt.Errorf("template %s not found or not accessible: %w", nodeClass.Spec.TemplateID, err)
+	templateID, err := r.TemplateResolver.ResolveTemplateID(ctx, nodeClass)
+	if err != nil {
+		return fmt.Errorf("failed to resolve template ID: %w", err)
+	}
+
+	log.FromContext(ctx).V(1).Info("verifying template", "templateID", templateID)
+	if _, err := r.ExoscaleClient.GetTemplate(ctx, egov3.UUID(templateID)); err != nil {
+		return fmt.Errorf("template %s not found or not accessible: %w", templateID, err)
 	}
 
 	for _, sgID := range nodeClass.Spec.SecurityGroups {

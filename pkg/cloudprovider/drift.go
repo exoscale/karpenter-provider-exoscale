@@ -52,9 +52,17 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		instanceData.TemplateID = string(inst.Template.ID)
 	}
 
-	if drifted, reason := nodeClass.HasTemplateDrifted(instanceData); drifted {
-		log.FromContext(ctx).Info("detected template drift", "reason", reason)
-		return cloudprovider.DriftReason(reason), nil
+	expectedTemplateID, err := c.templateResolver.ResolveTemplateID(ctx, nodeClass)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to resolve template ID")
+		return "", fmt.Errorf("failed to resolve template ID: %w", err)
+	}
+
+	if instanceData.TemplateID != expectedTemplateID {
+		log.FromContext(ctx).Info("detected template drift",
+			"expected", expectedTemplateID,
+			"actual", instanceData.TemplateID)
+		return cloudprovider.DriftReason("TemplateID"), nil
 	}
 
 	if drifted, reason := nodeClass.HasSecurityGroupsDrifted(instanceData); drifted {

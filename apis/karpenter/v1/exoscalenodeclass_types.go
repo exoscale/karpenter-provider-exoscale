@@ -31,13 +31,27 @@ type ExoscaleNodeClass struct {
 	Status ExoscaleNodeClassStatus `json:"status,omitempty"`
 }
 
+type ImageTemplateSelector struct {
+	// +optional
+	// +kubebuilder:validation:Pattern="^[0-9]+\\.[0-9]+\\.[0-9]+$"
+	Version string `json:"version,omitempty"`
+
+	// +optional
+	// +kubebuilder:default="standard"
+	// +kubebuilder:validation:Enum=standard;nvidia
+	Variant string `json:"variant,omitempty"`
+}
+
 // ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
 // +kubebuilder:validation:XValidation:rule="!has(self.imageGCHighThresholdPercent) || !has(self.imageGCLowThresholdPercent) || self.imageGCLowThresholdPercent < self.imageGCHighThresholdPercent",message="imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent"
+// +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
 type ExoscaleNodeClassSpec struct {
-	// TemplateID is the ID of the template to use for instances
-	// +kubebuilder:validation:Required
+	// +optional
 	// +kubebuilder:validation:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-	TemplateID string `json:"templateID"`
+	TemplateID string `json:"templateID,omitempty"`
+
+	// +optional
+	ImageTemplateSelector *ImageTemplateSelector `json:"imageTemplateSelector,omitempty"`
 
 	// DiskSize is the size of the root disk in GB
 	// +kubebuilder:validation:Minimum=10
