@@ -1,10 +1,12 @@
 Changelog
 =========
 
-Unreleased
+0.0.3
 ----------
 
 - Make ExoscaleNodeClass templateID mutable
+- Support node OS template selection with imageTemplateSelector {}
+- Support preprod API endpoint
 - chore(deps): update golang docker tag to v1.25.1
 - fix(deps): update kubernetes packages to v0.34.1
 - fix(deps): update module sigs.k8s.io/controller-runtime to v0.22.1
