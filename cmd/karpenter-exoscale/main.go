@@ -44,7 +44,7 @@ func main() {
 }
 
 func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) error {
-	config, err := loadConfiguration()
+	config, err := loadConfiguration(op.GetConfig().Host)
 	if err != nil {
 		return err
 	}
@@ -66,17 +66,12 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 	templateResolver := template.NewResolver(exoClient, config.Zone, op.GetConfig())
 	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider, templateResolver)
 
-	clusterEndpoint := config.ClusterEndpoint
-	if strings.IsEmpty(endpoint) {
-		clusterEndpoint = op.GetConfig().Host
-	}
-	 
-	userDataProvider := userdata.NewProvider(op.GetClient(), clusterEndpoint, config.ClusterDNS, config.ClusterDomain)
+	userDataProvider := userdata.NewProvider(op.GetClient(), config.ClusterEndpoint, config.ClusterDNS, config.ClusterDomain)
 
 	overlayUndecoratedCloudProvider := exoscale.NewCloudProvider(
 		op.GetClient(),
 		exoClient,
-		clusterEndpoint,
+		config.ClusterEndpoint,
 		op.EventRecorder,
 		instanceTypeProvider,
 		instanceProvider,
@@ -125,7 +120,7 @@ type Config struct {
 	ClusterEndpoint string
 }
 
-func loadConfiguration() (*Config, error) {
+func loadConfiguration(fallbackClusterEndpoint string) (*Config, error) {
 	config := &Config{}
 
 	var err error
@@ -160,7 +155,11 @@ func loadConfiguration() (*Config, error) {
 
 	config.ClusterDNS = os.Getenv("CLUSTER_DNS_IP")
 	config.ClusterDomain = os.Getenv("CLUSTER_DOMAIN")
+
 	config.ClusterEndpoint = os.Getenv("CLUSTER_ENDPOINT")
+	if config.ClusterEndpoint == "" {
+		config.ClusterEndpoint = fallbackClusterEndpoint
+	}
 
 	return config, nil
 }
