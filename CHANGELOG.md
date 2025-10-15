@@ -1,6 +1,11 @@
 Changelog
 =========
 
+0.0.4
+----------
+
+- Support custom cluster endpoint (falling back to client configuration host)
+
 0.0.3
 ----------
 
