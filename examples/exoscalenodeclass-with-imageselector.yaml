@@ -1,0 +1,33 @@
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: standard-auto
+spec:
+  # imageTemplateSelector automatically selects the appropriate OS template
+  # based on Kubernetes version and variant (alternative to templateID)
+  imageTemplateSelector:
+    # version: Kubernetes version (semver format like "1.34.1")
+    # If omitted (or if you use imageTemplateSelector: {}), the control plane's
+    # current Kubernetes version will be auto-detected at runtime
+    version: "1.34.1"
+
+    # variant: Template variant (optional, defaults to "standard")
+    # Options: "standard" for regular workloads, "nvidia" for GPU-enabled nodes
+    variant: "standard"
+
+  # Disk size in GB (default: 50, min: 10, max: 8000)
+  diskSize: 50
+
+  # Security groups (optional)
+  securityGroups: []
+
+  # Anti-affinity groups (optional)
+  antiAffinityGroups: []
+
+  # Private networks (optional)
+  privateNetworks: []
+
+  # Node labels (optional)
+  nodeLabels:
+    environment: "production"
+    team: "platform"

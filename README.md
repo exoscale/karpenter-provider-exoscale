@@ -56,6 +56,8 @@ Karpenter uses NodeClasses and NodeClaims to define and manage the desired state
 - **NodeClass**: A NodeClass defines a set of requirements for a group of nodes, such as instance type, disk size, and network configuration. It acts as a template for creating nodes.
 - **NodeClaim**: A NodeClaim represents a request for a specific node to be created. It references a NodeClass and includes additional information such as workload requirements and user data.
 
+> **📁 See [examples/](examples/) for complete sample configurations including GPU setups and imageTemplateSelector usage.**
+
 Here is an example NodeClass for regular compute:
 
 ```yaml
@@ -66,6 +68,8 @@ metadata:
 spec:
   # Template ID for the instance (required)
   # This should be a valid Exoscale template ID from your zone
+  # If not set, you can use imageTemplateSelector instead or it will
+  # default to the template matching apiserver version
   templateID: "<setme>"
   
   # Disk size in GB (default: 50, min: 10, max: 8000)
@@ -140,6 +144,52 @@ spec:
       value: "true"
       effect: "NoSchedule"
 ```
+
+Instead of specifying a concrete `templateID`, you can use `imageTemplateSelector` to select an OS image template
+based on the Kubernetes cluster version and optional `variant` (for example `nvidia` for GPU optimized images).
+
+Fields:
+
+- `version` (optional) — a semver string like `1.34.1` (`major.minor.patch`). If omitted (or if you set `imageTemplateSelector: {}`), 
+  Karpenter will automatically detect the control plane Kubernetes version at runtime when resolving the template.
+- `variant` (optional) — a string such as `standard` or `nvidia`. Defaults to `standard` when not set.
+
+Validation: the CRD enforces that exactly one of `templateID` or `imageTemplateSelector` must be set on an
+`ExoscaleNodeClass` (see `apis/karpenter/v1/exoscalenodeclass_types.go`).
+
+Example using `imageTemplateSelector` with explicit version:
+
+```yaml
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: standard-latest
+spec:
+  imageTemplateSelector:
+    version: "1.34.1"
+    variant: "standard"
+  diskSize: 50
+  securityGroups: []
+  privateNetworks: []
+```
+
+Example using `imageTemplateSelector: {}` to auto-detect control plane version:
+
+```yaml
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: standard-auto
+spec:
+  # Empty imageTemplateSelector automatically uses the control plane K8s version
+  imageTemplateSelector: {}
+  diskSize: 50
+  securityGroups: []
+  privateNetworks: []
+```
+
+When `imageTemplateSelector` is used the provider will resolve the optimal template ID for the given `version`
+and `variant` at provisioning time (see `pkg/providers/template/resolver.go`).
 
 When ExoscaleNodeClasses are defined you can now create NodeClaims that reference them:
 

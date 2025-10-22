@@ -1,0 +1,52 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu
+spec:
+  template:
+    metadata:
+      labels:
+        nodepool: gpu
+        workload-type: gpu
+    spec:
+      nodeClassRef:
+        group: karpenter.exoscale.com
+        kind: ExoscaleNodeClass
+        name: gpu-nvidia
+
+      # Startup taints prevent scheduling until node is fully ready
+      startupTaints:
+        - key: karpenter.sh/unregistered
+          effect: NoExecute
+
+      # GPU instance type requirements
+      requirements:
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values:
+            - "gpua30.small"
+            - "gpua30.medium"
+            - "gpua30.large"
+
+      # Taints inherited from ExoscaleNodeClass ensure only GPU workloads run here
+      taints:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NoSchedule"
+
+      # Expire GPU nodes after 30 days
+      expireAfter: 720h
+
+  # Disruption settings for GPU workloads
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+
+    # Consolidate quickly when empty to save costs
+    consolidateAfter: 1m
+
+    # Allow full disruption budget for GPU pool
+    budgets:
+      - nodes: "100%"
+
+  # Lower weight for GPU nodes (use only when needed)
+  weight: 10

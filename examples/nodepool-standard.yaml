@@ -1,0 +1,43 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: standard
+spec:
+  template:
+    metadata:
+      labels:
+        nodepool: standard
+    spec:
+      nodeClassRef:
+        group: karpenter.exoscale.com
+        kind: ExoscaleNodeClass
+        name: standard-auto
+
+      # Startup taints prevent scheduling until node is fully ready
+      startupTaints: []
+
+      # Instance type requirements
+      requirements:
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values:
+            - "standard.medium"
+            - "standard.large"
+            - "standard.extra-large"
+
+      # Expire nodes after 30 days for security updates
+      expireAfter: 720h
+
+  # Disruption settings for cost optimization
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+
+    # Wait 30 minutes before consolidating
+    consolidateAfter: 30m
+
+    # Limit disruption rate
+    budgets:
+      - nodes: "10%" # Disrupt at most 10% of nodes at once
+
+  # Weight for prioritization (higher = higher priority)
+  weight: 50

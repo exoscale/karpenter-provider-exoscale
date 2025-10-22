@@ -1,0 +1,48 @@
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: standard
+spec:
+  # Template ID for the instance (required when not using imageTemplateSelector)
+  # This should be a valid Exoscale template ID from your zone
+  templateID: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  
+  # Disk size in GB (default: 50, min: 10, max: 8000)
+  diskSize: 100
+  
+  # Security groups (optional)
+  # List the security group IDs to attach to instances
+  securityGroups: []
+  
+  # Anti-affinity groups (optional)
+  antiAffinityGroups: []
+  
+  # Private networks (optional)
+  privateNetworks: []
+
+  # Kubelet exposed configuration (all those parameters are optional)
+  # https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
+  # imageGCHighThresholdPercent: 80
+  # imageGCLowThresholdPercent: 70
+  # imageMinimumGCAge: 5m
+  # kubeReserved:
+  #   cpu: "100m"
+  #   memory: "256Mi"
+  #   ephemeralStorage: "1Gi"
+  # systemReserved:
+  #   cpu: "100m"
+  #   memory: "256Mi"
+  #   ephemeralStorage: "1Gi"
+
+  # Node labels (optional)
+  # These labels will be applied to all nodes using this NodeClass
+  # nodeLabels:
+  #   environment: "production"
+  #   team: "platform"
+  
+  # Node taints (optional)
+  # These taints will be applied to all nodes using this NodeClass
+  # nodeTaints:
+  #   - key: "dedicated"
+  #     value: "gpu"
+  #     effect: "NoSchedule"

@@ -1,0 +1,34 @@
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: gpu-nvidia
+spec:
+  # imageTemplateSelector with nvidia variant for GPU workloads
+  # Omit 'version' or use imageTemplateSelector: {variant: "nvidia"} 
+  # to auto-detect control plane version
+  imageTemplateSelector:
+    version: "1.34.1"
+    variant: "nvidia"
+  
+  # Minimal disk for GPU nodes
+  diskSize: 50
+  
+  securityGroups: []
+  
+  # Anti-affinity groups for spreading GPU nodes across hosts
+  antiAffinityGroups: []
+  
+  privateNetworks: []
+  
+  # GPU-specific labels
+  nodeLabels:
+    workload-type: "gpu"
+    gpu-enabled: "true"
+    environment: "production"
+    "nvidia.com/gpu.present": "true"
+  
+  # GPU-specific taints to ensure only GPU workloads are scheduled
+  nodeTaints:
+    - key: "nvidia.com/gpu"
+      value: "true"
+      effect: "NoSchedule"
