@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sync"
+	"time"
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
@@ -22,10 +24,20 @@ type exoscaleClient interface {
 	GetActiveNodepoolTemplate(ctx context.Context, version string, variant egov3.GetActiveNodepoolTemplateVariant) (*egov3.GetActiveNodepoolTemplateResponse, error)
 }
 
+type templateCacheEntry struct {
+	templateID string
+	cachedAt   time.Time
+}
+
 type DefaultResolver struct {
 	client     exoscaleClient
 	zone       string
 	kubeConfig *rest.Config
+
+	// Cache for template lookups to avoid excessive API calls
+	cacheMu    sync.RWMutex
+	cache      map[string]templateCacheEntry // key: "version:variant"
+	cacheTTL   time.Duration
 }
 
 func NewResolver(client *egov3.Client, zone string, kubeConfig *rest.Config) Resolver {
@@ -33,6 +45,8 @@ func NewResolver(client *egov3.Client, zone string, kubeConfig *rest.Config) Res
 		client:     client,
 		zone:       zone,
 		kubeConfig: kubeConfig,
+		cache:      make(map[string]templateCacheEntry),
+		cacheTTL:   5 * time.Minute,
 	}
 }
 
@@ -101,6 +115,21 @@ func extractSemVer(gitVersion string) (string, error) {
 }
 
 func (r *DefaultResolver) lookupTemplate(ctx context.Context, version, variant string) (string, error) {
+	logger := log.FromContext(ctx)
+	cacheKey := fmt.Sprintf("%s:%s", version, variant)
+
+	r.cacheMu.RLock()
+	if entry, found := r.cache[cacheKey]; found {
+		if time.Since(entry.cachedAt) < r.cacheTTL {
+			r.cacheMu.RUnlock()
+			logger.V(2).Info("using cached template ID", "cacheKey", cacheKey, "templateID", entry.templateID)
+			return entry.templateID, nil
+		}
+	}
+	r.cacheMu.RUnlock()
+
+	logger.V(1).Info("cache miss, fetching template from API", "cacheKey", cacheKey)
+
 	variantMap := map[string]egov3.GetActiveNodepoolTemplateVariant{
 		"standard": egov3.GetActiveNodepoolTemplateVariantStandard,
 		"nvidia":   egov3.GetActiveNodepoolTemplateVariantNvidia,
@@ -116,5 +145,14 @@ func (r *DefaultResolver) lookupTemplate(ctx context.Context, version, variant s
 		return "", fmt.Errorf("failed to get active nodepool template from Exoscale API: %w", err)
 	}
 
-	return string(template.ActiveTemplate), nil
+	templateID := string(template.ActiveTemplate)
+
+	r.cacheMu.Lock()
+	r.cache[cacheKey] = templateCacheEntry{
+		templateID: templateID,
+		cachedAt:   time.Now(),
+	}
+	r.cacheMu.Unlock()
+
+	return templateID, nil
 }
