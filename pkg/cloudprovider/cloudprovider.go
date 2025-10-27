@@ -539,12 +539,7 @@ func (c *CloudProvider) createNodeClaimFromInstanceProvider(inst *instance.Insta
 		}
 	}
 
-	nodeClaim.Status.Capacity = v1.ResourceList{}
-	if inst.InstanceType != nil {
-		setInstanceCapacity(nodeClaim.Status.Capacity, inst.InstanceType, 0)
-	}
 
-	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
 	return nodeClaim
 }
 

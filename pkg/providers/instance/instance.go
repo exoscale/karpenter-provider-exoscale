@@ -113,25 +113,22 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleN
 
 	log.FromContext(ctx).Info("instance creation started", "operationID", operation.ID)
 
-	finalOp, err := p.exoClient.Wait(createCtx, operation, egov3.OperationStateSuccess)
-	if err != nil {
-		// Check the operation reason for specific error types
-		if finalOp != nil {
-			switch finalOp.Reason {
-			case egov3.OperationReasonUnavailable:
-				return nil, errors.NewInsufficientCapacityError(fmt.Errorf("instance creation failed: resources unavailable - %s", finalOp.Message))
-			case egov3.OperationReasonForbidden:
-				return nil, errors.NewInsufficientCapacityError(fmt.Errorf("instance creation failed: quota exceeded - %s", finalOp.Message))
-			case egov3.OperationReasonBusy:
-				return nil, errors.NewInsufficientCapacityError(fmt.Errorf("instance creation failed: resources busy - %s", finalOp.Message))
-			}
-		}
-		return nil, fmt.Errorf("failed to wait for instance creation: %w", err)
-	}
+	instanceID := operation.Reference.ID
+	log.FromContext(ctx).V(1).Info("returning instance ID before creation completes to avoid blocking", "instanceID", instanceID)
 
-	createdInstance, err := p.exoClient.GetInstance(ctx, operation.Reference.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get created instance: %w", err)
+	var createdInstance *egov3.Instance
+	for i := 0; i < 3; i++ {
+		var err error
+		createdInstance, err = p.exoClient.GetInstance(ctx, instanceID)
+		if err == nil {
+			break
+		}
+		if i < 2 {
+			time.Sleep(time.Second)
+			log.FromContext(ctx).V(2).Info("retrying GetInstance after creation start", "instanceID", instanceID, "attempt", i+1)
+		} else {
+			return nil, fmt.Errorf("failed to get instance details after creation start: %w", err)
+		}
 	}
 
 	// The API might not return full instance type details, so we populate them from what we know
@@ -140,26 +137,31 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleN
 	}
 	// Get the full instance type details from the provider
 	instanceType, err := p.instanceTypeProvider.Get(ctx, instanceTypeName)
-	if err == nil && instanceType != nil {
-		// Use the instance type name to set family and size
-		parts := strings.SplitN(instanceTypeName, ".", 2)
-		if len(parts) == 2 {
-			createdInstance.InstanceType.Family = egov3.InstanceTypeFamily(parts[0])
-			createdInstance.InstanceType.Size = egov3.InstanceTypeSize(parts[1])
-		}
-		// IMPORTANT: Set the CPU and Memory values from the instance type
-		// These are needed for Karpenter to know the node's capacity
-		if instanceType.Capacity != nil {
-			if cpuQuantity, ok := instanceType.Capacity[corev1.ResourceCPU]; ok {
-				createdInstance.InstanceType.Cpus = cpuQuantity.Value()
-			}
-			if memQuantity, ok := instanceType.Capacity[corev1.ResourceMemory]; ok {
-				createdInstance.InstanceType.Memory = memQuantity.Value()
-			}
-			if gpuQuantity, ok := instanceType.Capacity[instancetype.ResourceNvidiaGPU]; ok {
-				createdInstance.InstanceType.Gpus = gpuQuantity.Value()
-			}
-		}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance type details for capacity calculation: %w", err)
+	}
+	if instanceType == nil || instanceType.Capacity == nil {
+		return nil, fmt.Errorf("instance type %s has no capacity information", instanceTypeName)
+	}
+
+	parts := strings.SplitN(instanceTypeName, ".", 2)
+	if len(parts) == 2 {
+		createdInstance.InstanceType.Family = egov3.InstanceTypeFamily(parts[0])
+		createdInstance.InstanceType.Size = egov3.InstanceTypeSize(parts[1])
+	}
+
+	cpuQuantity, hasCPU := instanceType.Capacity[corev1.ResourceCPU]
+	memQuantity, hasMemory := instanceType.Capacity[corev1.ResourceMemory]
+
+	if !hasCPU || !hasMemory {
+		return nil, fmt.Errorf("instance type %s missing CPU or Memory capacity", instanceTypeName)
+	}
+
+	createdInstance.InstanceType.Cpus = cpuQuantity.Value()
+	createdInstance.InstanceType.Memory = memQuantity.Value()
+
+	if gpuQuantity, ok := instanceType.Capacity[instancetype.ResourceNvidiaGPU]; ok {
+		createdInstance.InstanceType.Gpus = gpuQuantity.Value()
 	}
 
 	if len(nodeClass.Spec.PrivateNetworks) > 0 {
