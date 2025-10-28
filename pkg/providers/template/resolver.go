@@ -35,9 +35,9 @@ type DefaultResolver struct {
 	kubeConfig *rest.Config
 
 	// Cache for template lookups to avoid excessive API calls
-	cacheMu    sync.RWMutex
-	cache      map[string]templateCacheEntry // key: "version:variant"
-	cacheTTL   time.Duration
+	cacheMu  sync.RWMutex
+	cache    map[string]templateCacheEntry // key: "version:variant"
+	cacheTTL time.Duration
 }
 
 func NewResolver(client *egov3.Client, zone string, kubeConfig *rest.Config) Resolver {

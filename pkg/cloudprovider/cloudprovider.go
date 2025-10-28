@@ -539,7 +539,6 @@ func (c *CloudProvider) createNodeClaimFromInstanceProvider(inst *instance.Insta
 		}
 	}
 
-
 	return nodeClaim
 }
 
