@@ -169,6 +169,10 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
 	nodeClaim.Status.NodeName = utils.GenerateInstanceName(c.instancePrefix, nodeClaim.Name)
 
+	if createdInstance.Template != nil {
+		nodeClaim.Status.ImageID = string(createdInstance.Template.ID)
+	}
+
 	if nodeClaim.Labels == nil {
 		nodeClaim.Labels = make(map[string]string)
 	}
