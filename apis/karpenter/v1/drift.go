@@ -25,6 +25,13 @@ func compareStringSlices(expected, actual []string) bool {
 	return slices.Equal(expectedCopy, actualCopy)
 }
 
+func (in *ExoscaleNodeClass) HasTemplateIDDrifted(expectedImageID string, instanceData *InstanceData) (bool, string) {
+	if expectedImageID != "" && instanceData.TemplateID != expectedImageID {
+		return true, "TemplateID"
+	}
+	return false, ""
+}
+
 func (in *ExoscaleNodeClass) HasSecurityGroupsDrifted(instanceData *InstanceData) (bool, string) {
 	if !compareStringSlices(in.Spec.SecurityGroups, instanceData.SecurityGroups) {
 		return true, "SecurityGroups"
