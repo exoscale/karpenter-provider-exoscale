@@ -1,6 +1,15 @@
 Changelog
 =========
 
+0.0.5
+----------
+
+- Implement e2e tests
+- fix: idempotent instance deletion
+- fix: missing template ID in NodeClaims
+- fix: missing default resource overhead preventing correct provisioning
+- fix: default node prefix now empty string
+
 0.0.4
 ----------
 
