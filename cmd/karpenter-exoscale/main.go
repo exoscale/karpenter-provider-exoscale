@@ -139,9 +139,6 @@ func loadConfiguration(fallbackClusterEndpoint string) (*Config, error) {
 	}
 
 	config.InstancePrefix = os.Getenv("EXOSCALE_COMPUTE_INSTANCE_PREFIX")
-	if config.InstancePrefix == "" {
-		config.InstancePrefix = "karpenter-"
-	}
 
 	config.APIKey, err = getRequiredEnv("EXOSCALE_API_KEY")
 	if err != nil {
