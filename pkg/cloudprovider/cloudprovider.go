@@ -391,8 +391,16 @@ func (c *CloudProvider) CalculateInstanceOverhead(ctx context.Context, nodeClass
 	))
 
 	overhead := cloudprovider.InstanceTypeOverhead{
-		KubeReserved:   v1.ResourceList{},
-		SystemReserved: v1.ResourceList{},
+		KubeReserved: v1.ResourceList{
+			v1.ResourceCPU:              resource.MustParse("200m"),
+			v1.ResourceMemory:           resource.MustParse("300Mi"),
+			v1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
+		},
+		SystemReserved: v1.ResourceList{
+			v1.ResourceCPU:              resource.MustParse("100m"),
+			v1.ResourceMemory:           resource.MustParse("100Mi"),
+			v1.ResourceEphemeralStorage: resource.MustParse("3Gi"),
+		},
 	}
 
 	c.applyResourceReservation(ctx, &overhead.KubeReserved, nodeClass.Spec.KubeReserved, "kube-reserved")

@@ -355,6 +355,35 @@ func TestCloudProvider_CalculateInstanceOverhead(t *testing.T) {
 
 		assert.NotNil(t, overhead.KubeReserved)
 		assert.NotNil(t, overhead.SystemReserved)
+		assert.Equal(t, resource.MustParse("200m"), overhead.KubeReserved[corev1.ResourceCPU])
+		assert.Equal(t, resource.MustParse("300Mi"), overhead.KubeReserved[corev1.ResourceMemory])
+		assert.Equal(t, resource.MustParse("1Gi"), overhead.KubeReserved[corev1.ResourceEphemeralStorage])
+		assert.Equal(t, resource.MustParse("100m"), overhead.SystemReserved[corev1.ResourceCPU])
+		assert.Equal(t, resource.MustParse("100Mi"), overhead.SystemReserved[corev1.ResourceMemory])
+		assert.Equal(t, resource.MustParse("3Gi"), overhead.SystemReserved[corev1.ResourceEphemeralStorage])
+	})
+
+	t.Run("PartialOverride", func(t *testing.T) {
+		env := internaltesting.SetupCloudProviderTestEnvironment(t)
+		nodeClass := &apiv1.ExoscaleNodeClass{
+			Spec: apiv1.ExoscaleNodeClassSpec{
+				KubeReserved: apiv1.ResourceReservation{
+					Memory: "512Mi",
+				},
+				SystemReserved: apiv1.ResourceReservation{
+					CPU: "150m",
+				},
+			},
+		}
+
+		overhead := env.CloudProvider.CalculateInstanceOverhead(env.Ctx, nodeClass)
+
+		assert.Equal(t, resource.MustParse("200m"), overhead.KubeReserved[corev1.ResourceCPU])
+		assert.Equal(t, resource.MustParse("512Mi"), overhead.KubeReserved[corev1.ResourceMemory])
+		assert.Equal(t, resource.MustParse("1Gi"), overhead.KubeReserved[corev1.ResourceEphemeralStorage])
+		assert.Equal(t, resource.MustParse("150m"), overhead.SystemReserved[corev1.ResourceCPU])
+		assert.Equal(t, resource.MustParse("100Mi"), overhead.SystemReserved[corev1.ResourceMemory])
+		assert.Equal(t, resource.MustParse("3Gi"), overhead.SystemReserved[corev1.ResourceEphemeralStorage])
 	})
 }
 
