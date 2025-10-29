@@ -213,7 +213,8 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	err = c.instanceProvider.Delete(ctx, instanceID)
 	if err != nil {
 		if errors.IsInstanceNotFoundError(err) {
-			return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", instanceID))
+			log.FromContext(ctx).Info("instance already deleted", "instanceID", instanceID)
+			return nil
 		}
 		return err
 	}

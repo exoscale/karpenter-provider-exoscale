@@ -182,8 +182,7 @@ func TestCloudProvider_Delete(t *testing.T) {
 			Return(kerrors.NewInstanceNotFoundError(string(mocks.InstanceID1)))
 
 		err := env.CloudProvider.Delete(env.Ctx, nodeClaim)
-		assert.Error(t, err)
-		assert.True(t, karpentercloudprovider.IsNodeClaimNotFoundError(err))
+		assert.NoError(t, err)
 	})
 }
 
