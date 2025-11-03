@@ -6,6 +6,7 @@ Changelog
 
 - Overhaul of the codebase
 - fix: overprovisioning due to missing labels on NodeClaims
+- fix: missing rbac rules and manifest
 
 0.0.5
 ----------

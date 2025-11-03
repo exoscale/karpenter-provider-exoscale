@@ -4,6 +4,7 @@ metadata:
   name: karpenter-exoscale
   labels:
     app: karpenter-exoscale
+  namespace: kube-system
 spec:
   replicas: 2
   selector:
@@ -27,6 +28,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 1997
         fsGroup: 2000
+      serviceAccountName: karpenter
       containers:
         - name: karpenter
           image: docker.io/exoscale/karpenter-exoscale:latest
