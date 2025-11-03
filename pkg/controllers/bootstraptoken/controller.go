@@ -84,10 +84,10 @@ func (r *Controller) isBootstrapToken(secret *v1.Secret) bool {
 	return true
 }
 
-func isTokenExpired(secret *v1.Secret, now time.Time) bool {
+func isTokenExpired(secret *v1.Secret, checkTime time.Time) bool {
 	createdStr, ok := secret.Annotations[constants.AnnotationTokenCreated]
 	if !ok {
-		return now.Sub(secret.CreationTimestamp.Time) > constants.DefaultBootstrapTokenTTL
+		return checkTime.Sub(secret.CreationTimestamp.Time) > constants.DefaultBootstrapTokenTTL
 	}
 
 	created, err := time.Parse(time.RFC3339, createdStr)
@@ -95,7 +95,7 @@ func isTokenExpired(secret *v1.Secret, now time.Time) bool {
 		return true
 	}
 
-	return now.Sub(created) > constants.DefaultBootstrapTokenTTL
+	return checkTime.Sub(created) > constants.DefaultBootstrapTokenTTL
 }
 
 func isNodeAlreadyMarkedRegistered(secret *v1.Secret) bool {
@@ -240,6 +240,7 @@ func (r *Controller) cleanupTokens(ctx context.Context) (reconcile.Result, error
 }
 
 func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
+	// NOTE: we watch only kube-system namespace because bootstrap tokens are always created there
 	secretPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			secret, ok := e.Object.(*v1.Secret)

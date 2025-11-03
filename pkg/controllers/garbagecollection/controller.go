@@ -36,7 +36,8 @@ func StartController(mgr manager.Manager, gc *Controller) error {
 	}
 
 	go func() {
-		// Run immediately on startup
+		// NOTE: this controller runs on a timer instead of being event-driven
+		// Hence we trigger it on a timer immediately on startup and then at regular intervals
 		mgr.GetCache().WaitForCacheSync(context.Background())
 		if _, err := ctrl.Reconcile(context.Background(), reconcile.Request{}); err != nil {
 			mgr.GetLogger().Error(err, "garbage collection reconcile failed")
