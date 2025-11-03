@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -22,18 +24,35 @@ func (bt *BootstrapToken) Token() string {
 	return bt.TokenID + "." + bt.TokenSecret
 }
 
+func generateSecureRandomString(length int) (string, error) {
+	b := make([]byte, length)
+	for i := 0; i < 3; i++ {
+		if _, err := rand.Read(b); err == nil {
+			return hex.EncodeToString(b)[:length], nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return "", fmt.Errorf("failed to generate secure random string: crypto/rand unavailable")
+}
+
 func CreateAndApplyBootstrapTokenSecret(ctx context.Context, kubeClient client.Client, nodeClaimName string) (*BootstrapToken, error) {
-	tokenID, err := GenerateSecureRandomString(6)
+	tokenID, err := generateSecureRandomString(6)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token ID: %w", err)
 	}
 
-	tokenSecret, err := GenerateSecureRandomString(16)
+	tokenSecret, err := generateSecureRandomString(16)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token secret: %w", err)
 	}
 
-	secret := BuildBootstrapTokenSecret(tokenID, tokenSecret, nodeClaimName, constants.DefaultBootstrapTokenTTL, constants.BootstrapTokenExtraGroups)
+	secret := BuildBootstrapTokenSecret(
+		tokenID,
+		tokenSecret,
+		nodeClaimName,
+		constants.DefaultBootstrapTokenTTL,
+		"system:bootstrappers:worker,system:bootstrappers:ingress",
+	)
 
 	if err := kubeClient.Create(ctx, secret); err != nil {
 		return nil, fmt.Errorf("failed to create bootstrap token secret: %w", err)
@@ -50,7 +69,7 @@ func CreateAndApplyBootstrapTokenSecret(ctx context.Context, kubeClient client.C
 func BuildBootstrapTokenSecret(tokenID, tokenSecret, nodeClaimName string, ttl time.Duration, extraGroups string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      constants.BootstrapTokenPrefix + tokenID,
+			Name:      "bootstrap-token-" + tokenID,
 			Namespace: metav1.NamespaceSystem,
 			Labels: map[string]string{
 				constants.LabelTokenProvider: constants.ProviderName,

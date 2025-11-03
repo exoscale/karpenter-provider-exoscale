@@ -1,16 +1,10 @@
 package userdata
 
 import (
-	"context"
-
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	v1 "k8s.io/api/core/v1"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
-
-type Provider interface {
-	Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, options *Options) (string, error)
-}
 
 type Options struct {
 	ClusterEndpoint             string
@@ -27,6 +21,21 @@ type Options struct {
 	ImageMinimumGCAge           string
 }
 
-type CAProvider interface {
-	GetClusterCA(ctx context.Context) ([]byte, error)
+func NewOptions(
+	nodeClass *apiv1.ExoscaleNodeClass,
+	nodeClaim *karpenterv1.NodeClaim,
+) *Options {
+	return &Options{
+		Labels: nodeClaim.Labels,
+		KubeReserved: apiv1.ResourceReservation{
+			CPU:              nodeClass.Spec.KubeReserved.CPU,
+			Memory:           nodeClass.Spec.KubeReserved.Memory,
+			EphemeralStorage: nodeClass.Spec.KubeReserved.EphemeralStorage,
+		},
+		SystemReserved: apiv1.ResourceReservation{
+			CPU:              nodeClass.Spec.SystemReserved.CPU,
+			Memory:           nodeClass.Spec.SystemReserved.Memory,
+			EphemeralStorage: nodeClass.Spec.SystemReserved.EphemeralStorage,
+		},
+	}
 }

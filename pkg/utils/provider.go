@@ -26,7 +26,3 @@ func ParseProviderID(providerID string) (string, error) {
 
 	return instanceID, nil
 }
-
-func FormatProviderID(instanceID string) string {
-	return ExoscaleProviderIDPrefix + instanceID
-}

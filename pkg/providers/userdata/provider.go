@@ -16,25 +16,19 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-type DefaultProvider struct {
-	kubeClient      client.Client
-	clusterEndpoint string
-	clusterDNS      string
-	clusterDomain   string
-	sksBootstrap    *bootstrap.SKSBootstrap
+type Provider struct {
+	kubeClient   client.Client
+	sksBootstrap *bootstrap.SKSBootstrap
 }
 
-func NewProvider(kubeClient client.Client, clusterEndpoint, clusterDNS, clusterDomain string) Provider {
-	return &DefaultProvider{
-		kubeClient:      kubeClient,
-		clusterEndpoint: clusterEndpoint,
-		clusterDNS:      clusterDNS,
-		clusterDomain:   clusterDomain,
-		sksBootstrap:    bootstrap.New(),
+func NewProvider(kubeClient client.Client) *Provider {
+	return &Provider{
+		kubeClient:   kubeClient,
+		sksBootstrap: bootstrap.New(),
 	}
 }
 
-func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, options *Options) (string, error) {
+func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, options *Options) (string, error) {
 	if nodeClass == nil {
 		return "", fmt.Errorf("nodeClass cannot be nil")
 	}
@@ -47,16 +41,6 @@ func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.Exoscal
 		"nodeClass", nodeClass.Name,
 		"nodeClaim", nodeClaim.Name,
 	))
-
-	if options.ClusterEndpoint == "" {
-		options.ClusterEndpoint = p.clusterEndpoint
-	}
-	if options.ClusterDNS == "" {
-		options.ClusterDNS = p.clusterDNS
-	}
-	if options.ClusterDomain == "" {
-		options.ClusterDomain = p.clusterDomain
-	}
 
 	if len(options.CABundle) == 0 {
 		caBundle, err := p.getClusterCA(ctx)
@@ -79,8 +63,6 @@ func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.Exoscal
 		ImageMinimumGCAge:           options.ImageMinimumGCAge,
 	}
 
-	bootstrapOptions.Taints = append(bootstrapOptions.Taints, nodeClaim.Spec.Taints...)
-
 	if bootstrapOptions.Labels == nil {
 		bootstrapOptions.Labels = make(map[string]string)
 	}
@@ -94,11 +76,10 @@ func (p *DefaultProvider) Generate(ctx context.Context, nodeClass *apiv1.Exoscal
 		return "", fmt.Errorf("failed to generate user data: %w", err)
 	}
 
-	log.FromContext(ctx).V(2).Info("generated user data", "size", len(userData))
 	return userData, nil
 }
 
-func (p *DefaultProvider) getClusterCA(ctx context.Context) ([]byte, error) {
+func (p *Provider) getClusterCA(ctx context.Context) ([]byte, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "getClusterCA",
 	))
@@ -113,7 +94,7 @@ func (p *DefaultProvider) getClusterCA(ctx context.Context) ([]byte, error) {
 	return p.getCACertFromKubeRootCA(ctx)
 }
 
-func (p *DefaultProvider) getCACertFromClusterInfo(ctx context.Context) ([]byte, error) {
+func (p *Provider) getCACertFromClusterInfo(ctx context.Context) ([]byte, error) {
 	cm := &v1.ConfigMap{}
 	if err := p.kubeClient.Get(ctx, client.ObjectKey{
 		Name:      "cluster-info",
@@ -133,7 +114,7 @@ func (p *DefaultProvider) getCACertFromClusterInfo(ctx context.Context) ([]byte,
 	return p.extractCACertFromKubeconfig(kubeconfig)
 }
 
-func (p *DefaultProvider) getCACertFromKubeRootCA(ctx context.Context) ([]byte, error) {
+func (p *Provider) getCACertFromKubeRootCA(ctx context.Context) ([]byte, error) {
 	cm := &v1.ConfigMap{}
 	if err := p.kubeClient.Get(ctx, client.ObjectKey{
 		Name:      "kube-root-ca.crt",
@@ -150,7 +131,7 @@ func (p *DefaultProvider) getCACertFromKubeRootCA(ctx context.Context) ([]byte, 
 	return []byte(caCertStr), nil
 }
 
-func (p *DefaultProvider) extractCACertFromKubeconfig(kubeconfig string) ([]byte, error) {
+func (p *Provider) extractCACertFromKubeconfig(kubeconfig string) ([]byte, error) {
 	var config map[string]interface{}
 	if err := yaml.Unmarshal([]byte(kubeconfig), &config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal kubeconfig: %w", err)

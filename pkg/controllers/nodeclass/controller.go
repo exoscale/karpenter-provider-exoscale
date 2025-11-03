@@ -10,7 +10,6 @@ import (
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,8 +31,8 @@ const (
 type ExoscaleNodeClassReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
-	ExoscaleClient   instance.EgoscaleClient
-	TemplateResolver template.Resolver
+	ExoscaleClient   *egov3.Client
+	TemplateResolver *template.Provider
 	Recorder         record.EventRecorder
 	Zone             string
 }
@@ -200,12 +199,12 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 			continue
 		}
 
-		managedBy, hasManagedBy := inst.Labels[constants.LabelManagedBy]
+		managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
 		if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
 			continue
 		}
 
-		nodeClaimName, hasNodeClaim := inst.Labels[constants.LabelNodeClaim]
+		nodeClaimName, hasNodeClaim := inst.Labels[constants.InstanceLabelNodeClaim]
 		if !hasNodeClaim || validNodeClaims[nodeClaimName] {
 			continue
 		}
@@ -243,14 +242,14 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 func (r *ExoscaleNodeClassReconciler) verifyExoscaleResources(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
 
-	templateID, err := r.TemplateResolver.ResolveTemplateID(ctx, nodeClass)
+	t, err := r.TemplateResolver.ResolveTemplate(ctx, nodeClass)
 	if err != nil {
 		return fmt.Errorf("failed to resolve template ID: %w", err)
 	}
 
-	log.FromContext(ctx).V(1).Info("verifying template", "templateID", templateID)
-	if _, err := r.ExoscaleClient.GetTemplate(ctx, egov3.UUID(templateID)); err != nil {
-		return fmt.Errorf("template %s not found or not accessible: %w", templateID, err)
+	log.FromContext(ctx).V(1).Info("verifying template", "templateID", t.ID)
+	if _, err := r.ExoscaleClient.GetTemplate(ctx, egov3.UUID(t.ID)); err != nil {
+		return fmt.Errorf("template %s not found or not accessible: %w", t.ID, err)
 	}
 
 	for _, sgID := range nodeClass.Spec.SecurityGroups {

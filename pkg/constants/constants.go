@@ -3,15 +3,18 @@ package constants
 import "time"
 
 const (
-	LabelManagedBy = "exoscale.com/managed-by"
-	LabelClusterID = "exoscale.com/cluster-id"
-	LabelNodeClaim = "exoscale.com/node-claim"
+	InstanceLabelManagedBy = "exoscale-com--managed-by"
+	InstanceLabelClusterID = "exoscale-com--cluster-id"
+	InstanceLabelNodeClaim = "exoscale-com--node-claim"
 
 	ManagedByKarpenter = "karpenter"
 
 	AnnotationBootstrapToken = "exoscale.com/bootstrap-token"
 	AnnotationTokenCreated   = "exoscale.com/token-created"
 	LabelTokenProvider       = "exoscale.com/token-provider"
+
+	LabelInstanceFamily = "exoscale.com/instance-family"
+	LabelInstanceSize   = "exoscale.com/instance-size"
 
 	DefaultOperationTimeout  = 10 * time.Minute
 	DefaultBootstrapTokenTTL = 10 * time.Minute
@@ -21,8 +24,4 @@ const (
 	MaxInstancesPerAntiAffinityGroup = 8
 
 	ProviderName = "karpenter-exoscale"
-
-	BootstrapTokenPrefix = "bootstrap-token-"
-
-	BootstrapTokenExtraGroups = "system:bootstrappers:worker,system:bootstrappers:ingress"
 )

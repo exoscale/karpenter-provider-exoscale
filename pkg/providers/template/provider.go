@@ -7,6 +7,7 @@ import (
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -14,33 +15,30 @@ import (
 
 var gitVersionRegex = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)`)
 
-type Resolver interface {
-	ResolveTemplateID(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (string, error)
-}
-
-type exoscaleClient interface {
-	GetActiveNodepoolTemplate(ctx context.Context, version string, variant egov3.GetActiveNodepoolTemplateVariant) (*egov3.GetActiveNodepoolTemplateResponse, error)
-}
-
-type DefaultResolver struct {
-	client     exoscaleClient
+type Provider struct {
+	client     *egov3.Client
 	zone       string
 	kubeConfig *rest.Config
 }
 
-func NewResolver(client *egov3.Client, zone string, kubeConfig *rest.Config) Resolver {
-	return &DefaultResolver{
+func NewResolver(client *egov3.Client, zone string, kubeConfig *rest.Config) *Provider {
+	return &Provider{
 		client:     client,
 		zone:       zone,
 		kubeConfig: kubeConfig,
 	}
 }
 
-func (r *DefaultResolver) ResolveTemplateID(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (string, error) {
+func (r *Provider) ResolveTemplate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (*Template, error) {
 	logger := log.FromContext(ctx)
 
 	if nodeClass.Spec.TemplateID != "" {
-		return nodeClass.Spec.TemplateID, nil
+		return &Template{
+			ID: nodeClass.Spec.TemplateID,
+			Labels: map[string]string{
+				corev1.LabelOSStable: "linux",
+			},
+		}, nil
 	}
 
 	if nodeClass.Spec.ImageTemplateSelector != nil {
@@ -50,7 +48,7 @@ func (r *DefaultResolver) ResolveTemplateID(ctx context.Context, nodeClass *apiv
 		if version == "" {
 			detectedVersion, err := r.getKubernetesVersion()
 			if err != nil {
-				return "", fmt.Errorf("failed to detect cluster version: %w", err)
+				return nil, fmt.Errorf("failed to detect cluster version: %w", err)
 			}
 			version = detectedVersion
 			logger.V(1).Info("detected cluster version", "version", version)
@@ -63,7 +61,7 @@ func (r *DefaultResolver) ResolveTemplateID(ctx context.Context, nodeClass *apiv
 
 		templateID, err := r.lookupTemplate(ctx, version, variant)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve template for version=%s, variant=%s: %w", version, variant, err)
+			return nil, fmt.Errorf("failed to resolve template for version=%s, variant=%s: %w", version, variant, err)
 		}
 
 		logger.Info("resolved template from selector",
@@ -71,13 +69,18 @@ func (r *DefaultResolver) ResolveTemplateID(ctx context.Context, nodeClass *apiv
 			"version", version,
 			"variant", variant)
 
-		return templateID, nil
+		return &Template{
+			ID: templateID,
+			Labels: map[string]string{
+				corev1.LabelOSStable: "linux",
+			},
+		}, nil
 	}
 
-	return "", fmt.Errorf("neither templateID nor imageTemplateSelector is specified in NodeClass %s", nodeClass.Name)
+	return nil, fmt.Errorf("neither templateID nor imageTemplateSelector is specified in NodeClass %s", nodeClass.Name)
 }
 
-func (r *DefaultResolver) getKubernetesVersion() (string, error) {
+func (r *Provider) getKubernetesVersion() (string, error) {
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(r.kubeConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to create discovery client: %w", err)
@@ -100,7 +103,7 @@ func extractSemVer(gitVersion string) (string, error) {
 	return matches[1], nil
 }
 
-func (r *DefaultResolver) lookupTemplate(ctx context.Context, version, variant string) (string, error) {
+func (r *Provider) lookupTemplate(ctx context.Context, version, variant string) (string, error) {
 	variantMap := map[string]egov3.GetActiveNodepoolTemplateVariant{
 		"standard": egov3.GetActiveNodepoolTemplateVariantStandard,
 		"nvidia":   egov3.GetActiveNodepoolTemplateVariantNvidia,
