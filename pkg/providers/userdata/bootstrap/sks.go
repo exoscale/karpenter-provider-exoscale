@@ -129,15 +129,6 @@ func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNo
 			config.Settings.Kubernetes.SystemReserved = convertResourceReservation(nodeClass.Spec.SystemReserved)
 		}
 
-		// Node Taints - format: key -> ["value:effect", ...]
-		if len(nodeClass.Spec.NodeTaints) > 0 {
-			config.Settings.Kubernetes.NodeTaints = make(map[string][]string)
-			for _, taint := range nodeClass.Spec.NodeTaints {
-				taintString := fmt.Sprintf("%s:%s", taint.Value, taint.Effect)
-				config.Settings.Kubernetes.NodeTaints[taint.Key] = append(config.Settings.Kubernetes.NodeTaints[taint.Key], taintString)
-			}
-		}
-
 		if len(nodeClass.Spec.NodeLabels) > 0 {
 			config.Settings.Kubernetes.NodeLabels = nodeClass.Spec.NodeLabels
 		}
@@ -158,7 +149,14 @@ func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNo
 			config.Settings.Kubernetes.NodeTaints = make(map[string][]string)
 		}
 		for _, taint := range options.Taints {
-			taintString := fmt.Sprintf("%s:%s", taint.Value, string(taint.Effect))
+			// IMPORTANT: sks-node-agent requires ALL taints to have a non-empty value
+			// For taints that are semantically empty (like karpenter.sh/unregistered),
+			// we use "true" as the value for compatibility
+			value := taint.Value
+			if value == "" {
+				value = "true"
+			}
+			taintString := fmt.Sprintf("%s:%s", value, string(taint.Effect))
 			// Check if this taint already exists to avoid duplicates
 			exists := false
 			for _, existing := range config.Settings.Kubernetes.NodeTaints[taint.Key] {

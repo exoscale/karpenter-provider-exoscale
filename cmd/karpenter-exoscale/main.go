@@ -6,8 +6,7 @@ import (
 	"os"
 
 	egov3 "github.com/exoscale/egoscale/v3"
-	"github.com/exoscale/egoscale/v3/credentials"
-	exoscale "github.com/exoscale/karpenter-exoscale/pkg/cloudprovider"
+	"github.com/exoscale/karpenter-exoscale/pkg/cloudprovider"
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/bootstraptoken"
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/garbagecollection"
 	"github.com/exoscale/karpenter-exoscale/pkg/controllers/nodeclass"
@@ -15,7 +14,6 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
-	"github.com/google/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/overlay"
 	"sigs.k8s.io/karpenter/pkg/controllers"
@@ -44,49 +42,38 @@ func main() {
 }
 
 func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) error {
-	config, err := loadConfiguration(op.GetConfig().Host)
+	options, err := instance.NewOptionsFromEnvironment(op.GetConfig().Host)
 	if err != nil {
 		return err
 	}
 
-	exoClient, err := createExoscaleClient(ctx, config.Zone, config.APIKey, config.APISecret)
+	exoClient, err := options.BuildExoscaleClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create Exoscale client: %w", err)
 	}
 
-	if err := validateZone(ctx, exoClient, config.Zone); err != nil {
-		return fmt.Errorf("zone validation failed: %w", err)
+	instanceTypeProvider, err := instancetype.NewExoscaleProvider(ctx, exoClient, options.Zone)
+	if err != nil {
+		return fmt.Errorf("failed to create instance type provider: %w", err)
 	}
 
-	instanceTypeProvider := instancetype.NewExoscaleProvider(exoClient, config.Zone)
 	if err := instanceTypeProvider.Refresh(ctx); err != nil {
 		return fmt.Errorf("failed to refresh instance types: %w", err)
 	}
 
-	templateResolver := template.NewResolver(exoClient, config.Zone, op.GetConfig())
-	instanceProvider := instance.NewProvider(exoClient, config.Zone, config.ClusterID, config.InstancePrefix, instanceTypeProvider, templateResolver)
+	templateResolver := template.NewResolver(exoClient, options.Zone, op.GetConfig())
+	userDataProvider := userdata.NewProvider(op.GetClient())
+	instanceProvider := instance.NewProvider(exoClient, instanceTypeProvider, templateResolver, userDataProvider, options)
 
-	userDataProvider := userdata.NewProvider(op.GetClient(), config.ClusterEndpoint, config.ClusterDNS, config.ClusterDomain)
-
-	overlayUndecoratedCloudProvider := exoscale.NewCloudProvider(
+	cloudProvider := cloudprovider.NewCloudProvider(
 		op.GetClient(),
-		exoClient,
-		config.ClusterEndpoint,
 		op.EventRecorder,
 		instanceTypeProvider,
 		instanceProvider,
-		templateResolver,
-		userDataProvider,
-		config.Zone,
-		config.ClusterID,
-		config.ClusterDNS,
-		config.ClusterDomain,
-		config.InstancePrefix,
 	)
+	decoratedCloudProvider := overlay.Decorate(cloudProvider, op.GetClient(), op.InstanceTypeStore)
 
-	cloudProvider := overlay.Decorate(overlayUndecoratedCloudProvider, op.GetClient(), op.InstanceTypeStore)
-
-	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), decoratedCloudProvider)
 
 	controllerList := controllers.NewControllers(
 		ctxOp,
@@ -94,13 +81,13 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		op.Clock,
 		op.GetClient(),
 		op.EventRecorder,
+		decoratedCloudProvider,
 		cloudProvider,
-		overlayUndecoratedCloudProvider,
 		clusterState,
 		op.InstanceTypeStore,
 	)
 
-	if err := registerCustomControllers(op.Manager, exoClient, instanceProvider, templateResolver, config.Zone); err != nil {
+	if err := registerControllers(op.Manager, exoClient, instanceProvider, templateResolver, options.Zone); err != nil {
 		return fmt.Errorf("failed to register custom controllers: %w", err)
 	}
 
@@ -109,127 +96,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 	return nil
 }
 
-type Config struct {
-	Zone            string
-	ClusterID       string
-	InstancePrefix  string
-	APIKey          string
-	APISecret       string
-	ClusterDNS      string
-	ClusterDomain   string
-	ClusterEndpoint string
-}
-
-func loadConfiguration(fallbackClusterEndpoint string) (*Config, error) {
-	config := &Config{}
-
-	var err error
-	config.Zone, err = getRequiredEnv("EXOSCALE_ZONE")
-	if err != nil {
-		return nil, err
-	}
-
-	config.ClusterID, err = getRequiredEnv("EXOSCALE_SKS_CLUSTER_ID")
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := uuid.Parse(config.ClusterID); err != nil {
-		return nil, fmt.Errorf("EXOSCALE_SKS_CLUSTER_ID environment variable is not a valid UUID")
-	}
-
-	config.InstancePrefix = os.Getenv("EXOSCALE_COMPUTE_INSTANCE_PREFIX")
-
-	config.APIKey, err = getRequiredEnv("EXOSCALE_API_KEY")
-	if err != nil {
-		return nil, err
-	}
-
-	config.APISecret, err = getRequiredEnv("EXOSCALE_API_SECRET")
-	if err != nil {
-		return nil, err
-	}
-
-	config.ClusterDNS = os.Getenv("CLUSTER_DNS_IP")
-	config.ClusterDomain = os.Getenv("CLUSTER_DOMAIN")
-
-	config.ClusterEndpoint = os.Getenv("CLUSTER_ENDPOINT")
-	if config.ClusterEndpoint == "" {
-		config.ClusterEndpoint = fallbackClusterEndpoint
-	}
-
-	return config, nil
-}
-
-func getRequiredEnv(key string) (string, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return "", fmt.Errorf("%s environment variable is required", key)
-	}
-	return value, nil
-}
-
-func getEndpoint(ctx context.Context, exoClient *egov3.Client, zone string) (*egov3.Endpoint, error) {
-	if value, exists := os.LookupEnv("EXOSCALE_API_ENDPOINT"); exists {
-		endpoint := egov3.Endpoint(value)
-		return &endpoint, nil
-	}
-
-	if value, exists := os.LookupEnv("EXOSCALE_API_ENVIRONMENT"); exists {
-		if value == "ppapi" {
-			endpoint := egov3.Endpoint("https://ppapi-ch-gva-2.exoscale.com/v2")
-			return &endpoint, nil
-		}
-	}
-
-	endpoint, err := exoClient.GetZoneAPIEndpoint(ctx, egov3.ZoneName(zone))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get zone endpoint for %s: %w", zone, err)
-	}
-
-	return &endpoint, nil
-}
-
-func createExoscaleClient(ctx context.Context, zone, apiKey, apiSecret string) (*egov3.Client, error) {
-	exoClient, err := egov3.NewClient(
-		credentials.NewStaticCredentials(apiKey, apiSecret),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Exoscale client: %w", err)
-	}
-
-	endpoint, err := getEndpoint(ctx, exoClient, zone)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Exoscale API endpoint: %w", err)
-	}
-
-	return egov3.NewClient(
-		credentials.NewStaticCredentials(apiKey, apiSecret),
-		egov3.ClientOptWithEndpoint(*endpoint),
-	)
-}
-
-func validateZone(ctx context.Context, client *egov3.Client, zone string) error {
-	zones, err := client.ListZones(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list zones: %w", err)
-	}
-
-	for _, z := range zones.Zones {
-		if string(z.Name) == zone {
-			return nil
-		}
-	}
-
-	var availableZones []string
-	for _, z := range zones.Zones {
-		availableZones = append(availableZones, string(z.Name))
-	}
-
-	return fmt.Errorf("zone %s not found. Available zones: %v", zone, availableZones)
-}
-
-func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProvider instance.Provider, templateResolver template.Resolver, zone string) error {
+func registerControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProvider *instance.Provider, templateResolver *template.Provider, zone string) error {
 	if err := (&bootstraptoken.Controller{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -249,7 +116,10 @@ func registerCustomControllers(mgr ctrl.Manager, exoClient *egov3.Client, instan
 		return fmt.Errorf("unable to create nodeclass controller: %w", err)
 	}
 
-	if err := garbagecollection.NewController(mgr, instanceProvider); err != nil {
+	if err := garbagecollection.StartController(mgr, &garbagecollection.Controller{
+		Client:           mgr.GetClient(),
+		InstanceProvider: instanceProvider,
+	}); err != nil {
 		return fmt.Errorf("unable to create garbage collection controller: %w", err)
 	}
 

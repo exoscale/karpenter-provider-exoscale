@@ -1,10 +1,15 @@
 Changelog
 =========
 
+0.0.6
+----------
+
+- Overhaul of the codebase
+- fix: overprovisioning due to missing labels on NodeClaims
+
 0.0.5
 ----------
 
-- Implement e2e tests
 - fix: idempotent instance deletion
 - fix: missing template ID in NodeClaims
 - fix: missing default resource overhead preventing correct provisioning

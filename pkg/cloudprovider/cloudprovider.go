@@ -2,24 +2,20 @@ package cloudprovider
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
-	egov3 "github.com/exoscale/egoscale/v3"
+	"github.com/samber/lo"
+
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
-	"github.com/exoscale/karpenter-exoscale/pkg/constants"
-	"github.com/exoscale/karpenter-exoscale/pkg/errors"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
 	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -28,72 +24,30 @@ import (
 )
 
 const (
-	DefaultClusterDNS    = "10.96.0.10"
-	DefaultClusterDomain = "cluster.local"
+	DriftReasonImageID            cloudprovider.DriftReason = "ImageID"
+	DriftReasonAntiAffinityGroups cloudprovider.DriftReason = "AntiAffinityGroups"
+	DriftReasonSecurityGroups     cloudprovider.DriftReason = "SecurityGroups"
+	DriftReasonPrivateNetworks    cloudprovider.DriftReason = "PrivateNetworks"
 )
-
-type ExoscaleClient interface {
-	CreateInstance(ctx context.Context, req egov3.CreateInstanceRequest) (*egov3.Operation, error)
-	GetInstance(ctx context.Context, id egov3.UUID) (*egov3.Instance, error)
-	DeleteInstance(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
-	ListInstances(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
-	AttachInstanceToPrivateNetwork(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToPrivateNetworkRequest) (*egov3.Operation, error)
-	ListInstanceTypes(ctx context.Context) (*egov3.ListInstanceTypesResponse, error)
-	Wait(ctx context.Context, op *egov3.Operation, states ...egov3.OperationState) (*egov3.Operation, error)
-}
 
 type CloudProvider struct {
 	kubeClient           client.Client
-	exoClient            ExoscaleClient
-	clusterEndpoint      string
 	recorder             karpenterevents.Recorder
-	instanceTypeProvider instancetype.Provider
-	instanceProvider     instance.Provider
-	templateResolver     template.Resolver
-	userDataProvider     userdata.Provider
-	clusterID            string
-	zone                 string
-	clusterDNS           string
-	clusterDomain        string
-	instancePrefix       string
+	instanceTypeProvider *instancetype.Provider
+	instanceProvider     *instance.Provider
 }
 
 func NewCloudProvider(
 	kubeClient client.Client,
-	exoClient ExoscaleClient,
-	clusterEndpoint string,
 	recorder karpenterevents.Recorder,
-	instanceTypeProvider instancetype.Provider,
-	instanceProvider instance.Provider,
-	templateResolver template.Resolver,
-	userDataProvider userdata.Provider,
-	zone string,
-	clusterID string,
-	clusterDNS string,
-	clusterDomain string,
-	instancePrefix string,
+	instanceTypeProvider *instancetype.Provider,
+	instanceProvider *instance.Provider,
 ) *CloudProvider {
-	if clusterDNS == "" {
-		clusterDNS = DefaultClusterDNS
-	}
-	if clusterDomain == "" {
-		clusterDomain = DefaultClusterDomain
-	}
-
 	return &CloudProvider{
 		kubeClient:           kubeClient,
-		exoClient:            exoClient,
-		clusterEndpoint:      clusterEndpoint,
 		recorder:             recorder,
 		instanceTypeProvider: instanceTypeProvider,
 		instanceProvider:     instanceProvider,
-		templateResolver:     templateResolver,
-		userDataProvider:     userDataProvider,
-		clusterID:            clusterID,
-		zone:                 zone,
-		clusterDNS:           clusterDNS,
-		clusterDomain:        clusterDomain,
-		instancePrefix:       instancePrefix,
 	}
 }
 
@@ -104,18 +58,20 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	))
 	log.FromContext(ctx).Info("creating instance for node claim")
 
-	nodeClass, err := c.GetNodeClass(ctx, nodeClaim)
+	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to get node class")
-		if k8serrors.IsNotFound(err) {
-			return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("node class not found: %w", err))
+		if errors.IsNotFound(err) {
+			return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class from nodeclaim, %w", err))
 		}
-		return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("failed to get node class: %w", err))
+		return nil, fmt.Errorf("resolving node class from nodeclaim, %w", err)
+	}
+	if nodeClassStatus := nodeClass.StatusConditions().Get(status.ConditionReady); nodeClassStatus.IsFalse() {
+		if nodeClassStatus == nil {
+			return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("unable to determine node class status, %w", err))
+		}
+		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassStatus.Message))
 	}
 
-	if !c.isNodeClassReady(nodeClass) {
-		return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("node class %s is not ready", nodeClass.Name))
-	}
 	log.FromContext(ctx).V(1).Info("retrieved node class", "nodeClass", nodeClass.Name)
 
 	bootstrapToken, err := utils.CreateAndApplyBootstrapTokenSecret(ctx, c.kubeClient, nodeClaim.Name)
@@ -125,67 +81,17 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 
 	log.FromContext(ctx).V(1).Info("bootstrap token secret created", "secretName", bootstrapToken.SecretName)
 
-	nodeTaints := append([]v1.Taint{}, nodeClaim.Spec.Taints...)
-	nodeTaints = append(nodeTaints, nodeClaim.Spec.StartupTaints...)
-
-	userDataOptions := &userdata.Options{
-		ClusterEndpoint: c.clusterEndpoint,
-		ClusterDNS:      c.clusterDNS,
-		ClusterDomain:   c.clusterDomain,
-		BootstrapToken:  bootstrapToken.Token(),
-		Taints:          nodeTaints,
-		Labels:          nodeClaim.Labels,
-	}
-
-	userData, err := c.userDataProvider.Generate(ctx, nodeClass, nodeClaim, userDataOptions)
-	if err != nil {
-		return nil, cloudprovider.NewCreateError(err, "UserDataGenerationFailed", fmt.Sprintf("failed to generate user data: %s", err))
-	}
-
-	if nodeClaim.Annotations == nil {
-		nodeClaim.Annotations = make(map[string]string)
-	}
-	nodeClaim.Annotations[constants.AnnotationBootstrapToken] = bootstrapToken.SecretName
-
-	tags := map[string]string{}
-	createdInstance, err := c.instanceProvider.Create(ctx, nodeClass, nodeClaim, userData, tags)
+	createdInstance, err := c.instanceProvider.Create(ctx, nodeClass, nodeClaim, bootstrapToken.Token())
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to create instance")
-
-		if errors.IsInsufficientCapacityError(err) {
-			return nil, cloudprovider.NewInsufficientCapacityError(err)
-		}
-
 		return nil, cloudprovider.NewCreateError(err, "InstanceCreationFailed", err.Error())
 	}
 
-	nodeClaim.Status.ProviderID = utils.FormatProviderID(createdInstance.ID)
-	nodeClaim.Status.Capacity = v1.ResourceList{}
+	nc := createdInstance.ToNodeClaim()
+	nc.Name = nodeClaim.Name
+	nc.Status.Allocatable = applyOverhead(nc.Status.Allocatable, nodeClass)
 
-	if createdInstance.InstanceType != nil {
-		setInstanceCapacity(nodeClaim.Status.Capacity, createdInstance.InstanceType, nodeClass.Spec.DiskSize)
-	}
-
-	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
-	nodeClaim.Status.NodeName = utils.GenerateInstanceName(c.instancePrefix, nodeClaim.Name)
-
-	if createdInstance.Template != nil {
-		nodeClaim.Status.ImageID = string(createdInstance.Template.ID)
-	}
-
-	if nodeClaim.Labels == nil {
-		nodeClaim.Labels = make(map[string]string)
-	}
-
-	if createdInstance.InstanceTypeName != "" {
-		nodeClaim.Labels[v1.LabelInstanceTypeStable] = createdInstance.InstanceTypeName
-	}
-
-	nodeClaim.Labels[v1.LabelTopologyZone] = c.zone
-	nodeClaim.Labels[constants.LabelClusterID] = c.clusterID
-	nodeClaim.Labels[karpenterv1.CapacityTypeLabelKey] = karpenterv1.CapacityTypeOnDemand
-
-	return nodeClaim, nil
+	return nc, nil
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) error {
@@ -194,114 +100,18 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		"nodeClaim", nodeClaim.Name,
 	))
 
-	// karpenter has its own draining logic when it decides to downscale a nodepool,
-	// but we want to be very conservative for people deleting nodeclaims directly
-	log.FromContext(ctx).Info("draining node", "nodeName", nodeClaim.Status.NodeName)
-	if err := c.drainNode(ctx, nodeClaim.Status.NodeName); err != nil {
-		log.FromContext(ctx).Error(err, "failed to drain node", "nodeName", nodeClaim.Status.NodeName)
-		return fmt.Errorf("failed to drain node %s: %w", nodeClaim.Status.NodeName, err)
-	}
-
-	log.FromContext(ctx).Info("node drained", "nodeName", nodeClaim.Status.NodeName)
-
 	instanceID, err := utils.ParseProviderID(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("failed to parse provider ID %s: %w", nodeClaim.Status.ProviderID, err)
 	}
 
 	log.FromContext(ctx).Info("deleting instance", "instanceID", instanceID)
-	err = c.instanceProvider.Delete(ctx, instanceID)
-	if err != nil {
-		if errors.IsInstanceNotFoundError(err) {
-			log.FromContext(ctx).Info("instance already deleted", "instanceID", instanceID)
-			return nil
-		}
-		return err
-	}
-	return nil
-}
-
-func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {
-	var node v1.Node
-	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, &node); err != nil {
-		if k8serrors.IsNotFound(err) {
-			// Node already removed, nothing to do
-			return nil
-		}
+	if err := c.instanceProvider.Delete(ctx, instanceID); err != nil {
+		log.FromContext(ctx).Error(err, "failed to delete instance", "instanceID", instanceID)
 		return err
 	}
 
-	if !node.Spec.Unschedulable {
-		patch := client.MergeFrom(node.DeepCopy())
-		node.Spec.Unschedulable = true
-		if err := c.kubeClient.Patch(ctx, &node, patch); err != nil {
-			return err
-		}
-	}
-
-	evictStartTime := time.Now()
-	for {
-		if time.Since(evictStartTime) > 15*time.Minute {
-			log.FromContext(ctx).Error(fmt.Errorf("timed out waiting for pods to be evicted"), "nodeName", nodeName, "timeout", 5*time.Minute)
-			return nil
-		}
-
-		evictionFailed := false
-		foundInDeletionPods := false
-		justEvictedPod := false
-
-		// List pods on the node
-		var podList v1.PodList
-		if err := c.kubeClient.List(ctx, &podList, client.MatchingFields{"spec.nodeName": nodeName}); err != nil {
-			goto nextAttempt
-		}
-
-		for _, pod := range podList.Items {
-			// Ignore DaemonSet pods
-			isDaemonSet := false
-			for _, owner := range pod.OwnerReferences {
-				if owner.Kind == "DaemonSet" {
-					isDaemonSet = true
-					break
-				}
-			}
-			if isDaemonSet {
-				continue
-			}
-
-			// Ignore in deletion pods
-			if pod.DeletionTimestamp != nil {
-				foundInDeletionPods = true
-				continue
-			}
-
-			// Evict pod
-			if err := c.kubeClient.SubResource("eviction").Create(ctx, &pod, &policyv1.Eviction{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      pod.Name,
-					Namespace: pod.Namespace,
-				},
-			}); err != nil {
-				if !k8serrors.IsNotFound(err) {
-					log.FromContext(ctx).Error(err, "failed to evict pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-					evictionFailed = true
-				}
-			} else {
-				log.FromContext(ctx).Info("evicted pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-				justEvictedPod = true
-			}
-		}
-
-		// No more pods to evict and we didn't evicted one now, we can delete node
-		if !evictionFailed && !foundInDeletionPods && !justEvictedPod || len(podList.Items) == 0 {
-			break
-		}
-
-		// Wait before next eviction attempt
-	nextAttempt:
-		time.Sleep(time.Second * 5)
-	}
-
+	log.FromContext(ctx).Info("cloud instance deletion completed", "instanceID", instanceID)
 	return nil
 }
 
@@ -318,17 +128,13 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv
 
 	inst, err := c.instanceProvider.Get(ctx, instanceID)
 	if err != nil {
-		if errors.IsInstanceNotFoundError(err) {
-			log.FromContext(ctx).V(1).Info("instance not found", "instanceID", instanceID)
-			return nil, cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", instanceID))
-		}
 		log.FromContext(ctx).Error(err, "failed to get instance", "instanceID", instanceID)
-		return nil, fmt.Errorf("failed to get instance %s: %w", instanceID, err)
+		return nil, err
 	}
 
-	nodeClaim := c.createNodeClaimFromInstanceProvider(inst)
-	log.FromContext(ctx).V(1).Info("retrieved instance", "instanceID", instanceID, "nodeClaim", nodeClaim.Name)
-	return nodeClaim, nil
+	nc := inst.ToNodeClaim()
+	log.FromContext(ctx).V(1).Info("retrieved instance", "instanceID", instanceID, "nodeClaim", nc.Name)
+	return nc, nil
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpenterv1.NodeClaim, error) {
@@ -344,7 +150,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpenterv1.NodeClaim, err
 
 	var nodeClaims []*karpenterv1.NodeClaim
 	for _, inst := range instances {
-		nodeClaims = append(nodeClaims, c.createNodeClaimFromInstanceProvider(inst))
+		nodeClaims = append(nodeClaims, inst.ToNodeClaim())
 	}
 
 	log.FromContext(ctx).V(1).Info("listed instances", "count", len(nodeClaims))
@@ -361,96 +167,78 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpente
 		"nodePool", nodePoolName,
 	))
 
-	instanceTypes, err := c.instanceTypeProvider.List(ctx, nil)
+	instanceTypes, err := c.instanceTypeProvider.List()
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to list instance types")
 		return nil, fmt.Errorf("failed to list instance types: %w", err)
 	}
 
-	instanceTypes = c.ApplyNodePoolOverhead(ctx, nodePool, instanceTypes)
+	if nodePool != nil && nodePool.Spec.Template.Spec.NodeClassRef != nil {
+		var nodeClass apiv1.ExoscaleNodeClass
+		if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, &nodeClass); err == nil {
+			nodeClass = applyNodeClassDefaults(nodeClass)
+			overhead := c.buildOverhead(&nodeClass)
+			for _, it := range instanceTypes {
+				it.Overhead = overhead
+			}
+		}
+	}
 
 	log.FromContext(ctx).V(1).Info("retrieved instance types", "count", len(instanceTypes))
 	return instanceTypes, nil
 }
 
-func (c *CloudProvider) ApplyNodePoolOverhead(ctx context.Context, nodePool *karpenterv1.NodePool, instanceTypes []*cloudprovider.InstanceType) []*cloudprovider.InstanceType {
-	if nodePool == nil || nodePool.Spec.Template.Spec.NodeClassRef == nil {
-		return instanceTypes
-	}
-
-	var nodeClass apiv1.ExoscaleNodeClass
-	nodeClassName := nodePool.Spec.Template.Spec.NodeClassRef.Name
-	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeClassName}, &nodeClass); err != nil {
-		return instanceTypes
-	}
-
-	overhead := c.CalculateInstanceOverhead(ctx, &nodeClass)
-	instanceTypes = c.addEphemeralStorageToInstanceTypes(instanceTypes, nodeClass.Spec.DiskSize)
-	return c.applyOverheadToInstanceTypes(instanceTypes, overhead)
-}
-
-func (c *CloudProvider) CalculateInstanceOverhead(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) cloudprovider.InstanceTypeOverhead {
+func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
-		"method", "calculateInstanceOverhead",
-		"nodeClass", nodeClass.Name,
+		"method", "IsDrifted",
+		"nodeClaim", nodeClaim.Name,
+		"providerID", nodeClaim.Status.ProviderID,
 	))
+	log.FromContext(ctx).V(2).Info("checking for drift")
 
-	overhead := cloudprovider.InstanceTypeOverhead{
-		KubeReserved: v1.ResourceList{
-			v1.ResourceCPU:              resource.MustParse("200m"),
-			v1.ResourceMemory:           resource.MustParse("300Mi"),
-			v1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
-		},
-		SystemReserved: v1.ResourceList{
-			v1.ResourceCPU:              resource.MustParse("100m"),
-			v1.ResourceMemory:           resource.MustParse("100Mi"),
-			v1.ResourceEphemeralStorage: resource.MustParse("3Gi"),
-		},
+	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to get node class")
+		return "", fmt.Errorf("failed to get node class: %w", err)
 	}
 
-	c.applyResourceReservation(ctx, &overhead.KubeReserved, nodeClass.Spec.KubeReserved, "kube-reserved")
-	c.applyResourceReservation(ctx, &overhead.SystemReserved, nodeClass.Spec.SystemReserved, "system-reserved")
-
-	log.FromContext(ctx).V(2).Info("calculated instance overhead", "overhead", overhead)
-	return overhead
-}
-
-func (c *CloudProvider) applyResourceReservation(ctx context.Context, target *v1.ResourceList, source apiv1.ResourceReservation, reservationType string) {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
-		"type", reservationType,
-	))
-
-	applyResource := func(value string, resourceName v1.ResourceName, resourceType string) {
-		if value != "" {
-			if quantity, err := resource.ParseQuantity(value); err == nil {
-				(*target)[resourceName] = quantity
-			} else {
-				log.FromContext(ctx).V(1).Info("failed to parse reservation", "resource", resourceType, "value", value, "error", err)
-			}
-		}
+	instanceID, err := utils.ParseProviderID(nodeClaim.Status.ProviderID)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to parse provider ID")
+		return "", fmt.Errorf("failed to parse provider ID: %w", err)
 	}
 
-	applyResource(source.CPU, v1.ResourceCPU, "CPU")
-	applyResource(source.Memory, v1.ResourceMemory, "memory")
-	applyResource(source.EphemeralStorage, v1.ResourceEphemeralStorage, "ephemeral storage")
-}
-
-func (c *CloudProvider) applyOverheadToInstanceTypes(instanceTypes []*cloudprovider.InstanceType, overhead cloudprovider.InstanceTypeOverhead) []*cloudprovider.InstanceType {
-	for _, instanceType := range instanceTypes {
-		instanceType.Overhead = &overhead
+	inst, err := c.instanceProvider.Get(ctx, instanceID)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to get instance", "instanceID", instanceID)
+		return "", err
 	}
-	return instanceTypes
-}
 
-func (c *CloudProvider) addEphemeralStorageToInstanceTypes(instanceTypes []*cloudprovider.InstanceType, diskSizeGB int64) []*cloudprovider.InstanceType {
-	ephemeralStorageBytes := calculateEphemeralStorageBytes(diskSizeGB)
-	for _, instanceType := range instanceTypes {
-		if instanceType.Capacity == nil {
-			instanceType.Capacity = v1.ResourceList{}
-		}
-		instanceType.Capacity[v1.ResourceEphemeralStorage] = *resource.NewQuantity(ephemeralStorageBytes, resource.BinarySI)
+	if nodeClaim.Status.ImageID != inst.Template.ID {
+		log.FromContext(ctx).Info("detected template drift", "reason", DriftReasonImageID)
+		return DriftReasonImageID, nil
 	}
-	return instanceTypes
+
+	left, right := lo.Difference(nodeClass.Spec.AntiAffinityGroups, inst.AntiAffinityGroups)
+	if len(left) != 0 || len(right) != 0 {
+		log.FromContext(ctx).Info("detected anti-affinity groups drift", "reason", DriftReasonAntiAffinityGroups)
+		return DriftReasonAntiAffinityGroups, nil
+	}
+
+	left, right = lo.Difference(nodeClass.Spec.SecurityGroups, inst.SecurityGroups)
+	if len(left) != 0 || len(right) != 0 {
+		log.FromContext(ctx).Info("detected security groups drift", "reason", DriftReasonSecurityGroups)
+		return DriftReasonSecurityGroups, nil
+	}
+
+	left, right = lo.Difference(nodeClass.Spec.PrivateNetworks, inst.PrivateNetworks)
+	if len(left) != 0 || len(right) != 0 {
+		log.FromContext(ctx).Info("detected private networks drift", "reason", DriftReasonPrivateNetworks)
+		return DriftReasonPrivateNetworks, nil
+	}
+
+	log.FromContext(ctx).V(2).Info("no drift detected")
+	return "", nil
 }
 
 func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
@@ -491,7 +279,7 @@ func (c *CloudProvider) Name() string {
 	return "exoscale"
 }
 
-func (c *CloudProvider) GetNodeClass(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (*apiv1.ExoscaleNodeClass, error) {
+func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (*apiv1.ExoscaleNodeClass, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "getNodeClass",
 		"nodeClaim", nodeClaim.Name,
@@ -508,63 +296,85 @@ func (c *CloudProvider) GetNodeClass(ctx context.Context, nodeClaim *karpenterv1
 		return nil, fmt.Errorf("failed to get node class %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
 	}
 
+	nodeClass = applyNodeClassDefaults(nodeClass)
+
 	log.FromContext(ctx).V(1).Info("retrieved node class", "nodeClass", nodeClass.Name)
 	return &nodeClass, nil
 }
 
-func calculateEphemeralStorageBytes(diskSizeGB int64) int64 {
-	if diskSizeGB == 0 {
-		diskSizeGB = 50 // Default
-	}
-	ephemeralStorageGiB := diskSizeGB - 5
-	if ephemeralStorageGiB < 0 {
-		ephemeralStorageGiB = 0
-	}
-	return ephemeralStorageGiB * 1024 * 1024 * 1024
+func applyOverhead(allocatable v1.ResourceList, nodeClass *apiv1.ExoscaleNodeClass) v1.ResourceList {
+	allocatable = subtractReservation(allocatable, nodeClass.Spec.KubeReserved)
+	return subtractReservation(allocatable, nodeClass.Spec.SystemReserved)
 }
 
-func setInstanceCapacity(capacity v1.ResourceList, instanceType *egov3.InstanceType, diskSizeGB int64) {
-	if instanceType == nil {
-		return
-	}
+func subtractReservation(allocatable v1.ResourceList, reservation apiv1.ResourceReservation) v1.ResourceList {
+	result := allocatable.DeepCopy()
 
-	capacity[v1.ResourceCPU] = *resource.NewQuantity(instanceType.Cpus, resource.DecimalSI)
-	capacity[v1.ResourceMemory] = *resource.NewQuantity(instanceType.Memory, resource.BinarySI)
-	capacity[v1.ResourceEphemeralStorage] = *resource.NewQuantity(calculateEphemeralStorageBytes(diskSizeGB), resource.BinarySI)
-	capacity[v1.ResourcePods] = *resource.NewQuantity(110, resource.DecimalSI)
+	subtractResource := func(value string, resourceName v1.ResourceName) {
+		if value == "" {
+			return
+		}
 
-	if instanceType.Gpus > 0 {
-		capacity[instancetype.ResourceNvidiaGPU] = *resource.NewQuantity(instanceType.Gpus, resource.DecimalSI)
-	}
-}
+		quantity, err := resource.ParseQuantity(value)
+		if err != nil {
+			return
+		}
 
-func (c *CloudProvider) createNodeClaimFromInstanceProvider(inst *instance.Instance) *karpenterv1.NodeClaim {
-	if inst == nil {
-		return nil
-	}
-
-	nodeClaim := &karpenterv1.NodeClaim{}
-	nodeClaim.Status.ProviderID = utils.FormatProviderID(inst.ID)
-
-	if inst.Labels != nil {
-		if nodeClaimName, ok := inst.Labels[constants.LabelNodeClaim]; ok {
-			nodeClaim.Name = nodeClaimName
+		if current, exists := result[resourceName]; exists {
+			current.Sub(quantity)
+			result[resourceName] = current
 		}
 	}
 
-	nodeClaim.Status.Capacity = v1.ResourceList{}
-	if inst.InstanceType != nil {
-		setInstanceCapacity(nodeClaim.Status.Capacity, inst.InstanceType, 0)
-	}
+	subtractResource(reservation.CPU, v1.ResourceCPU)
+	subtractResource(reservation.Memory, v1.ResourceMemory)
+	subtractResource(reservation.EphemeralStorage, v1.ResourceEphemeralStorage)
 
-	nodeClaim.Status.Allocatable = nodeClaim.Status.Capacity.DeepCopy()
-	return nodeClaim
+	return result
 }
 
-func (c *CloudProvider) isNodeClassReady(nodeClass *apiv1.ExoscaleNodeClass) bool {
-	if nodeClass == nil {
-		return false
+func applyNodeClassDefaults(nodeClass apiv1.ExoscaleNodeClass) apiv1.ExoscaleNodeClass {
+	if nodeClass.Spec.KubeReserved.CPU == "" {
+		nodeClass.Spec.KubeReserved.CPU = "200m"
+	}
+	if nodeClass.Spec.KubeReserved.Memory == "" {
+		nodeClass.Spec.KubeReserved.Memory = "300Mi"
+	}
+	if nodeClass.Spec.KubeReserved.EphemeralStorage == "" {
+		nodeClass.Spec.KubeReserved.EphemeralStorage = "1Gi"
 	}
 
-	return nodeClass.StatusConditions().IsTrue(status.ConditionReady)
+	if nodeClass.Spec.SystemReserved.CPU == "" {
+		nodeClass.Spec.SystemReserved.CPU = "100m"
+	}
+	if nodeClass.Spec.SystemReserved.Memory == "" {
+		nodeClass.Spec.SystemReserved.Memory = "100Mi"
+	}
+	if nodeClass.Spec.SystemReserved.EphemeralStorage == "" {
+		nodeClass.Spec.SystemReserved.EphemeralStorage = "3Gi"
+	}
+
+	return nodeClass
+}
+
+func (c *CloudProvider) buildOverhead(nodeClass *apiv1.ExoscaleNodeClass) *cloudprovider.InstanceTypeOverhead {
+	parseResource := func(value string) resource.Quantity {
+		if qty, err := resource.ParseQuantity(value); err == nil {
+			return qty
+		}
+		return resource.Quantity{}
+	}
+
+	return &cloudprovider.InstanceTypeOverhead{
+		KubeReserved: v1.ResourceList{
+			v1.ResourceCPU:              parseResource(nodeClass.Spec.KubeReserved.CPU),
+			v1.ResourceMemory:           parseResource(nodeClass.Spec.KubeReserved.Memory),
+			v1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.KubeReserved.EphemeralStorage),
+		},
+		SystemReserved: v1.ResourceList{
+			v1.ResourceCPU:              parseResource(nodeClass.Spec.SystemReserved.CPU),
+			v1.ResourceMemory:           parseResource(nodeClass.Spec.SystemReserved.Memory),
+			v1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.SystemReserved.EphemeralStorage),
+		},
+	}
 }

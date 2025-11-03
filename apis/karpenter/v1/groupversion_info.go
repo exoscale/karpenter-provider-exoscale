@@ -25,5 +25,4 @@ import (
 var (
 	GroupVersion  = schema.GroupVersion{Group: "karpenter.exoscale.com", Version: "v1"}
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
-	AddToScheme   = SchemeBuilder.AddToScheme
 )

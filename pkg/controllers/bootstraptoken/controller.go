@@ -2,11 +2,9 @@ package bootstraptoken
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
-	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,7 +59,7 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, nil
 	}
 
-	if r.isTokenExpired(secret) {
+	if isTokenExpired(secret, time.Now()) {
 		log.FromContext(ctx).Info("bootstrap token expired, cleaning up")
 		return r.cleanupToken(ctx, secret)
 	}
@@ -86,10 +84,10 @@ func (r *Controller) isBootstrapToken(secret *v1.Secret) bool {
 	return true
 }
 
-func (r *Controller) isTokenExpired(secret *v1.Secret) bool {
+func isTokenExpired(secret *v1.Secret, now time.Time) bool {
 	createdStr, ok := secret.Annotations[constants.AnnotationTokenCreated]
 	if !ok {
-		return time.Since(secret.CreationTimestamp.Time) > constants.DefaultBootstrapTokenTTL
+		return now.Sub(secret.CreationTimestamp.Time) > constants.DefaultBootstrapTokenTTL
 	}
 
 	created, err := time.Parse(time.RFC3339, createdStr)
@@ -97,7 +95,7 @@ func (r *Controller) isTokenExpired(secret *v1.Secret) bool {
 		return true
 	}
 
-	return time.Since(created) > constants.DefaultBootstrapTokenTTL
+	return now.Sub(created) > constants.DefaultBootstrapTokenTTL
 }
 
 func isNodeAlreadyMarkedRegistered(secret *v1.Secret) bool {
@@ -109,7 +107,7 @@ func isNodeAlreadyMarkedRegistered(secret *v1.Secret) bool {
 }
 
 func isNodeUsingBootstrapToken(node *v1.Node, tokenSecretName string) bool {
-	if bootstrapToken, ok := node.Annotations["exoscale.com/bootstrap-token"]; ok {
+	if bootstrapToken, ok := node.Annotations[constants.AnnotationBootstrapToken]; ok {
 		return bootstrapToken == tokenSecretName
 	}
 	return false
@@ -128,8 +126,18 @@ func (r *Controller) isNodeRegistered(ctx context.Context, secret *v1.Secret) bo
 
 	for _, node := range nodeList.Items {
 		if isNodeUsingBootstrapToken(&node, secret.Name) {
-			r.markNodeRegistered(ctx, secret)
-			return true
+			if node.Status.Phase != "" && node.Status.Phase != v1.NodePending {
+				log.FromContext(ctx).Info("node has registered with kubelet, marking token for cleanup", "node", node.Name, "phase", node.Status.Phase)
+				r.markNodeRegistered(ctx, secret)
+				return true
+			}
+			if len(node.Status.Conditions) > 0 {
+				log.FromContext(ctx).Info("node has conditions (kubelet registered), marking token for cleanup", "node", node.Name)
+				r.markNodeRegistered(ctx, secret)
+				return true
+			}
+			log.FromContext(ctx).V(1).Info("node found but kubelet hasn't registered yet (Unknown), keeping token", "node", node.Name)
+			return false
 		}
 	}
 
@@ -212,7 +220,7 @@ func (r *Controller) cleanupTokens(ctx context.Context) (reconcile.Result, error
 			continue
 		}
 
-		shouldCleanup := r.isTokenExpired(&secret) || r.isNodeRegistered(ctx, &secret)
+		shouldCleanup := isTokenExpired(&secret, time.Now()) || r.isNodeRegistered(ctx, &secret)
 
 		if shouldCleanup {
 			if err := r.Delete(ctx, &secret); err != nil && !errors.IsNotFound(err) {
@@ -231,21 +239,6 @@ func (r *Controller) cleanupTokens(ctx context.Context) (reconcile.Result, error
 	return reconcile.Result{RequeueAfter: constants.DefaultOperationTimeout}, nil
 }
 
-func (r *Controller) CreateBootstrapToken(ctx context.Context, nodeClaimName string) (*utils.BootstrapToken, error) {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeClaim", nodeClaimName))
-	log.FromContext(ctx).Info("creating bootstrap token")
-
-	bootstrapToken, err := utils.CreateAndApplyBootstrapTokenSecret(ctx, r.Client, nodeClaimName)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to create bootstrap token")
-		return nil, fmt.Errorf("failed to create bootstrap token: %w", err)
-	}
-
-	r.Recorder.Eventf(bootstrapToken.Secret, "Normal", "TokenCreated", "Bootstrap token created for NodeClaim %s", nodeClaimName)
-
-	return bootstrapToken, nil
-}
-
 func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	secretPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
@@ -253,11 +246,17 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 			if !ok {
 				return false
 			}
+			if secret.Namespace != metav1.NamespaceSystem {
+				return false
+			}
 			return r.isBootstrapToken(secret)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			secret, ok := e.ObjectNew.(*v1.Secret)
 			if !ok {
+				return false
+			}
+			if secret.Namespace != metav1.NamespaceSystem {
 				return false
 			}
 			return r.isBootstrapToken(secret)
@@ -285,7 +284,7 @@ func (r *Controller) nodeToTokens(_ context.Context, obj client.Object) []reconc
 		return []reconcile.Request{}
 	}
 
-	tokenSecretName, ok := node.Annotations["exoscale.com/bootstrap-token"]
+	tokenSecretName, ok := node.Annotations[constants.AnnotationBootstrapToken]
 	if !ok {
 		return []reconcile.Request{}
 	}
