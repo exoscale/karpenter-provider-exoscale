@@ -1,6 +1,11 @@
 Changelog
 =========
 
+0.0.7
+----------
+
+- fix: broken preprod API endpoint support
+
 0.0.6
 ----------
 

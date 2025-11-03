@@ -81,29 +81,37 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 }
 
 func (c *Options) BuildExoscaleClient(ctx context.Context) (*egov3.Client, error) {
-	exoClient, err := egov3.NewClient(
-		credentials.NewStaticCredentials(c.APIKey, c.APISecret),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Exoscale client: %w", err)
-	}
-
 	apiEndpoint, _ := os.LookupEnv("EXOSCALE_API_ENDPOINT")
 	apiEnvironment, _ := os.LookupEnv("EXOSCALE_API_ENVIRONMENT")
 
-	endpoint, err := getEndpoint(ctx, exoClient, c.Zone, apiEndpoint, apiEnvironment)
+	endpoint := getEndpoint(ctx, c.Zone, apiEndpoint, apiEnvironment)
+	if endpoint == nil {
+		exoClient, err := egov3.NewClient(credentials.NewStaticCredentials(c.APIKey, c.APISecret))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Exoscale client: %w", err)
+		}
+
+		autoEndpoint, err := exoClient.GetZoneAPIEndpoint(ctx, egov3.ZoneName(c.Zone))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get zone endpoint for %s: %w", c.Zone, err)
+		}
+
+		endpoint = &autoEndpoint
+	}
+
+	exoClient, err := egov3.NewClient(
+		credentials.NewStaticCredentials(c.APIKey, c.APISecret),
+		egov3.ClientOptWithEndpoint(*endpoint),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get Exoscale API endpoint: %w", err)
+		return nil, fmt.Errorf("failed to create final Exoscale client: %w", err)
 	}
 
 	if err := c.validateZone(ctx, exoClient); err != nil {
 		return nil, fmt.Errorf("zone validation failed: %w", err)
 	}
 
-	return egov3.NewClient(
-		credentials.NewStaticCredentials(c.APIKey, c.APISecret),
-		egov3.ClientOptWithEndpoint(*endpoint),
-	)
+	return exoClient, nil
 }
 
 func getRequiredEnv(key string) (string, error) {
@@ -114,23 +122,18 @@ func getRequiredEnv(key string) (string, error) {
 	return value, nil
 }
 
-func getEndpoint(ctx context.Context, exoClient *egov3.Client, zone, apiEndpoint, apiEnvironment string) (*egov3.Endpoint, error) {
+func getEndpoint(ctx context.Context, zone, apiEndpoint, apiEnvironment string) *egov3.Endpoint {
 	if apiEndpoint != "" {
 		endpoint := egov3.Endpoint(apiEndpoint)
-		return &endpoint, nil
+		return &endpoint
 	}
 
 	if apiEnvironment == "ppapi" {
 		endpoint := egov3.Endpoint("https://ppapi-ch-gva-2.exoscale.com/v2")
-		return &endpoint, nil
+		return &endpoint
 	}
 
-	endpoint, err := exoClient.GetZoneAPIEndpoint(ctx, egov3.ZoneName(zone))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get zone endpoint for %s: %w", zone, err)
-	}
-
-	return &endpoint, nil
+	return nil
 }
 
 func (c *Options) validateZone(ctx context.Context, client *egov3.Client) error {
