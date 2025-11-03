@@ -4,9 +4,6 @@ import (
 	"context"
 	"os"
 	"testing"
-
-	egov3 "github.com/exoscale/egoscale/v3"
-	"github.com/exoscale/egoscale/v3/credentials"
 )
 
 func TestGetRequiredEnv(t *testing.T) {
@@ -52,7 +49,6 @@ func TestGetRequiredEnv(t *testing.T) {
 
 func TestGetEndpoint(t *testing.T) {
 	ctx := context.Background()
-	client, _ := egov3.NewClient(credentials.NewStaticCredentials("test", "test"))
 
 	tests := []struct {
 		name           string
@@ -76,11 +72,7 @@ func TestGetEndpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			endpoint, err := getEndpoint(ctx, client, "ch-gva-2", tt.apiEndpoint, tt.apiEnvironment)
-			if err != nil {
-				t.Errorf("getEndpoint() error = %v", err)
-				return
-			}
+			endpoint := getEndpoint(ctx, "ch-gva-2", tt.apiEndpoint, tt.apiEnvironment)
 			if string(*endpoint) != tt.want {
 				t.Errorf("getEndpoint() = %v, want %v", string(*endpoint), tt.want)
 			}
