@@ -14,7 +14,6 @@ RUN go mod download
 COPY cmd/ cmd/
 COPY pkg/ pkg/
 COPY apis/ apis/
-COPY internal/ internal/
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -ldflags="-s -w -X main.commit="${VCS_REF}" -X main.branch="${VCS_BRANCH}" -X main.buildDate="${BUILD_DATE}" -X main.version="${VERSION} \
