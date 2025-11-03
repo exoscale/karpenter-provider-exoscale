@@ -1,6 +1,11 @@
 Changelog
 =========
 
+0.0.8
+----------
+
+- Re-introduce conservative node-drain on NodeClaime deletion
+
 0.0.7
 ----------
 
