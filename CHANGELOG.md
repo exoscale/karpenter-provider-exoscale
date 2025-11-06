@@ -1,10 +1,15 @@
 Changelog
 =========
 
+0.0.9
+----------
+
+- Switch instance label back to the expected namespaced format
+
 0.0.8
 ----------
 
-- Re-introduce conservative node-drain on NodeClaime deletion
+- Re-introduce conservative node-drain on NodeClaim deletion
 
 0.0.7
 ----------
