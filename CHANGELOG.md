@@ -1,6 +1,14 @@
 Changelog
 =========
 
+0.0.10 - UNRELEASED
+-------------------
+
+- **Breaking change**: Move kubelet configuration to `spec.kubelet` (imageGC*, kubeReserved, systemReserved)
+- **Breaking change**: Remove deprecated `spec.nodeLabels` and `spec.nodeTaints` fields
+- Add `spec.kubelet.clusterDNS` with default `["10.96.0.10"]`
+- fix: ephemeral storage reporting
+
 0.0.9
 ----------
 
