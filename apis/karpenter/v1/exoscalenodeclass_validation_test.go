@@ -321,11 +321,11 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 func TestExoscaleNodeClass_Defaults(t *testing.T) {
 	// Test that defaults would be applied (in practice by kubebuilder)
 	expectedDefaults := map[string]interface{}{
-		"diskSize":                           int64(50),
+		"diskSize":                            int64(50),
 		"kubelet.imageGCHighThresholdPercent": int32(85),
 		"kubelet.imageGCLowThresholdPercent":  int32(80),
-		"kubelet.imageMinimumGCAge":          "2m",
-		"kubelet.clusterDNS":                 []string{"10.96.0.10"},
+		"kubelet.imageMinimumGCAge":           "2m",
+		"kubelet.clusterDNS":                  []string{"10.96.0.10"},
 	}
 
 	for field, expected := range expectedDefaults {
