@@ -15,13 +15,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	karpenterevents "sigs.k8s.io/karpenter/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/events"
 )
 
 const (
@@ -33,14 +32,14 @@ const (
 
 type CloudProvider struct {
 	kubeClient           client.Client
-	recorder             karpenterevents.Recorder
+	recorder             events.Recorder
 	instanceTypeProvider *instancetype.Provider
 	instanceProvider     *instance.Provider
 }
 
 func NewCloudProvider(
 	kubeClient client.Client,
-	recorder karpenterevents.Recorder,
+	recorder events.Recorder,
 	instanceTypeProvider *instancetype.Provider,
 	instanceProvider *instance.Provider,
 ) *CloudProvider {
@@ -89,8 +88,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	}
 
 	nc := createdInstance.ToNodeClaim()
-	nc.Name = nodeClaim.Name
-	nc.Status.Allocatable = applyOverhead(nc.Status.Allocatable, nodeClass)
 
 	return nc, nil
 }
@@ -169,30 +166,21 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpenterv1.NodeClaim, err
 }
 
 func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpenterv1.NodePool) ([]*cloudprovider.InstanceType, error) {
-	nodePoolName := "<none>"
-	if nodePool != nil {
-		nodePoolName = nodePool.Name
-	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "GetInstanceTypes",
-		"nodePool", nodePoolName,
+		"nodePool", nodePool.Name,
 	))
 
-	instanceTypes, err := c.instanceTypeProvider.List()
+	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to resolve node class")
+		return nil, fmt.Errorf("failed to resolve node class: %w", err)
+	}
+
+	instanceTypes, err := c.instanceTypeProvider.List(nodeClass)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to list instance types")
 		return nil, fmt.Errorf("failed to list instance types: %w", err)
-	}
-
-	if nodePool != nil && nodePool.Spec.Template.Spec.NodeClassRef != nil {
-		var nodeClass apiv1.ExoscaleNodeClass
-		if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, &nodeClass); err == nil {
-			nodeClass = applyNodeClassDefaults(nodeClass)
-			overhead := c.buildOverhead(&nodeClass)
-			for _, it := range instanceTypes {
-				it.Overhead = overhead
-			}
-		}
 	}
 
 	log.FromContext(ctx).V(1).Info("retrieved instance types", "count", len(instanceTypes))
@@ -292,19 +280,20 @@ func (c *CloudProvider) Name() string {
 
 func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (*apiv1.ExoscaleNodeClass, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
-		"method", "getNodeClass",
+		"method", "resolveNodeClassFromNodeClaim",
 		"nodeClaim", nodeClaim.Name,
 	))
 
-	if nodeClaim.Spec.NodeClassRef == nil {
+	nodeClassRef := nodeClaim.Spec.NodeClassRef
+	if nodeClassRef == nil {
 		return nil, fmt.Errorf("nodeClassRef not specified in NodeClaim")
 	}
 
 	var nodeClass apiv1.ExoscaleNodeClass
 	if err := c.kubeClient.Get(ctx, client.ObjectKey{
-		Name: nodeClaim.Spec.NodeClassRef.Name,
+		Name: nodeClassRef.Name,
 	}, &nodeClass); err != nil {
-		return nil, fmt.Errorf("failed to get node class %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
+		return nil, fmt.Errorf("failed to get node class %s: %w", nodeClassRef.Name, err)
 	}
 
 	nodeClass = applyNodeClassDefaults(nodeClass)
@@ -313,35 +302,28 @@ func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeC
 	return &nodeClass, nil
 }
 
-func applyOverhead(allocatable v1.ResourceList, nodeClass *apiv1.ExoscaleNodeClass) v1.ResourceList {
-	allocatable = subtractReservation(allocatable, nodeClass.Spec.KubeReserved)
-	return subtractReservation(allocatable, nodeClass.Spec.SystemReserved)
-}
+func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpenterv1.NodePool) (*apiv1.ExoscaleNodeClass, error) {
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
+		"method", "resolveNodeClassFromNodePool",
+		"nodePool", nodePool.Name,
+	))
 
-func subtractReservation(allocatable v1.ResourceList, reservation apiv1.ResourceReservation) v1.ResourceList {
-	result := allocatable.DeepCopy()
-
-	subtractResource := func(value string, resourceName v1.ResourceName) {
-		if value == "" {
-			return
-		}
-
-		quantity, err := resource.ParseQuantity(value)
-		if err != nil {
-			return
-		}
-
-		if current, exists := result[resourceName]; exists {
-			current.Sub(quantity)
-			result[resourceName] = current
-		}
+	nodeClassRef := nodePool.Spec.Template.Spec.NodeClassRef
+	if nodeClassRef == nil {
+		return nil, fmt.Errorf("nodeClassRef not specified in NodePool")
 	}
 
-	subtractResource(reservation.CPU, v1.ResourceCPU)
-	subtractResource(reservation.Memory, v1.ResourceMemory)
-	subtractResource(reservation.EphemeralStorage, v1.ResourceEphemeralStorage)
+	var nodeClass apiv1.ExoscaleNodeClass
+	if err := c.kubeClient.Get(ctx, client.ObjectKey{
+		Name: nodeClassRef.Name,
+	}, &nodeClass); err != nil {
+		return nil, fmt.Errorf("failed to get node class %s: %w", nodeClassRef.Name, err)
+	}
 
-	return result
+	nodeClass = applyNodeClassDefaults(nodeClass)
+
+	log.FromContext(ctx).V(1).Info("retrieved node class from node pool", "nodeClass", nodeClass.Name)
+	return &nodeClass, nil
 }
 
 func applyNodeClassDefaults(nodeClass apiv1.ExoscaleNodeClass) apiv1.ExoscaleNodeClass {
@@ -366,28 +348,6 @@ func applyNodeClassDefaults(nodeClass apiv1.ExoscaleNodeClass) apiv1.ExoscaleNod
 	}
 
 	return nodeClass
-}
-
-func (c *CloudProvider) buildOverhead(nodeClass *apiv1.ExoscaleNodeClass) *cloudprovider.InstanceTypeOverhead {
-	parseResource := func(value string) resource.Quantity {
-		if qty, err := resource.ParseQuantity(value); err == nil {
-			return qty
-		}
-		return resource.Quantity{}
-	}
-
-	return &cloudprovider.InstanceTypeOverhead{
-		KubeReserved: v1.ResourceList{
-			v1.ResourceCPU:              parseResource(nodeClass.Spec.KubeReserved.CPU),
-			v1.ResourceMemory:           parseResource(nodeClass.Spec.KubeReserved.Memory),
-			v1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.KubeReserved.EphemeralStorage),
-		},
-		SystemReserved: v1.ResourceList{
-			v1.ResourceCPU:              parseResource(nodeClass.Spec.SystemReserved.CPU),
-			v1.ResourceMemory:           parseResource(nodeClass.Spec.SystemReserved.Memory),
-			v1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.SystemReserved.EphemeralStorage),
-		},
-	}
 }
 
 func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {
