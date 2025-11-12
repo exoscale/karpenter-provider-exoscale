@@ -110,14 +110,14 @@ func (p *Provider) List(nodeClass *v1.ExoscaleNodeClass) ([]*cloudprovider.Insta
 
 		overhead := &cloudprovider.InstanceTypeOverhead{
 			KubeReserved: corev1.ResourceList{
-				corev1.ResourceCPU:              parseResource(nodeClass.Spec.KubeReserved.CPU),
-				corev1.ResourceMemory:           parseResource(nodeClass.Spec.KubeReserved.Memory),
-				corev1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.KubeReserved.EphemeralStorage),
+				corev1.ResourceCPU:              parseResource(nodeClass.Spec.Kubelet.KubeReserved.CPU),
+				corev1.ResourceMemory:           parseResource(nodeClass.Spec.Kubelet.KubeReserved.Memory),
+				corev1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.Kubelet.KubeReserved.EphemeralStorage),
 			},
 			SystemReserved: corev1.ResourceList{
-				corev1.ResourceCPU:              parseResource(nodeClass.Spec.SystemReserved.CPU),
-				corev1.ResourceMemory:           parseResource(nodeClass.Spec.SystemReserved.Memory),
-				corev1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.SystemReserved.EphemeralStorage),
+				corev1.ResourceCPU:              parseResource(nodeClass.Spec.Kubelet.SystemReserved.CPU),
+				corev1.ResourceMemory:           parseResource(nodeClass.Spec.Kubelet.SystemReserved.Memory),
+				corev1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.Kubelet.SystemReserved.EphemeralStorage),
 			},
 		}
 

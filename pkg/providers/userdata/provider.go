@@ -61,6 +61,8 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		ImageGCHighThresholdPercent: options.ImageGCHighThresholdPercent,
 		ImageGCLowThresholdPercent:  options.ImageGCLowThresholdPercent,
 		ImageMinimumGCAge:           options.ImageMinimumGCAge,
+		KubeReserved:                options.KubeReserved,
+		SystemReserved:              options.SystemReserved,
 	}
 
 	if bootstrapOptions.Labels == nil {
@@ -70,7 +72,7 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		bootstrapOptions.Labels[k] = v
 	}
 
-	userData, err := p.sksBootstrap.Generate(bootstrapOptions, nodeClass)
+	userData, err := p.sksBootstrap.Generate(bootstrapOptions)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to generate user data")
 		return "", fmt.Errorf("failed to generate user data: %w", err)

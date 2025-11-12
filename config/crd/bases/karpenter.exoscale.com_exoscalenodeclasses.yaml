@@ -60,29 +60,6 @@ spec:
                 maximum: 8000
                 minimum: 10
                 type: integer
-              imageGCHighThresholdPercent:
-                default: 85
-                description: ImageGCHighThresholdPercent is the disk usage percentage
-                  at which image garbage collection is triggered
-                format: int32
-                maximum: 100
-                minimum: 0
-                type: integer
-              imageGCLowThresholdPercent:
-                default: 80
-                description: ImageGCLowThresholdPercent is the disk usage percentage
-                  below which image garbage collection stops
-                format: int32
-                maximum: 100
-                minimum: 0
-                type: integer
-              imageMinimumGCAge:
-                default: 5m
-                description: |-
-                  ImageMinimumGCAge is the minimum age for an unused image before it can be garbage collected
-                  Example: "5m" for 5 minutes
-                pattern: ^[0-9]+(s|m|h)$
-                type: string
               imageTemplateSelector:
                 properties:
                   variant:
@@ -95,59 +72,81 @@ spec:
                     pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
                     type: string
                 type: object
-              kubeReserved:
-                description: KubeReserved is resources reserved for Kubernetes system
-                  components
+              kubelet:
+                description: Kubelet contains configuration for kubelet
                 properties:
-                  cpu:
-                    description: CPU reservation (e.g., "200m")
-                    pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
+                  clusterDNS:
+                    default:
+                    - 10.96.0.10
+                    description: ClusterDNS is a list of IP addresses for the cluster
+                      DNS server
+                    items:
+                      type: string
+                    type: array
+                  imageGCHighThresholdPercent:
+                    default: 85
+                    description: ImageGCHighThresholdPercent is the disk usage percentage
+                      at which image garbage collection is triggered
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  imageGCLowThresholdPercent:
+                    default: 80
+                    description: ImageGCLowThresholdPercent is the disk usage percentage
+                      below which image garbage collection stops
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  imageMinimumGCAge:
+                    default: 2m
+                    description: |-
+                      ImageMinimumGCAge is the minimum age for an unused image before it can be garbage collected
+                      Example: "2m" for 2 minutes
+                    pattern: ^[0-9]+(s|m|h)$
                     type: string
-                  ephemeralStorage:
-                    description: EphemeralStorage reservation (e.g., "1Gi")
-                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
-                    type: string
-                  memory:
-                    description: Memory reservation (e.g., "300Mi")
-                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
-                    type: string
+                  kubeReserved:
+                    description: KubeReserved is resources reserved for Kubernetes
+                      system components
+                    properties:
+                      cpu:
+                        default: 200m
+                        description: CPU reservation for Kubernetes components
+                        pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
+                        type: string
+                      ephemeralStorage:
+                        default: 1Gi
+                        description: EphemeralStorage reservation for Kubernetes components
+                        pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                        type: string
+                      memory:
+                        default: 300Mi
+                        description: Memory reservation for Kubernetes components
+                        pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                        type: string
+                    type: object
+                  systemReserved:
+                    description: SystemReserved is resources reserved for OS system
+                      components
+                    properties:
+                      cpu:
+                        default: 100m
+                        description: CPU reservation for system components
+                        pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
+                        type: string
+                      ephemeralStorage:
+                        default: 3Gi
+                        description: EphemeralStorage reservation for system components
+                        pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                        type: string
+                      memory:
+                        default: 100Mi
+                        description: Memory reservation for system components
+                        pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
+                        type: string
+                    type: object
                 type: object
-              nodeLabels:
-                additionalProperties:
-                  type: string
-                description: NodeLabels are labels to be applied to the node upon
-                  registration
-                type: object
-              nodeTaints:
-                description: NodeTaints are taints to be applied to the node upon
-                  registration
-                items:
-                  description: NodeTaint represents a Kubernetes taint to be applied
-                    to a node
-                  properties:
-                    effect:
-                      description: Effect is the taint effect (NoSchedule, PreferNoSchedule,
-                        NoExecute)
-                      enum:
-                      - NoSchedule
-                      - PreferNoSchedule
-                      - NoExecute
-                      type: string
-                    key:
-                      description: Key is the taint key
-                      type: string
-                    value:
-                      description: Value is the taint value
-                      type: string
-                  required:
-                  - effect
-                  - key
-                  type: object
-                maxItems: 50
-                type: array
-                x-kubernetes-validations:
-                - message: taint key is required
-                  rule: self.all(taint, has(taint.key) && taint.key != '')
               privateNetworks:
                 description: PrivateNetworks is a list of private network IDs to attach
                   to instances
@@ -162,30 +161,14 @@ spec:
                   type: string
                 maxItems: 50
                 type: array
-              systemReserved:
-                description: SystemReserved is resources reserved for OS system components
-                properties:
-                  cpu:
-                    description: CPU reservation (e.g., "200m")
-                    pattern: ^(\d+(m|[.])?(\d+)?|\d+m)$
-                    type: string
-                  ephemeralStorage:
-                    description: EphemeralStorage reservation (e.g., "1Gi")
-                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
-                    type: string
-                  memory:
-                    description: Memory reservation (e.g., "300Mi")
-                    pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
-                    type: string
-                type: object
               templateID:
                 pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
                 type: string
             type: object
             x-kubernetes-validations:
             - message: imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent
-              rule: '!has(self.imageGCHighThresholdPercent) || !has(self.imageGCLowThresholdPercent)
-                || self.imageGCLowThresholdPercent < self.imageGCHighThresholdPercent'
+              rule: '!has(self.kubelet.imageGCHighThresholdPercent) || !has(self.kubelet.imageGCLowThresholdPercent)
+                || self.kubelet.imageGCLowThresholdPercent < self.kubelet.imageGCHighThresholdPercent'
             - message: exactly one of templateID or imageTemplateSelector must be
                 specified
               rule: (has(self.templateID) && !has(self.imageTemplateSelector)) ||

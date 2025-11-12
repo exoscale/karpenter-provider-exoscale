@@ -14,7 +14,7 @@ import (
 
 type Options struct {
 	ClusterEndpoint             string
-	ClusterDNS                  string
+	ClusterDNS                  []string
 	ClusterDomain               string
 	BootstrapToken              string
 	CABundle                    []byte
@@ -23,6 +23,8 @@ type Options struct {
 	ImageGCHighThresholdPercent *int32
 	ImageGCLowThresholdPercent  *int32
 	ImageMinimumGCAge           string
+	KubeReserved                apiv1.KubeResourceReservation
+	SystemReserved              apiv1.SystemResourceReservation
 }
 
 type KubernetesSettings struct {
@@ -61,7 +63,7 @@ func New() *SKSBootstrap {
 	return &SKSBootstrap{}
 }
 
-func (s *SKSBootstrap) Generate(options *Options, nodeClass *apiv1.ExoscaleNodeClass) (string, error) {
+func (s *SKSBootstrap) Generate(options *Options) (string, error) {
 	if options == nil {
 		return "", fmt.Errorf("options cannot be nil")
 	}
@@ -72,7 +74,7 @@ func (s *SKSBootstrap) Generate(options *Options, nodeClass *apiv1.ExoscaleNodeC
 		return "", fmt.Errorf("CA bundle is required")
 	}
 
-	config := s.buildConfig(options, nodeClass)
+	config := s.buildConfig(options)
 
 	userData, err := s.marshalTOML(config)
 	if err != nil {
@@ -87,7 +89,7 @@ func (s *SKSBootstrap) Generate(options *Options, nodeClass *apiv1.ExoscaleNodeC
 	return encodedUserData, nil
 }
 
-func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNodeClass) *Config {
+func (s *SKSBootstrap) buildConfig(options *Options) *Config {
 	config := &Config{
 		Settings: Settings{
 			Kubernetes: KubernetesSettings{
@@ -99,9 +101,9 @@ func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNo
 		},
 	}
 
-	if options.ClusterDNS != "" {
-		ips := strings.Split(options.ClusterDNS, ",")
-		for i, ip := range ips {
+	if len(options.ClusterDNS) > 0 {
+		ips := make([]string, len(options.ClusterDNS))
+		for i, ip := range options.ClusterDNS {
 			ips[i] = strings.TrimSpace(ip)
 		}
 		config.Settings.Kubernetes.ClusterDNSIP = ips
@@ -109,29 +111,6 @@ func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNo
 
 	if options.ClusterDomain != "" {
 		config.Settings.Kubernetes.ClusterDomain = options.ClusterDomain
-	}
-
-	if nodeClass != nil {
-		if nodeClass.Spec.ImageGCHighThresholdPercent != nil {
-			config.Settings.Kubernetes.ImageGCHighThresholdPercent = nodeClass.Spec.ImageGCHighThresholdPercent
-		}
-		if nodeClass.Spec.ImageGCLowThresholdPercent != nil {
-			config.Settings.Kubernetes.ImageGCLowThresholdPercent = nodeClass.Spec.ImageGCLowThresholdPercent
-		}
-		if nodeClass.Spec.ImageMinimumGCAge != "" {
-			config.Settings.Kubernetes.ImageMinimumGCAge = nodeClass.Spec.ImageMinimumGCAge
-		}
-
-		if !isEmptyResourceReservation(nodeClass.Spec.KubeReserved) {
-			config.Settings.Kubernetes.KubeReserved = convertResourceReservation(nodeClass.Spec.KubeReserved)
-		}
-		if !isEmptyResourceReservation(nodeClass.Spec.SystemReserved) {
-			config.Settings.Kubernetes.SystemReserved = convertResourceReservation(nodeClass.Spec.SystemReserved)
-		}
-
-		if len(nodeClass.Spec.NodeLabels) > 0 {
-			config.Settings.Kubernetes.NodeLabels = nodeClass.Spec.NodeLabels
-		}
 	}
 
 	if options.ImageGCHighThresholdPercent != nil {
@@ -144,12 +123,20 @@ func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNo
 		config.Settings.Kubernetes.ImageMinimumGCAge = options.ImageMinimumGCAge
 	}
 
+	if options.KubeReserved.CPU != "" || options.KubeReserved.Memory != "" || options.KubeReserved.EphemeralStorage != "" {
+		config.Settings.Kubernetes.KubeReserved = convertKubeResourceReservation(options.KubeReserved)
+	}
+
+	if options.SystemReserved.CPU != "" || options.SystemReserved.Memory != "" || options.SystemReserved.EphemeralStorage != "" {
+		config.Settings.Kubernetes.SystemReserved = convertSystemResourceReservation(options.SystemReserved)
+	}
+
 	if len(options.Taints) > 0 {
 		if config.Settings.Kubernetes.NodeTaints == nil {
 			config.Settings.Kubernetes.NodeTaints = make(map[string][]string)
 		}
 		for _, taint := range options.Taints {
-			// IMPORTANT: sks-node-agent requires ALL taints to have a non-empty value
+			// XXX: sks-node-agent requires ALL taints to have a non-empty value
 			// For taints that are semantically empty (like karpenter.sh/unregistered),
 			// we use "true" as the value for compatibility
 			value := taint.Value
@@ -183,11 +170,21 @@ func (s *SKSBootstrap) buildConfig(options *Options, nodeClass *apiv1.ExoscaleNo
 	return config
 }
 
-func isEmptyResourceReservation(rr apiv1.ResourceReservation) bool {
-	return rr.CPU == "" && rr.Memory == "" && rr.EphemeralStorage == ""
+func convertKubeResourceReservation(rr apiv1.KubeResourceReservation) *ResourceReservation {
+	result := &ResourceReservation{}
+	if rr.CPU != "" {
+		result.CPU = rr.CPU
+	}
+	if rr.Memory != "" {
+		result.Memory = rr.Memory
+	}
+	if rr.EphemeralStorage != "" {
+		result.EphemeralStorage = rr.EphemeralStorage
+	}
+	return result
 }
 
-func convertResourceReservation(rr apiv1.ResourceReservation) *ResourceReservation {
+func convertSystemResourceReservation(rr apiv1.SystemResourceReservation) *ResourceReservation {
 	result := &ResourceReservation{}
 	if rr.CPU != "" {
 		result.CPU = rr.CPU

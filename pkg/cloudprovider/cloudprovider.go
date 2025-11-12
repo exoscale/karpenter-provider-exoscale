@@ -296,8 +296,6 @@ func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeC
 		return nil, fmt.Errorf("failed to get node class %s: %w", nodeClassRef.Name, err)
 	}
 
-	nodeClass = applyNodeClassDefaults(nodeClass)
-
 	log.FromContext(ctx).V(1).Info("retrieved node class", "nodeClass", nodeClass.Name)
 	return &nodeClass, nil
 }
@@ -320,34 +318,8 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 		return nil, fmt.Errorf("failed to get node class %s: %w", nodeClassRef.Name, err)
 	}
 
-	nodeClass = applyNodeClassDefaults(nodeClass)
-
 	log.FromContext(ctx).V(1).Info("retrieved node class from node pool", "nodeClass", nodeClass.Name)
 	return &nodeClass, nil
-}
-
-func applyNodeClassDefaults(nodeClass apiv1.ExoscaleNodeClass) apiv1.ExoscaleNodeClass {
-	if nodeClass.Spec.KubeReserved.CPU == "" {
-		nodeClass.Spec.KubeReserved.CPU = "200m"
-	}
-	if nodeClass.Spec.KubeReserved.Memory == "" {
-		nodeClass.Spec.KubeReserved.Memory = "300Mi"
-	}
-	if nodeClass.Spec.KubeReserved.EphemeralStorage == "" {
-		nodeClass.Spec.KubeReserved.EphemeralStorage = "1Gi"
-	}
-
-	if nodeClass.Spec.SystemReserved.CPU == "" {
-		nodeClass.Spec.SystemReserved.CPU = "100m"
-	}
-	if nodeClass.Spec.SystemReserved.Memory == "" {
-		nodeClass.Spec.SystemReserved.Memory = "100Mi"
-	}
-	if nodeClass.Spec.SystemReserved.EphemeralStorage == "" {
-		nodeClass.Spec.SystemReserved.EphemeralStorage = "3Gi"
-	}
-
-	return nodeClass
 }
 
 func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {

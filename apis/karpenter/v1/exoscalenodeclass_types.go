@@ -43,7 +43,7 @@ type ImageTemplateSelector struct {
 }
 
 // ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
-// +kubebuilder:validation:XValidation:rule="!has(self.imageGCHighThresholdPercent) || !has(self.imageGCLowThresholdPercent) || self.imageGCLowThresholdPercent < self.imageGCHighThresholdPercent",message="imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent"
+// +kubebuilder:validation:XValidation:rule="!has(self.kubelet.imageGCHighThresholdPercent) || !has(self.kubelet.imageGCLowThresholdPercent) || self.kubelet.imageGCLowThresholdPercent < self.kubelet.imageGCHighThresholdPercent",message="imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent"
 // +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
 type ExoscaleNodeClassSpec struct {
 	// +optional
@@ -74,6 +74,17 @@ type ExoscaleNodeClassSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
 
+	// Kubelet contains configuration for kubelet
+	// +optional
+	Kubelet KubeletConfiguration `json:"kubelet,omitempty"`
+}
+
+type KubeletConfiguration struct {
+	// ClusterDNS is a list of IP addresses for the cluster DNS server
+	// +kubebuilder:default={"10.96.0.10"}
+	// +optional
+	ClusterDNS []string `json:"clusterDNS,omitempty"`
+
 	// ImageGCHighThresholdPercent is the disk usage percentage at which image garbage collection is triggered
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
@@ -89,58 +100,59 @@ type ExoscaleNodeClassSpec struct {
 	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent,omitempty"`
 
 	// ImageMinimumGCAge is the minimum age for an unused image before it can be garbage collected
-	// Example: "5m" for 5 minutes
-	// +kubebuilder:default="5m"
+	// Example: "2m" for 2 minutes
+	// +kubebuilder:default="2m"
 	// +kubebuilder:validation:Pattern="^[0-9]+(s|m|h)$"
 	// +optional
 	ImageMinimumGCAge string `json:"imageMinimumGCAge,omitempty"`
 
 	// KubeReserved is resources reserved for Kubernetes system components
 	// +optional
-	KubeReserved ResourceReservation `json:"kubeReserved,omitempty"`
+	KubeReserved KubeResourceReservation `json:"kubeReserved,omitempty"`
 
 	// SystemReserved is resources reserved for OS system components
 	// +optional
-	SystemReserved ResourceReservation `json:"systemReserved,omitempty"`
-
-	// NodeLabels are labels to be applied to the node upon registration
-	// +optional
-	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
-
-	// NodeTaints are taints to be applied to the node upon registration
-	// +optional
-	// +kubebuilder:validation:MaxItems=50
-	// +kubebuilder:validation:XValidation:rule="self.all(taint, has(taint.key) && taint.key != '')",message="taint key is required"
-	NodeTaints []NodeTaint `json:"nodeTaints,omitempty"`
+	SystemReserved SystemResourceReservation `json:"systemReserved,omitempty"`
 }
 
-type ResourceReservation struct {
-	// CPU reservation (e.g., "200m")
+type KubeResourceReservation struct {
+	// CPU reservation for Kubernetes components
+	// +kubebuilder:default="200m"
 	// +optional
 	// +kubebuilder:validation:Pattern="^(\\d+(m|[.])?(\\d+)?|\\d+m)$"
 	CPU string `json:"cpu,omitempty"`
 
-	// Memory reservation (e.g., "300Mi")
+	// Memory reservation for Kubernetes components
+	// +kubebuilder:default="300Mi"
 	// +optional
 	// +kubebuilder:validation:Pattern="^(\\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$"
 	Memory string `json:"memory,omitempty"`
 
-	// EphemeralStorage reservation (e.g., "1Gi")
+	// EphemeralStorage reservation for Kubernetes components
+	// +kubebuilder:default="1Gi"
 	// +optional
 	// +kubebuilder:validation:Pattern="^(\\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$"
 	EphemeralStorage string `json:"ephemeralStorage,omitempty"`
 }
 
-// NodeTaint represents a Kubernetes taint to be applied to a node
-type NodeTaint struct {
-	// Key is the taint key
-	Key string `json:"key"`
-	// Value is the taint value
+type SystemResourceReservation struct {
+	// CPU reservation for system components
+	// +kubebuilder:default="100m"
 	// +optional
-	Value string `json:"value,omitempty"`
-	// Effect is the taint effect (NoSchedule, PreferNoSchedule, NoExecute)
-	// +kubebuilder:validation:Enum=NoSchedule;PreferNoSchedule;NoExecute
-	Effect string `json:"effect"`
+	// +kubebuilder:validation:Pattern="^(\\d+(m|[.])?(\\d+)?|\\d+m)$"
+	CPU string `json:"cpu,omitempty"`
+
+	// Memory reservation for system components
+	// +kubebuilder:default="100Mi"
+	// +optional
+	// +kubebuilder:validation:Pattern="^(\\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$"
+	Memory string `json:"memory,omitempty"`
+
+	// EphemeralStorage reservation for system components
+	// +kubebuilder:default="3Gi"
+	// +optional
+	// +kubebuilder:validation:Pattern="^(\\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$"
+	EphemeralStorage string `json:"ephemeralStorage,omitempty"`
 }
 
 func (in *ExoscaleNodeClass) StatusConditions() status.ConditionSet {

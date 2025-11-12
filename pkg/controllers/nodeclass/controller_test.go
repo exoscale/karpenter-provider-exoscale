@@ -145,15 +145,15 @@ func TestCountActiveNodeClaims(t *testing.T) {
 	}
 }
 
-func TestValidateResourceReservation(t *testing.T) {
+func TestValidateKubeResourceReservation(t *testing.T) {
 	tests := []struct {
 		name        string
-		reservation apiv1.ResourceReservation
+		reservation apiv1.KubeResourceReservation
 		wantErr     bool
 	}{
 		{
 			name: "valid reservations",
-			reservation: apiv1.ResourceReservation{
+			reservation: apiv1.KubeResourceReservation{
 				CPU:              "100m",
 				Memory:           "512Mi",
 				EphemeralStorage: "1Gi",
@@ -162,12 +162,12 @@ func TestValidateResourceReservation(t *testing.T) {
 		},
 		{
 			name:        "empty reservations",
-			reservation: apiv1.ResourceReservation{},
+			reservation: apiv1.KubeResourceReservation{},
 			wantErr:     false,
 		},
 		{
 			name: "invalid quantity",
-			reservation: apiv1.ResourceReservation{
+			reservation: apiv1.KubeResourceReservation{
 				CPU: "invalid",
 			},
 			wantErr: true,
@@ -176,9 +176,9 @@ func TestValidateResourceReservation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateResourceReservation(tt.reservation)
+			err := validateKubeResourceReservation(tt.reservation)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateResourceReservation() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("validateKubeResourceReservation() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

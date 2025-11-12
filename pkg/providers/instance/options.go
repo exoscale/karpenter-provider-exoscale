@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	DefaultClusterDNS    = "10.96.0.10"
 	DefaultClusterDomain = "cluster.local"
 )
 
@@ -21,7 +20,6 @@ type Options struct {
 	InstancePrefix  string
 	APIKey          string
 	APISecret       string
-	ClusterDNS      string
 	ClusterDomain   string
 	ClusterEndpoint string
 }
@@ -53,11 +51,6 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 		return nil, err
 	}
 
-	clusterDNS := os.Getenv("CLUSTER_DNS_IP")
-	if clusterDNS == "" {
-		clusterDNS = DefaultClusterDNS
-	}
-
 	clusterDomain := os.Getenv("CLUSTER_DOMAIN")
 	if clusterDomain == "" {
 		clusterDomain = DefaultClusterDomain
@@ -74,7 +67,6 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 		InstancePrefix:  instancePrefix,
 		APIKey:          APIKey,
 		APISecret:       APISecret,
-		ClusterDNS:      clusterDNS,
 		ClusterDomain:   clusterDomain,
 		ClusterEndpoint: clusterEndpoint,
 	}, nil
