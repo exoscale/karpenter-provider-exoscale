@@ -291,22 +291,17 @@ func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *ExoscaleNodeClassReconciler) validate(nodeClass *apiv1.ExoscaleNodeClass) error {
-	if err := validateKubeResourceReservation(nodeClass.Spec.Kubelet.KubeReserved); err != nil {
+	kr := nodeClass.Spec.Kubelet.KubeReserved
+	if err := validateResourceQuantities(kr.CPU, kr.Memory, kr.EphemeralStorage); err != nil {
 		return fmt.Errorf("invalid kubelet.kubeReserved: %w", err)
 	}
-	if err := validateSystemResourceReservation(nodeClass.Spec.Kubelet.SystemReserved); err != nil {
+
+	sr := nodeClass.Spec.Kubelet.SystemReserved
+	if err := validateResourceQuantities(sr.CPU, sr.Memory, sr.EphemeralStorage); err != nil {
 		return fmt.Errorf("invalid kubelet.systemReserved: %w", err)
 	}
 
 	return nil
-}
-
-func validateKubeResourceReservation(reservation apiv1.KubeResourceReservation) error {
-	return validateResourceQuantities(reservation.CPU, reservation.Memory, reservation.EphemeralStorage)
-}
-
-func validateSystemResourceReservation(reservation apiv1.SystemResourceReservation) error {
-	return validateResourceQuantities(reservation.CPU, reservation.Memory, reservation.EphemeralStorage)
 }
 
 func validateResourceQuantities(cpu, memory, ephemeralStorage string) error {
