@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	egov3 "github.com/exoscale/egoscale/v3"
+	v1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -88,11 +89,48 @@ func (p *Provider) GetIDForName(name string) (string, bool) {
 	return "", false
 }
 
-func (p *Provider) List() ([]*cloudprovider.InstanceType, error) {
+func (p *Provider) List(nodeClass *v1.ExoscaleNodeClass) ([]*cloudprovider.InstanceType, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	return lo.UniqValues(p.instanceTypesByName), nil
+	baseTypes := lo.Values(p.instanceTypesByName)
+	instanceTypes := make([]*cloudprovider.InstanceType, len(baseTypes))
+
+	parseResource := func(value string) resource.Quantity {
+		if qty, err := resource.ParseQuantity(value); err == nil {
+			return qty
+		}
+		return resource.Quantity{}
+	}
+
+	for i, base := range baseTypes {
+		capacity := base.Capacity.DeepCopy()
+		diskSizeBytes := nodeClass.Spec.DiskSize * 1024 * 1024 * 1024
+		capacity[corev1.ResourceEphemeralStorage] = *resource.NewQuantity(diskSizeBytes, resource.BinarySI)
+
+		overhead := &cloudprovider.InstanceTypeOverhead{
+			KubeReserved: corev1.ResourceList{
+				corev1.ResourceCPU:              parseResource(nodeClass.Spec.Kubelet.KubeReserved.CPU),
+				corev1.ResourceMemory:           parseResource(nodeClass.Spec.Kubelet.KubeReserved.Memory),
+				corev1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.Kubelet.KubeReserved.EphemeralStorage),
+			},
+			SystemReserved: corev1.ResourceList{
+				corev1.ResourceCPU:              parseResource(nodeClass.Spec.Kubelet.SystemReserved.CPU),
+				corev1.ResourceMemory:           parseResource(nodeClass.Spec.Kubelet.SystemReserved.Memory),
+				corev1.ResourceEphemeralStorage: parseResource(nodeClass.Spec.Kubelet.SystemReserved.EphemeralStorage),
+			},
+		}
+
+		instanceTypes[i] = &cloudprovider.InstanceType{
+			Name:         base.Name,
+			Requirements: base.Requirements,
+			Offerings:    base.Offerings.DeepCopy(),
+			Capacity:     capacity,
+			Overhead:     overhead,
+		}
+	}
+
+	return instanceTypes, nil
 }
 
 func (p *Provider) Refresh(ctx context.Context) error {

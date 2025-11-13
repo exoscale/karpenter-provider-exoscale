@@ -132,125 +132,56 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 			testField: "privateNetworks",
 		},
 		{
-			name: "image GC thresholds invalid",
-			nodeClass: &ExoscaleNodeClass{
-				Spec: ExoscaleNodeClassSpec{
-					TemplateID:                  "20000000-0000-0000-0000-000000000001",
-					ImageGCHighThresholdPercent: int32Ptr(70),
-					ImageGCLowThresholdPercent:  int32Ptr(80), // Low > High is invalid
-				},
-			},
-			wantValid: false,
-			testField: "imageGC",
-		},
-		{
-			name: "valid image GC thresholds",
-			nodeClass: &ExoscaleNodeClass{
-				Spec: ExoscaleNodeClassSpec{
-					TemplateID:                  "20000000-0000-0000-0000-000000000001",
-					ImageGCHighThresholdPercent: int32Ptr(85),
-					ImageGCLowThresholdPercent:  int32Ptr(80),
-				},
-			},
-			wantValid: true,
-		},
-		{
-			name: "invalid image minimum GC age format",
-			nodeClass: &ExoscaleNodeClass{
-				Spec: ExoscaleNodeClassSpec{
-					TemplateID:        "20000000-0000-0000-0000-000000000001",
-					ImageMinimumGCAge: "5 minutes", // Should be "5m"
-				},
-			},
-			wantValid: false,
-			testField: "imageMinimumGCAge",
-		},
-		{
-			name: "valid image minimum GC age",
-			nodeClass: &ExoscaleNodeClass{
-				Spec: ExoscaleNodeClassSpec{
-					TemplateID:        "20000000-0000-0000-0000-000000000001",
-					ImageMinimumGCAge: "5m",
-				},
-			},
-			wantValid: true,
-		},
-		{
-			name: "invalid node label key",
+			name: "image GC thresholds invalid in kubelet",
 			nodeClass: &ExoscaleNodeClass{
 				Spec: ExoscaleNodeClassSpec{
 					TemplateID: "20000000-0000-0000-0000-000000000001",
-					NodeLabels: map[string]string{
-						"valid.label/key":    "value",
-						"kubernetes.io/test": "value", // Reserved prefix
+					Kubelet: KubeletConfiguration{
+						ImageGCHighThresholdPercent: int32Ptr(70),
+						ImageGCLowThresholdPercent:  int32Ptr(80), // Low > High is invalid
 					},
 				},
 			},
 			wantValid: false,
-			testField: "nodeLabels",
+			testField: "kubelet.imageGC",
 		},
 		{
-			name: "valid node labels",
+			name: "valid image GC thresholds in kubelet",
 			nodeClass: &ExoscaleNodeClass{
 				Spec: ExoscaleNodeClassSpec{
 					TemplateID: "20000000-0000-0000-0000-000000000001",
-					NodeLabels: map[string]string{
-						"team":           "platform",
-						"environment":    "production",
-						"app.domain/key": "value",
+					Kubelet: KubeletConfiguration{
+						ImageGCHighThresholdPercent: int32Ptr(85),
+						ImageGCLowThresholdPercent:  int32Ptr(80),
 					},
 				},
 			},
 			wantValid: true,
 		},
 		{
-			name: "node taint without key",
+			name: "invalid image minimum GC age format in kubelet",
 			nodeClass: &ExoscaleNodeClass{
 				Spec: ExoscaleNodeClassSpec{
 					TemplateID: "20000000-0000-0000-0000-000000000001",
-					NodeTaints: []NodeTaint{
-						{
-							Key:    "", // Empty key is invalid
-							Value:  "test",
-							Effect: "NoSchedule",
-						},
+					Kubelet: KubeletConfiguration{
+						ImageMinimumGCAge: "5 minutes", // Should be "5m"
 					},
 				},
 			},
 			wantValid: false,
-			testField: "nodeTaints",
+			testField: "kubelet.imageMinimumGCAge",
 		},
 		{
-			name: "valid node taints",
+			name: "valid image minimum GC age in kubelet",
 			nodeClass: &ExoscaleNodeClass{
 				Spec: ExoscaleNodeClassSpec{
 					TemplateID: "20000000-0000-0000-0000-000000000001",
-					NodeTaints: []NodeTaint{
-						{
-							Key:    "workload",
-							Value:  "gpu",
-							Effect: "NoSchedule",
-						},
-						{
-							Key:    "dedicated",
-							Value:  "ml",
-							Effect: "NoExecute",
-						},
+					Kubelet: KubeletConfiguration{
+						ImageMinimumGCAge: "5m",
 					},
 				},
 			},
 			wantValid: true,
-		},
-		{
-			name: "too many node taints",
-			nodeClass: &ExoscaleNodeClass{
-				Spec: ExoscaleNodeClassSpec{
-					TemplateID: "20000000-0000-0000-0000-000000000001",
-					NodeTaints: generateTaints(51), // Max is 50
-				},
-			},
-			wantValid: false,
-			testField: "nodeTaints",
 		},
 		{
 			name: "valid nodeclass with imageTemplateSelector",
@@ -390,10 +321,11 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 func TestExoscaleNodeClass_Defaults(t *testing.T) {
 	// Test that defaults would be applied (in practice by kubebuilder)
 	expectedDefaults := map[string]interface{}{
-		"diskSize":                    int64(50),
-		"imageGCHighThresholdPercent": int32(85),
-		"imageGCLowThresholdPercent":  int32(80),
-		"imageMinimumGCAge":           "5m",
+		"diskSize":                            int64(50),
+		"kubelet.imageGCHighThresholdPercent": int32(85),
+		"kubelet.imageGCLowThresholdPercent":  int32(80),
+		"kubelet.imageMinimumGCAge":           "2m",
+		"kubelet.clusterDNS":                  []string{"10.96.0.10"},
 	}
 
 	for field, expected := range expectedDefaults {
@@ -404,12 +336,12 @@ func TestExoscaleNodeClass_Defaults(t *testing.T) {
 func TestResourceReservation_Validation(t *testing.T) {
 	tests := []struct {
 		name        string
-		reservation ResourceReservation
+		reservation KubeResourceReservation
 		wantValid   bool
 	}{
 		{
 			name: "valid resource reservation",
-			reservation: ResourceReservation{
+			reservation: KubeResourceReservation{
 				CPU:              "500m",
 				Memory:           "1Gi",
 				EphemeralStorage: "10Gi",
@@ -418,28 +350,27 @@ func TestResourceReservation_Validation(t *testing.T) {
 		},
 		{
 			name: "invalid CPU format",
-			reservation: ResourceReservation{
-				CPU: "500 millicores", // Should be "500m"
+			reservation: KubeResourceReservation{
+				CPU: "500 millicores",
 			},
 			wantValid: false,
 		},
 		{
 			name: "invalid memory format",
-			reservation: ResourceReservation{
-				Memory: "1 gigabyte", // Should be "1Gi"
+			reservation: KubeResourceReservation{
+				Memory: "1 gigabyte",
 			},
 			wantValid: false,
 		},
 		{
 			name:        "empty reservation is valid",
-			reservation: ResourceReservation{},
+			reservation: KubeResourceReservation{},
 			wantValid:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// These would be validated by Kubernetes quantity parsing
 			if !tt.wantValid {
 				t.Logf("Reservation %+v should be rejected", tt.reservation)
 			}
@@ -455,18 +386,6 @@ func generateUUIDs(format string, count int) []string {
 		uuids[i] = fmt.Sprintf(format, i+1)
 	}
 	return uuids
-}
-
-func generateTaints(count int) []NodeTaint {
-	taints := make([]NodeTaint, count)
-	for i := 0; i < count; i++ {
-		taints[i] = NodeTaint{
-			Key:    fmt.Sprintf("taint-key-%d", i),
-			Value:  fmt.Sprintf("taint-value-%d", i),
-			Effect: "NoSchedule",
-		}
-	}
-	return taints
 }
 
 func int32Ptr(i int32) *int32 {

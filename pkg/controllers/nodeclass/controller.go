@@ -291,21 +291,24 @@ func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *ExoscaleNodeClassReconciler) validate(nodeClass *apiv1.ExoscaleNodeClass) error {
-	// Only validate resource quantities since CEL validation handles everything else
-	if err := validateResourceReservation(nodeClass.Spec.KubeReserved); err != nil {
-		return fmt.Errorf("invalid kubeReserved: %w", err)
+	kr := nodeClass.Spec.Kubelet.KubeReserved
+	if err := validateResourceQuantities(kr.CPU, kr.Memory, kr.EphemeralStorage); err != nil {
+		return fmt.Errorf("invalid kubelet.kubeReserved: %w", err)
 	}
-	if err := validateResourceReservation(nodeClass.Spec.SystemReserved); err != nil {
-		return fmt.Errorf("invalid systemReserved: %w", err)
+
+	sr := nodeClass.Spec.Kubelet.SystemReserved
+	if err := validateResourceQuantities(sr.CPU, sr.Memory, sr.EphemeralStorage); err != nil {
+		return fmt.Errorf("invalid kubelet.systemReserved: %w", err)
 	}
+
 	return nil
 }
 
-func validateResourceReservation(reservation apiv1.ResourceReservation) error {
+func validateResourceQuantities(cpu, memory, ephemeralStorage string) error {
 	resources := map[string]string{
-		"CPU":               reservation.CPU,
-		"memory":            reservation.Memory,
-		"ephemeral storage": reservation.EphemeralStorage,
+		"CPU":               cpu,
+		"memory":            memory,
+		"ephemeral storage": ephemeralStorage,
 	}
 
 	for name, value := range resources {

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
@@ -11,13 +12,16 @@ import (
 func TestNewOptions(t *testing.T) {
 	nodeClass := &apiv1.ExoscaleNodeClass{
 		Spec: apiv1.ExoscaleNodeClassSpec{
-			KubeReserved: apiv1.ResourceReservation{
-				CPU:    "100m",
-				Memory: "1Gi",
-			},
-			SystemReserved: apiv1.ResourceReservation{
-				CPU:    "50m",
-				Memory: "512Mi",
+			Kubelet: apiv1.KubeletConfiguration{
+				ClusterDNS: []string{"10.96.0.10", "10.96.0.11"},
+				KubeReserved: apiv1.KubeResourceReservation{
+					CPU:    "100m",
+					Memory: "1Gi",
+				},
+				SystemReserved: apiv1.SystemResourceReservation{
+					CPU:    "50m",
+					Memory: "512Mi",
+				},
 			},
 		},
 	}
@@ -26,6 +30,15 @@ func TestNewOptions(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				"test-label": "test-value",
+			},
+		},
+		Spec: karpenterv1.NodeClaimSpec{
+			Taints: []corev1.Taint{
+				{
+					Key:    "test-taint",
+					Value:  "test-value",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
 			},
 		},
 	}
@@ -38,6 +51,14 @@ func TestNewOptions(t *testing.T) {
 
 	if opts.Labels["test-label"] != "test-value" {
 		t.Errorf("NewOptions() labels not copied correctly")
+	}
+
+	if len(opts.ClusterDNS) != 2 || opts.ClusterDNS[0] != "10.96.0.10" || opts.ClusterDNS[1] != "10.96.0.11" {
+		t.Errorf("NewOptions() ClusterDNS = %v, want [10.96.0.10 10.96.0.11]", opts.ClusterDNS)
+	}
+
+	if len(opts.Taints) != 1 || opts.Taints[0].Key != "test-taint" {
+		t.Errorf("NewOptions() Taints not copied correctly, got %v", opts.Taints)
 	}
 
 	if opts.KubeReserved.CPU != "100m" {

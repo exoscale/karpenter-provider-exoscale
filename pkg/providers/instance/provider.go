@@ -325,14 +325,10 @@ func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]st
 }
 
 func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, bootstrapToken string) (string, error) {
-	nodeTaints := append([]corev1.Taint{}, nodeClaim.Spec.Taints...)
-
 	userdataOptions := userdata.NewOptions(nodeClass, nodeClaim)
 	userdataOptions.ClusterEndpoint = p.options.ClusterEndpoint
-	userdataOptions.ClusterDNS = p.options.ClusterDNS
 	userdataOptions.ClusterDomain = p.options.ClusterDomain
 	userdataOptions.BootstrapToken = bootstrapToken
-	userdataOptions.Taints = nodeTaints
 
 	userData, err := p.userdataProvider.Generate(ctx, nodeClass, nodeClaim, userdataOptions)
 	if err != nil {

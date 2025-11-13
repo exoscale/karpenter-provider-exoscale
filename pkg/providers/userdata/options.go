@@ -8,14 +8,14 @@ import (
 
 type Options struct {
 	ClusterEndpoint             string
-	ClusterDNS                  string
 	ClusterDomain               string
 	BootstrapToken              string
 	CABundle                    []byte
 	Taints                      []v1.Taint
 	Labels                      map[string]string
-	KubeReserved                apiv1.ResourceReservation
-	SystemReserved              apiv1.ResourceReservation
+	ClusterDNS                  []string
+	KubeReserved                apiv1.KubeResourceReservation
+	SystemReserved              apiv1.SystemResourceReservation
 	ImageGCHighThresholdPercent *int32
 	ImageGCLowThresholdPercent  *int32
 	ImageMinimumGCAge           string
@@ -26,16 +26,13 @@ func NewOptions(
 	nodeClaim *karpenterv1.NodeClaim,
 ) *Options {
 	return &Options{
-		Labels: nodeClaim.Labels,
-		KubeReserved: apiv1.ResourceReservation{
-			CPU:              nodeClass.Spec.KubeReserved.CPU,
-			Memory:           nodeClass.Spec.KubeReserved.Memory,
-			EphemeralStorage: nodeClass.Spec.KubeReserved.EphemeralStorage,
-		},
-		SystemReserved: apiv1.ResourceReservation{
-			CPU:              nodeClass.Spec.SystemReserved.CPU,
-			Memory:           nodeClass.Spec.SystemReserved.Memory,
-			EphemeralStorage: nodeClass.Spec.SystemReserved.EphemeralStorage,
-		},
+		Labels:                      nodeClaim.Labels,
+		Taints:                      append([]v1.Taint{}, nodeClaim.Spec.Taints...),
+		ClusterDNS:                  nodeClass.Spec.Kubelet.ClusterDNS,
+		KubeReserved:                nodeClass.Spec.Kubelet.KubeReserved,
+		SystemReserved:              nodeClass.Spec.Kubelet.SystemReserved,
+		ImageGCHighThresholdPercent: nodeClass.Spec.Kubelet.ImageGCHighThresholdPercent,
+		ImageGCLowThresholdPercent:  nodeClass.Spec.Kubelet.ImageGCLowThresholdPercent,
+		ImageMinimumGCAge:           nodeClass.Spec.Kubelet.ImageMinimumGCAge,
 	}
 }

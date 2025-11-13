@@ -3,7 +3,6 @@ package nodeclass
 import (
 	"testing"
 
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
@@ -145,40 +144,42 @@ func TestCountActiveNodeClaims(t *testing.T) {
 	}
 }
 
-func TestValidateResourceReservation(t *testing.T) {
+func TestValidateResourceQuantities(t *testing.T) {
 	tests := []struct {
-		name        string
-		reservation apiv1.ResourceReservation
-		wantErr     bool
+		name             string
+		cpu              string
+		memory           string
+		ephemeralStorage string
+		wantErr          bool
 	}{
 		{
-			name: "valid reservations",
-			reservation: apiv1.ResourceReservation{
-				CPU:              "100m",
-				Memory:           "512Mi",
-				EphemeralStorage: "1Gi",
-			},
+			name:             "valid reservations",
+			cpu:              "100m",
+			memory:           "512Mi",
+			ephemeralStorage: "1Gi",
+			wantErr:          false,
+		},
+		{
+			name:    "empty reservations",
 			wantErr: false,
 		},
 		{
-			name:        "empty reservations",
-			reservation: apiv1.ResourceReservation{},
-			wantErr:     false,
+			name:    "invalid cpu quantity",
+			cpu:     "invalid",
+			wantErr: true,
 		},
 		{
-			name: "invalid quantity",
-			reservation: apiv1.ResourceReservation{
-				CPU: "invalid",
-			},
+			name:    "invalid memory quantity",
+			memory:  "invalid",
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateResourceReservation(tt.reservation)
+			err := validateResourceQuantities(tt.cpu, tt.memory, tt.ephemeralStorage)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateResourceReservation() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("validateResourceQuantities() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
