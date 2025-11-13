@@ -167,8 +167,9 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent
-              rule: '!has(self.kubelet.imageGCHighThresholdPercent) || !has(self.kubelet.imageGCLowThresholdPercent)
-                || self.kubelet.imageGCLowThresholdPercent < self.kubelet.imageGCHighThresholdPercent'
+              rule: '!has(self.kubelet) || !has(self.kubelet.imageGCHighThresholdPercent)
+                || !has(self.kubelet.imageGCLowThresholdPercent) || self.kubelet.imageGCLowThresholdPercent
+                < self.kubelet.imageGCHighThresholdPercent'
             - message: exactly one of templateID or imageTemplateSelector must be
                 specified
               rule: (has(self.templateID) && !has(self.imageTemplateSelector)) ||
