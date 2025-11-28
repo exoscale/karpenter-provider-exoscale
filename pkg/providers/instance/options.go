@@ -76,7 +76,7 @@ func (c *Options) BuildExoscaleClient(ctx context.Context) (*egov3.Client, error
 	apiEndpoint, _ := os.LookupEnv("EXOSCALE_API_ENDPOINT")
 	apiEnvironment, _ := os.LookupEnv("EXOSCALE_API_ENVIRONMENT")
 
-	endpoint := getEndpoint(ctx, c.Zone, apiEndpoint, apiEnvironment)
+	endpoint := getEndpoint(apiEndpoint, apiEnvironment)
 	if endpoint == nil {
 		exoClient, err := egov3.NewClient(credentials.NewStaticCredentials(c.APIKey, c.APISecret))
 		if err != nil {
@@ -114,7 +114,7 @@ func getRequiredEnv(key string) (string, error) {
 	return value, nil
 }
 
-func getEndpoint(ctx context.Context, zone, apiEndpoint, apiEnvironment string) *egov3.Endpoint {
+func getEndpoint(apiEndpoint, apiEnvironment string) *egov3.Endpoint {
 	if apiEndpoint != "" {
 		endpoint := egov3.Endpoint(apiEndpoint)
 		return &endpoint
