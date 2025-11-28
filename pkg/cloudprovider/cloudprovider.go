@@ -215,24 +215,32 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 
 	if nodeClaim.Status.ImageID != inst.Template.ID {
 		log.FromContext(ctx).Info("detected template drift", "reason", DriftReasonImageID)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance template ID drift detected: nodeClaim ImageID %s != instance Template ID %s", nodeClaim.Status.ImageID, inst.Template.ID))
 		return DriftReasonImageID, nil
 	}
 
 	left, right := lo.Difference(nodeClass.Spec.AntiAffinityGroups, inst.AntiAffinityGroups)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected anti-affinity groups drift", "reason", DriftReasonAntiAffinityGroups)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance anti-affinity groups drift detected: nodeClass AntiAffinityGroups %v != instance AntiAffinityGroups %v", nodeClass.Spec.AntiAffinityGroups, inst.AntiAffinityGroups))
 		return DriftReasonAntiAffinityGroups, nil
 	}
 
 	left, right = lo.Difference(nodeClass.Spec.SecurityGroups, inst.SecurityGroups)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected security groups drift", "reason", DriftReasonSecurityGroups)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance security groups drift detected: nodeClass SecurityGroups %v != instance SecurityGroups %v", nodeClass.Spec.SecurityGroups, inst.SecurityGroups))
 		return DriftReasonSecurityGroups, nil
 	}
 
 	left, right = lo.Difference(nodeClass.Spec.PrivateNetworks, inst.PrivateNetworks)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected private networks drift", "reason", DriftReasonPrivateNetworks)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance private networks drift detected: nodeClass PrivateNetworks %v != instance PrivateNetworks %v", nodeClass.Spec.PrivateNetworks, inst.PrivateNetworks))
 		return DriftReasonPrivateNetworks, nil
 	}
 
@@ -403,4 +411,13 @@ func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {
 	}
 
 	return nil
+}
+
+func (c *CloudProvider) publishEvent(nodeClaim *karpenterv1.NodeClaim, eventType, reason, message string) {
+	c.recorder.Publish(events.Event{
+		InvolvedObject: nodeClaim,
+		Type:           eventType,
+		Reason:         reason,
+		Message:        message,
+	})
 }

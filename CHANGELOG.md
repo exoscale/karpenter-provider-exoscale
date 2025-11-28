@@ -1,8 +1,13 @@
 Changelog
 =========
 
-0.0.10 - UNRELEASED
+0.0.11 - UNRELEASED
 -------------------
+
+- cloudprovider: record events when drift is detected on NodeClaims
+
+0.0.10
+----------
 
 - doc: Add documentation regarding SKS image metadata format
 - **Breaking change**: Move kubelet configuration to `spec.kubelet` (imageGC*, kubeReserved, systemReserved)

@@ -1,7 +1,6 @@
 package instance
 
 import (
-	"context"
 	"os"
 	"testing"
 )
@@ -48,8 +47,6 @@ func TestGetRequiredEnv(t *testing.T) {
 }
 
 func TestGetEndpoint(t *testing.T) {
-	ctx := context.Background()
-
 	tests := []struct {
 		name           string
 		apiEndpoint    string
@@ -72,7 +69,7 @@ func TestGetEndpoint(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			endpoint := getEndpoint(ctx, "ch-gva-2", tt.apiEndpoint, tt.apiEnvironment)
+			endpoint := getEndpoint(tt.apiEndpoint, tt.apiEnvironment)
 			if string(*endpoint) != tt.want {
 				t.Errorf("getEndpoint() = %v, want %v", string(*endpoint), tt.want)
 			}
