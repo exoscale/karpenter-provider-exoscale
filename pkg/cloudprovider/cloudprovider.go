@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
@@ -242,6 +243,16 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
 			fmt.Sprintf("Instance private networks drift detected: nodeClass PrivateNetworks %v != instance PrivateNetworks %v", nodeClass.Spec.PrivateNetworks, inst.PrivateNetworks))
 		return DriftReasonPrivateNetworks, nil
+	}
+
+	// fix instance labels drift
+	expectedInstanceLabels := c.instanceProvider.GenerateInstanceLabels(nodeClaim)
+	if !reflect.DeepEqual(expectedInstanceLabels, inst.Labels) {
+		log.FromContext(ctx).Info("detected instance labels drift, fixing them", "reason", "Labels")
+		if err := c.instanceProvider.UpdateTags(ctx, inst.ID, expectedInstanceLabels); err != nil {
+			log.FromContext(ctx).Error(err, "failed to update instance labels", "instanceID", instanceID)
+			return "", fmt.Errorf("failed to update instance labels: %w", err)
+		}
 	}
 
 	log.FromContext(ctx).V(2).Info("no drift detected")

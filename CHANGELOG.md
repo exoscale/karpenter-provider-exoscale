@@ -5,6 +5,9 @@ Changelog
 -------------------
 
 - cloudprovider: record events when drift is detected on NodeClaims
+- provider: add nodepool name label to instances
+- cloudprovider: auto-update instance labels when drift is detected
+- chore: bump to go 1.25.5
 
 0.0.10
 ----------

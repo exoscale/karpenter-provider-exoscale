@@ -104,16 +104,12 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	}
 
 	createRequest := egov3.CreateInstanceRequest{
-		Name:         instanceName,
-		InstanceType: &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
-		Template:     &egov3.Template{ID: egov3.UUID(t.ID)},
-		DiskSize:     nodeClass.Spec.DiskSize,
-		UserData:     userData,
-		Labels: map[string]string{
-			constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
-			constants.InstanceLabelClusterID: p.options.ClusterID,
-			constants.InstanceLabelNodeClaim: nodeClaim.Name,
-		},
+		Name:               instanceName,
+		InstanceType:       &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
+		Template:           &egov3.Template{ID: egov3.UUID(t.ID)},
+		DiskSize:           nodeClass.Spec.DiskSize,
+		UserData:           userData,
+		Labels:             p.GenerateInstanceLabels(nodeClaim),
 		SecurityGroups:     p.convertSecurityGroups(nodeClass.Spec.SecurityGroups),
 		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Spec.AntiAffinityGroups),
 	}
@@ -322,6 +318,22 @@ func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]st
 
 	log.FromContext(ctx).Info("instance labels updated successfully", "tagsCount", len(tags))
 	return nil
+}
+
+func (p *Provider) GenerateInstanceLabels(nodeClaim *karpenterv1.NodeClaim) map[string]string {
+	labels := map[string]string{
+		constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+		constants.InstanceLabelClusterID: p.options.ClusterID,
+		constants.InstanceLabelNodeClaim: nodeClaim.Name,
+	}
+
+	// used in kubectl output, see
+	// https://github.com/kubernetes-sigs/karpenter/blob/v1.8.0/pkg/apis/crds/karpenter.sh_nodeclaims.yaml#L46
+	if np, ok := nodeClaim.ObjectMeta.Labels[karpenterv1.NodePoolLabelKey]; ok {
+		labels[constants.InstanceLabelNodepoolName] = np
+	}
+
+	return labels
 }
 
 func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, bootstrapToken string) (string, error) {

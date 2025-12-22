@@ -2,9 +2,13 @@ package instance
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	egov3 "github.com/exoscale/egoscale/v3"
+	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 func TestConvertSecurityGroups(t *testing.T) {
@@ -109,5 +113,46 @@ func TestFindCheapestInstanceType(t *testing.T) {
 				t.Errorf("findCheapestInstanceType() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGenerateInstanceLabels(t *testing.T) {
+	p := &Provider{
+		options: &Options{
+			ClusterID: "test-cluster-id",
+		},
+	}
+	nodeClaim := &karpenterv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-claim",
+			Labels: map[string]string{
+				karpenterv1.NodePoolLabelKey: "test-nodepool",
+			},
+		},
+	}
+
+	labels := p.GenerateInstanceLabels(nodeClaim)
+
+	expectedLabels := map[string]string{
+		constants.InstanceLabelManagedBy:    constants.ManagedByKarpenter,
+		constants.InstanceLabelClusterID:    "test-cluster-id",
+		constants.InstanceLabelNodeClaim:    "test-node-claim",
+		constants.InstanceLabelNodepoolName: "test-nodepool",
+	}
+
+	if !reflect.DeepEqual(labels, expectedLabels) {
+		t.Errorf("GenerateInstanceLabels() = %v, want %v", labels, expectedLabels)
+	}
+
+	// Verify behavior when expected labels order change
+	expectedLabels = map[string]string{
+		constants.InstanceLabelNodepoolName: "test-nodepool",
+		constants.InstanceLabelManagedBy:    constants.ManagedByKarpenter,
+		constants.InstanceLabelNodeClaim:    "test-node-claim",
+		constants.InstanceLabelClusterID:    "test-cluster-id",
+	}
+
+	if !reflect.DeepEqual(labels, expectedLabels) {
+		t.Errorf("GenerateInstanceLabels() = %v, want %v", labels, expectedLabels)
 	}
 }
