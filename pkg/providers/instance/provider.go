@@ -337,7 +337,9 @@ func (p *Provider) GenerateInstanceLabels(nodeClaim *karpenterv1.NodeClaim) map[
 }
 
 func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, bootstrapToken string) (string, error) {
-	userdataOptions := userdata.NewOptions(nodeClass, nodeClaim)
+	taints := nodeClaim.Spec.Taints
+	taints = append(taints, karpenterv1.UnregisteredNoExecuteTaint)
+	userdataOptions := userdata.NewOptions(nodeClass, nodeClaim, taints)
 	userdataOptions.ClusterEndpoint = p.options.ClusterEndpoint
 	userdataOptions.ClusterDomain = p.options.ClusterDomain
 	userdataOptions.BootstrapToken = bootstrapToken

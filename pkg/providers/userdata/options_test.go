@@ -43,7 +43,7 @@ func TestNewOptions(t *testing.T) {
 		},
 	}
 
-	opts := NewOptions(nodeClass, nodeClaim)
+	opts := NewOptions(nodeClass, nodeClaim, nodeClaim.Spec.Taints)
 
 	if opts == nil {
 		t.Fatal("NewOptions() returned nil")
