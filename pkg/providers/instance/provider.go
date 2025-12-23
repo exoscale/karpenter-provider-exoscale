@@ -189,8 +189,8 @@ func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {
 
 	instance, err := p.exoClient.GetInstance(ctx, egov3.UUID(id))
 	if err != nil {
-		if p.isNotFoundError(err) {
-			return nil, cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", id))
+		if p.IsNotFoundError(err) {
+			return nil, err // return raw typed error, callers will handle this type
 		}
 		return nil, fmt.Errorf("failed to get instance %s: %w", id, err)
 	}
@@ -255,10 +255,10 @@ func (p *Provider) Delete(ctx context.Context, id string) error {
 
 	operation, err := p.exoClient.DeleteInstance(deleteCtx, egov3.UUID(id))
 	if err != nil {
-		if p.isNotFoundError(err) {
+		if p.IsNotFoundError(err) {
 			log.FromContext(ctx).Info("instance not found, nothing to delete")
 			p.cache.Delete(id)
-			return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", id))
+			return err
 		}
 		log.FromContext(ctx).Error(err, "failed to delete instance")
 		return fmt.Errorf("failed to delete instance: %w", err)
@@ -284,8 +284,8 @@ func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]st
 
 	instance, err := p.exoClient.GetInstance(ctx, egov3.UUID(id))
 	if err != nil {
-		if p.isNotFoundError(err) {
-			return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", id))
+		if p.IsNotFoundError(err) {
+			return fmt.Errorf("instance %s not found", id)
 		}
 		return fmt.Errorf("failed to get instance %s for tag update: %w", id, err)
 	}
@@ -407,7 +407,7 @@ func findCheapestInstanceType(instanceTypes []string, prices map[string]float64)
 	return cheapest
 }
 
-func (p *Provider) isNotFoundError(err error) bool {
+func (p *Provider) IsNotFoundError(err error) bool {
 	return stderrors.Is(err, egov3.ErrNotFound)
 }
 

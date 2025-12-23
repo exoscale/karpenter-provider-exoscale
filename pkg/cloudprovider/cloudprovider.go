@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpentertypes "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
 )
@@ -93,6 +94,10 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	return nc, nil
 }
 
+// Karpenter 1.8 doc says:
+// Delete removes a NodeClaim from the cloudprovider by its provider id. Delete should return
+// NodeClaimNotFoundError if the cloudProvider instance is already terminated and nil if deletion was triggered.
+// Karpenter will keep retrying until Delete returns a NodeClaimNotFound error.
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "Delete",
@@ -115,13 +120,14 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	}
 
 	log.FromContext(ctx).Info("deleting instance", "instanceID", instanceID)
-	if err := c.instanceProvider.Delete(ctx, instanceID); err != nil {
+	if err := c.instanceProvider.Delete(ctx, instanceID); err != nil && !c.instanceProvider.IsNotFoundError(err) {
 		log.FromContext(ctx).Error(err, "failed to delete instance", "instanceID", instanceID)
 		return err
 	}
 
 	log.FromContext(ctx).Info("cloud instance deletion completed", "instanceID", instanceID)
-	return nil
+	// Implementation require to return NodeClaimNotFoundError if the instance is removed
+	return karpentertypes.NewNodeClaimNotFoundError(nil)
 }
 
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv1.NodeClaim, error) {
@@ -137,6 +143,9 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv
 
 	inst, err := c.instanceProvider.Get(ctx, instanceID)
 	if err != nil {
+		if c.instanceProvider.IsNotFoundError(err) {
+			return nil, karpentertypes.NewNodeClaimNotFoundError(err)
+		}
 		log.FromContext(ctx).Error(err, "failed to get instance", "instanceID", instanceID)
 		return nil, err
 	}
