@@ -92,6 +92,10 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 			"age", time.Since(inst.CreatedAt))
 
 		if err := c.InstanceProvider.Delete(ctx, inst.ID); err != nil {
+			if c.InstanceProvider.IsNotFoundError(err) {
+				log.FromContext(ctx).Info("instance already deleted", "instanceID", inst.ID)
+				continue
+			}
 			return reconcile.Result{}, err
 		}
 	}

@@ -7,7 +7,9 @@ Changelog
 - cloudprovider: record events when drift is detected on NodeClaims
 - provider: add nodepool name label to instances
 - cloudprovider: auto-update instance labels when drift is detected
-- chore: bump to go 1.25.5
+- chore: bump to go 1.25.5*
+- cloudprovider: better interactions with karpenter framework
+- cloudprovider: provision node object early to prevent VM dupes on rapid scale-up
 
 0.0.10
 ----------

@@ -69,8 +69,8 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	}
 
 	instanceName := nodeClaim.Name
-	if p.options.InstancePrefix != "" {
-		instanceName = p.options.InstancePrefix + instanceName
+	if p.GetInstancePrefix() != "" {
+		instanceName = p.GetInstancePrefix() + instanceName
 	}
 
 	instanceTypeRequirement := requirements.Get(corev1.LabelInstanceTypeStable)
@@ -336,10 +336,12 @@ func (p *Provider) GenerateInstanceLabels(nodeClaim *karpenterv1.NodeClaim) map[
 	return labels
 }
 
+func (p *Provider) GetInstancePrefix() string {
+	return p.options.InstancePrefix
+}
+
 func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, bootstrapToken string) (string, error) {
-	taints := nodeClaim.Spec.Taints
-	taints = append(taints, karpenterv1.UnregisteredNoExecuteTaint)
-	userdataOptions := userdata.NewOptions(nodeClass, nodeClaim, taints)
+	userdataOptions := userdata.NewOptions(nodeClass, nodeClaim)
 	userdataOptions.ClusterEndpoint = p.options.ClusterEndpoint
 	userdataOptions.ClusterDomain = p.options.ClusterDomain
 	userdataOptions.BootstrapToken = bootstrapToken

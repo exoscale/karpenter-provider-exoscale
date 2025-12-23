@@ -24,11 +24,10 @@ type Options struct {
 func NewOptions(
 	nodeClass *apiv1.ExoscaleNodeClass,
 	nodeClaim *karpenterv1.NodeClaim,
-	taints []v1.Taint,
 ) *Options {
 	return &Options{
 		Labels:                      nodeClaim.Labels,
-		Taints:                      taints,
+		Taints:                      nodeClaim.Spec.Taints,
 		ClusterDNS:                  nodeClass.Spec.Kubelet.ClusterDNS,
 		KubeReserved:                nodeClass.Spec.Kubelet.KubeReserved,
 		SystemReserved:              nodeClass.Spec.Kubelet.SystemReserved,

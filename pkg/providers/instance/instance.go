@@ -124,3 +124,13 @@ func (i *Instance) ToNodeClaim() *karpenterv1.NodeClaim {
 
 	return nodeClaim
 }
+
+func (i *Instance) GetCapacityAndAllocatable() (v1.ResourceList, v1.ResourceList) {
+	capacity := v1.ResourceList{}
+	allocatable := v1.ResourceList{}
+	for k, v := range i.Capacity {
+		capacity[k] = v.DeepCopy()
+		allocatable[k] = v.DeepCopy()
+	}
+	return capacity, allocatable
+}
