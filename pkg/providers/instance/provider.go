@@ -69,8 +69,8 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	}
 
 	instanceName := nodeClaim.Name
-	if p.options.InstancePrefix != "" {
-		instanceName = p.options.InstancePrefix + instanceName
+	if p.GetInstancePrefix() != "" {
+		instanceName = p.GetInstancePrefix() + instanceName
 	}
 
 	instanceTypeRequirement := requirements.Get(corev1.LabelInstanceTypeStable)
@@ -104,16 +104,12 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	}
 
 	createRequest := egov3.CreateInstanceRequest{
-		Name:         instanceName,
-		InstanceType: &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
-		Template:     &egov3.Template{ID: egov3.UUID(t.ID)},
-		DiskSize:     nodeClass.Spec.DiskSize,
-		UserData:     userData,
-		Labels: map[string]string{
-			constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
-			constants.InstanceLabelClusterID: p.options.ClusterID,
-			constants.InstanceLabelNodeClaim: nodeClaim.Name,
-		},
+		Name:               instanceName,
+		InstanceType:       &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
+		Template:           &egov3.Template{ID: egov3.UUID(t.ID)},
+		DiskSize:           nodeClass.Spec.DiskSize,
+		UserData:           userData,
+		Labels:             p.GenerateInstanceLabels(nodeClaim),
 		SecurityGroups:     p.convertSecurityGroups(nodeClass.Spec.SecurityGroups),
 		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Spec.AntiAffinityGroups),
 	}
@@ -193,8 +189,8 @@ func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {
 
 	instance, err := p.exoClient.GetInstance(ctx, egov3.UUID(id))
 	if err != nil {
-		if p.isNotFoundError(err) {
-			return nil, cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", id))
+		if p.IsNotFoundError(err) {
+			return nil, err // return raw typed error, callers will handle this type
 		}
 		return nil, fmt.Errorf("failed to get instance %s: %w", id, err)
 	}
@@ -259,10 +255,10 @@ func (p *Provider) Delete(ctx context.Context, id string) error {
 
 	operation, err := p.exoClient.DeleteInstance(deleteCtx, egov3.UUID(id))
 	if err != nil {
-		if p.isNotFoundError(err) {
+		if p.IsNotFoundError(err) {
 			log.FromContext(ctx).Info("instance not found, nothing to delete")
 			p.cache.Delete(id)
-			return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", id))
+			return err
 		}
 		log.FromContext(ctx).Error(err, "failed to delete instance")
 		return fmt.Errorf("failed to delete instance: %w", err)
@@ -288,8 +284,8 @@ func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]st
 
 	instance, err := p.exoClient.GetInstance(ctx, egov3.UUID(id))
 	if err != nil {
-		if p.isNotFoundError(err) {
-			return cloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("instance %s not found", id))
+		if p.IsNotFoundError(err) {
+			return fmt.Errorf("instance %s not found", id)
 		}
 		return fmt.Errorf("failed to get instance %s for tag update: %w", id, err)
 	}
@@ -322,6 +318,26 @@ func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]st
 
 	log.FromContext(ctx).Info("instance labels updated successfully", "tagsCount", len(tags))
 	return nil
+}
+
+func (p *Provider) GenerateInstanceLabels(nodeClaim *karpenterv1.NodeClaim) map[string]string {
+	labels := map[string]string{
+		constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+		constants.InstanceLabelClusterID: p.options.ClusterID,
+		constants.InstanceLabelNodeClaim: nodeClaim.Name,
+	}
+
+	// used in kubectl output, see
+	// https://github.com/kubernetes-sigs/karpenter/blob/v1.8.0/pkg/apis/crds/karpenter.sh_nodeclaims.yaml#L46
+	if np, ok := nodeClaim.ObjectMeta.Labels[karpenterv1.NodePoolLabelKey]; ok {
+		labels[constants.InstanceLabelNodepoolName] = np
+	}
+
+	return labels
+}
+
+func (p *Provider) GetInstancePrefix() string {
+	return p.options.InstancePrefix
 }
 
 func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, bootstrapToken string) (string, error) {
@@ -395,7 +411,7 @@ func findCheapestInstanceType(instanceTypes []string, prices map[string]float64)
 	return cheapest
 }
 
-func (p *Provider) isNotFoundError(err error) bool {
+func (p *Provider) IsNotFoundError(err error) bool {
 	return stderrors.Is(err, egov3.ErrNotFound)
 }
 

@@ -26,8 +26,3 @@ spec:
 
   # Private networks (optional)
   privateNetworks: []
-
-  # Node labels (optional)
-  nodeLabels:
-    environment: "production"
-    team: "platform"

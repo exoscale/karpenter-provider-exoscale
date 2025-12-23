@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
@@ -89,9 +90,20 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 
 	nc := createdInstance.ToNodeClaim()
 
+	if err := c.createNode(ctx, nc, createdInstance); err != nil {
+		log.FromContext(ctx).Error(err, "failed to create node for instance")
+		return nil, cloudprovider.NewCreateError(err, "NodeCreationFailed", err.Error())
+	}
+
+	nc.Status.NodeName = nc.Name
+
 	return nc, nil
 }
 
+// Karpenter 1.8 doc says:
+// Delete removes a NodeClaim from the cloudprovider by its provider id. Delete should return
+// NodeClaimNotFoundError if the cloudProvider instance is already terminated and nil if deletion was triggered.
+// Karpenter will keep retrying until Delete returns a NodeClaimNotFound error.
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "Delete",
@@ -114,13 +126,14 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	}
 
 	log.FromContext(ctx).Info("deleting instance", "instanceID", instanceID)
-	if err := c.instanceProvider.Delete(ctx, instanceID); err != nil {
+	if err := c.instanceProvider.Delete(ctx, instanceID); err != nil && !c.instanceProvider.IsNotFoundError(err) {
 		log.FromContext(ctx).Error(err, "failed to delete instance", "instanceID", instanceID)
 		return err
 	}
 
 	log.FromContext(ctx).Info("cloud instance deletion completed", "instanceID", instanceID)
-	return nil
+	// Implementation require to return NodeClaimNotFoundError if the instance is removed
+	return cloudprovider.NewNodeClaimNotFoundError(nil)
 }
 
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv1.NodeClaim, error) {
@@ -136,6 +149,9 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv
 
 	inst, err := c.instanceProvider.Get(ctx, instanceID)
 	if err != nil {
+		if c.instanceProvider.IsNotFoundError(err) {
+			return nil, cloudprovider.NewNodeClaimNotFoundError(err)
+		}
 		log.FromContext(ctx).Error(err, "failed to get instance", "instanceID", instanceID)
 		return nil, err
 	}
@@ -244,6 +260,16 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return DriftReasonPrivateNetworks, nil
 	}
 
+	// fix instance labels drift
+	expectedInstanceLabels := c.instanceProvider.GenerateInstanceLabels(nodeClaim)
+	if !reflect.DeepEqual(expectedInstanceLabels, inst.Labels) {
+		log.FromContext(ctx).Info("detected instance labels drift, fixing them", "reason", "Labels")
+		if err := c.instanceProvider.UpdateTags(ctx, inst.ID, expectedInstanceLabels); err != nil {
+			log.FromContext(ctx).Error(err, "failed to update instance labels", "instanceID", instanceID)
+			return "", fmt.Errorf("failed to update instance labels: %w", err)
+		}
+	}
+
 	log.FromContext(ctx).V(2).Info("no drift detected")
 	return "", nil
 }
@@ -328,6 +354,52 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 
 	log.FromContext(ctx).V(1).Info("retrieved node class from node pool", "nodeClass", nodeClass.Name)
 	return &nodeClass, nil
+}
+
+func (c *CloudProvider) createNode(ctx context.Context, nodeClaim *karpenterv1.NodeClaim, exoInstance *instance.Instance) error {
+	nodeName := nodeClaim.Name
+	if c.instanceProvider.GetInstancePrefix() != "" {
+		nodeName = c.instanceProvider.GetInstancePrefix() + nodeName
+	}
+
+	capacity, allocatable := exoInstance.GetCapacityAndAllocatable()
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        nodeName,
+			Annotations: nodeClaim.Annotations,
+		},
+		Spec: v1.NodeSpec{
+			ProviderID: nodeClaim.Status.ProviderID,
+			Taints:     []v1.Taint{karpenterv1.UnregisteredNoExecuteTaint},
+		},
+		Status: v1.NodeStatus{
+			Capacity:    capacity,
+			Allocatable: allocatable,
+			Phase:       v1.NodePending,
+			Conditions: []v1.NodeCondition{
+				{
+					Type:               v1.NodeReady,
+					Status:             v1.ConditionUnknown,
+					Reason:             "Initialization",
+					LastTransitionTime: metav1.Now(),
+					LastHeartbeatTime:  metav1.Now(),
+				},
+			},
+			NodeInfo: v1.NodeSystemInfo{
+				// This attribute is mandatory as CCM uses it to find the instance by ID from API
+				// If it's not set, it will say that instance don't exist and will instant remove it
+				// See https://github.com/exoscale/exoscale-cloud-controller-manager/blob/v0.34.0/exoscale/instances.go#L187
+				SystemUUID: exoInstance.ID,
+			},
+		},
+	}
+
+	if err := c.kubeClient.Create(ctx, node); err != nil {
+		return fmt.Errorf("creating node %s: %w", nodeName, err)
+	}
+
+	log.FromContext(ctx).Info("created Pending node", "nodeName", nodeName)
+	return nil
 }
 
 func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {

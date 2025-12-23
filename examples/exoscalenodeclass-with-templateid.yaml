@@ -34,12 +34,6 @@ spec:
   #   memory: "256Mi"
   #   ephemeralStorage: "1Gi"
 
-  # Node labels (optional)
-  # These labels will be applied to all nodes using this NodeClass
-  # nodeLabels:
-  #   environment: "production"
-  #   team: "platform"
-  
   # Node taints (optional)
   # These taints will be applied to all nodes using this NodeClass
   # nodeTaints:
