@@ -27,7 +27,7 @@ func NewOptions(
 ) *Options {
 	return &Options{
 		Labels:                      nodeClaim.Labels,
-		Taints:                      append([]v1.Taint{}, nodeClaim.Spec.Taints...),
+		Taints:                      nodeClaim.Spec.Taints,
 		ClusterDNS:                  nodeClass.Spec.Kubelet.ClusterDNS,
 		KubeReserved:                nodeClass.Spec.Kubelet.KubeReserved,
 		SystemReserved:              nodeClass.Spec.Kubelet.SystemReserved,
