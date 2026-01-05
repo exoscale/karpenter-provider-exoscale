@@ -1,7 +1,7 @@
 Changelog
 =========
 
-0.0.11 - UNRELEASED
+0.0.11
 -------------------
 
 - cloudprovider: record events when drift is detected on NodeClaims
