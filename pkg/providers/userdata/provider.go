@@ -63,6 +63,7 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		ImageMinimumGCAge:           options.ImageMinimumGCAge,
 		KubeReserved:                options.KubeReserved,
 		SystemReserved:              options.SystemReserved,
+		FeatureGates:                options.FeatureGates,
 	}
 
 	if bootstrapOptions.Labels == nil {

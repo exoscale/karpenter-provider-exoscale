@@ -113,6 +113,10 @@ type KubeletConfiguration struct {
 	// SystemReserved is resources reserved for OS system components
 	// +optional
 	SystemReserved SystemResourceReservation `json:"systemReserved,omitempty"`
+
+	// FeatureGates is a map of feature gates to enable/disable for the kubelet
+	// +optional
+	FeatureGates map[string]bool `json:"featureGates,omitempty"`
 }
 
 type KubeResourceReservation struct {

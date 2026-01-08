@@ -83,6 +83,12 @@ spec:
                     items:
                       type: string
                     type: array
+                  featureGates:
+                    additionalProperties:
+                      type: boolean
+                    description: FeatureGates is a map of feature gates to enable/disable
+                      for the kubelet
+                    type: object
                   imageGCHighThresholdPercent:
                     default: 85
                     description: ImageGCHighThresholdPercent is the disk usage percentage

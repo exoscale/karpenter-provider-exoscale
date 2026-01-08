@@ -25,6 +25,7 @@ type Options struct {
 	ImageMinimumGCAge           string
 	KubeReserved                apiv1.KubeResourceReservation
 	SystemReserved              apiv1.SystemResourceReservation
+	FeatureGates                map[string]bool
 }
 
 type KubernetesSettings struct {
@@ -41,6 +42,7 @@ type KubernetesSettings struct {
 	SystemReserved              *ResourceReservation `toml:"system-reserved,omitempty"`
 	NodeTaints                  map[string][]string  `toml:"node-taints,omitempty"`
 	NodeLabels                  map[string]string    `toml:"node-labels,omitempty"`
+	FeatureGates                map[string]bool      `toml:"feature-gates,omitempty"`
 }
 
 type ResourceReservation struct {
@@ -165,6 +167,10 @@ func (s *SKSBootstrap) buildConfig(options *Options) *Config {
 		for k, v := range options.Labels {
 			config.Settings.Kubernetes.NodeLabels[k] = v
 		}
+	}
+
+	if len(options.FeatureGates) > 0 {
+		config.Settings.Kubernetes.FeatureGates = options.FeatureGates
 	}
 
 	return config

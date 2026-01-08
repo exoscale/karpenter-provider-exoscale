@@ -1,4 +1,4 @@
-# `sks-node-agent` Metadata Settings Reference
+# `sks-node-agent` Settings Reference
 
 ## Table of Contents
 
@@ -11,6 +11,7 @@
     - [`settings.kubernetes.cluster-certificate`](#settingskubernetescluster-certificate)
     - [`settings.kubernetes.cluster-dns-ip`](#settingskubernetescluster-dns-ip)
     - [`settings.kubernetes.cluster-domain`](#settingskubernetescluster-domain)
+    - [`settings.kubernetes.feature-gates`](#settingskubernetesfeature-gates)
     - [`settings.kubernetes.image-gc-high-threshold-percent`](#settingskubernetesimage-gc-high-threshold-percent)
     - [`settings.kubernetes.image-gc-low-threshold-percent`](#settingskubernetesimage-gc-low-threshold-percent)
     - [`settings.kubernetes.image-minimum-gc-age`](#settingskubernetesimage-minimum-gc-age)
@@ -135,6 +136,42 @@ The DNS domain for the Kubernetes cluster.
   ```toml
   [settings.kubernetes]
   cluster-domain = "cluster.local"
+  ```
+
+### `settings.kubernetes.feature-gates`
+
+**Type**: Map of String/Boolean pairs
+
+Defines [feature gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/) as key-value pairs to configure Kubelet component.
+
+> [!IMPORTANT]
+> The Feature Gates list **MUST** be validated prior to defining
+> `settings.kubernetes.feature-gates` since no further validation is performed
+> by the image/sks-node-agent itself.
+> Currently, SKS Orchestrator defines and validates the [allowed Feature
+> Gates](https://github.com/exoscale/sks-orchestrator/blob/master/modules/orchestrator/resources/feature-gates.edn).
+
+- **TOML Example**:
+
+  ```toml
+  [settings.kubernetes.feature-gates]
+  "ImageVolume" = true
+  "MemoryQoS" = true
+  ```
+
+- **ExoscaleNodeClass Example**:
+
+  ```yaml
+  apiVersion: karpenter.exoscale.com/v1
+  kind: ExoscaleNodeClass
+  metadata:
+    name: default
+  spec:
+    templateID: "12345678-1234-1234-1234-123456789012"
+    kubelet:
+      featureGates:
+        ImageVolume: true
+        MemoryQoS: true
   ```
 
 ### `settings.kubernetes.image-gc-high-threshold-percent`
