@@ -1,6 +1,11 @@
 Changelog
 =========
 
+UNRELASED
+------------------
+
+- rbac: add missing permissions
+
 0.0.11
 -------------------
 

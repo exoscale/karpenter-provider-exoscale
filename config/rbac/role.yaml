@@ -155,14 +155,8 @@ rules:
   - storage.k8s.io
   resources:
   - volumeattachments
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - storage.k8s.io
-  resources:
   - csinodes
+  - storageclasses
   verbs:
   - get
   - list
