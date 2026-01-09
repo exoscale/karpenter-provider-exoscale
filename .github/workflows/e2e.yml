@@ -1,0 +1,87 @@
+name: E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      zone:
+        description: "Exoscale zone"
+        required: true
+        default: "ch-gva-2"
+        type: choice
+        options:
+          - ch-gva-2
+          - ch-dk-2
+          - de-fra-1
+          - de-muc-1
+          - at-vie-1
+          - at-vie-2
+          - bg-sof-1
+      skip_cluster_create:
+        description: "Skip SKS cluster creation (use existing)"
+        required: false
+        default: false
+        type: boolean
+      cluster_name:
+        description: "Existing cluster name (if skip_cluster_create is true)"
+        required: false
+        type: string
+      cleanup_on_failure:
+        description: "Cleanup resources on test failure"
+        required: false
+        default: true
+        type: boolean
+
+env:
+  EXOSCALE_API_KEY: ${{ secrets.EXOSCALE_API_KEY }}
+  EXOSCALE_API_SECRET: ${{ secrets.EXOSCALE_API_SECRET }}
+  EXOSCALE_ZONE: ${{ inputs.zone }}
+  E2E_TEMPLATE_ID: ${{ vars.E2E_TEMPLATE_ID }}
+  E2E_SECURITY_GROUP_ID: ${{ vars.E2E_SECURITY_GROUP_ID }}
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - run: make go.mk
+
+      - uses: ./go.mk/.github/actions/setup
+
+      - name: Run E2E tests
+        env:
+          E2E_SKIP_CLUSTER_CREATE: ${{ inputs.skip_cluster_create }}
+          E2E_CLUSTER_NAME: ${{ inputs.cluster_name }}
+          E2E_CLEANUP_ON_FAILURE: ${{ inputs.cleanup_on_failure }}
+        run: make test-e2e
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: |
+            test-results/
+            *.log
+          retention-days: 7
+
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: e2e-test
+    if: failure() && inputs.cleanup_on_failure
+    steps:
+      - uses: actions/checkout@v6
+
+      - run: make go.mk
+
+      - uses: ./go.mk/.github/actions/setup
+
+      - name: Cleanup orphaned resources
+        env:
+          EXOSCALE_API_KEY: ${{ secrets.EXOSCALE_API_KEY }}
+          EXOSCALE_API_SECRET: ${{ secrets.EXOSCALE_API_SECRET }}
+          EXOSCALE_ZONE: ${{ inputs.zone }}
+        run: |
+          echo "Attempting to cleanup any orphaned e2e resources..."
+          go run ./test/e2e/cmd/cleanup/main.go --run-id="e2e-" || true

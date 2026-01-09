@@ -62,5 +62,13 @@ include go.mk/public.mk
 
 ## Targets
 
+# E2E Tests
+GINKGO ?= go run github.com/onsi/ginkgo/v2/ginkgo
+E2E_TIMEOUT ?= 30m
+
+.PHONY: test-e2e
+test-e2e:
+	$(GINKGO) -v -timeout $(E2E_TIMEOUT) ./test/e2e/...
+
 # Docker
 include Makefile.docker
