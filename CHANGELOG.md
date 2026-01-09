@@ -5,6 +5,7 @@ UNRELASED
 ------------------
 
 - rbac: add missing permissions
+- ci: wrong build date (using month for minutes)
 
 0.0.11
 -------------------
