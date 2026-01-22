@@ -11,6 +11,8 @@ import (
 	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
+	"github.com/exoscale/karpenter-exoscale/pkg/utils"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +37,9 @@ type ExoscaleNodeClassReconciler struct {
 	TemplateResolver *template.Provider
 	Recorder         record.EventRecorder
 	Zone             string
+	aagCache         utils.ResourceCache[egov3.AntiAffinityGroup]
+	sgCache          utils.ResourceCache[egov3.SecurityGroup]
+	pnCache          utils.ResourceCache[egov3.PrivateNetwork]
 }
 
 // +kubebuilder:rbac:groups=karpenter.exoscale.com,resources=exoscalenodeclasses,verbs=get;list;watch;create;update;patch;delete
@@ -61,6 +66,8 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 		return r.handleDeletion(ctx, nodeClass)
 	}
 
+	stored := nodeClass.DeepCopy()
+
 	if !slices.Contains(nodeClass.Finalizers, Finalizer) {
 		nodeClass.Finalizers = append(nodeClass.Finalizers, Finalizer)
 		if err := r.Update(ctx, nodeClass); err != nil {
@@ -74,43 +81,216 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 		nodeClass.Status.Conditions = []status.Condition{}
 	}
 
-	if err := r.validate(nodeClass); err != nil {
+	if err := r.validateSpec(nodeClass); err != nil {
 		log.FromContext(ctx).Error(err, "validation failed")
 		nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ValidationFailed", "Validation failed: "+err.Error())
 		r.Recorder.Eventf(nodeClass, "Warning", "ValidationFailed", "NodeClass validation failed: %v", err)
 
-		if err := r.Status().Update(ctx, nodeClass); err != nil {
-			log.FromContext(ctx).Error(err, "failed to update status")
-			return reconcile.Result{}, err
+		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
+			if errors.IsConflict(err) {
+				return reconcile.Result{Requeue: true}, nil
+			}
+
+			return reconcile.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("failed to patch nodeclass status: %w", err)
 		}
 
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	r.Recorder.Event(nodeClass, "Normal", "ValidationSucceeded", "NodeClass validation succeeded")
+	r.Recorder.Event(nodeClass, "Normal", "ValidationSucceeded", "NodeClass field validation succeeded")
 
-	if err := r.verifyExoscaleResources(ctx, nodeClass); err != nil {
-		log.FromContext(ctx).Error(err, "Exoscale resource verification failed")
-		nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ResourceVerificationFailed", "Resource verification failed: "+err.Error())
-		r.Recorder.Eventf(nodeClass, "Warning", "ResourceVerificationFailed", "Exoscale resource verification failed: %v", err)
-
-		if err := r.Status().Update(ctx, nodeClass); err != nil {
-			log.FromContext(ctx).Error(err, "failed to update status")
-			return reconcile.Result{}, err
-		}
-
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+	// Reconcile resources from Exoscale API now and resolve them into status fields
+	type reconcileStep struct {
+		reconcileFn  func(context.Context, *apiv1.ExoscaleNodeClass) error
+		reason       string
+		errorMessage string
 	}
 
-	nodeClass.StatusConditions().SetTrue(status.ConditionReady)
-	r.Recorder.Event(nodeClass, "Normal", "Ready", "NodeClass is ready for use")
+	reconcileSteps := []reconcileStep{
+		{
+			reconcileFn:  r.reconcileTemplate,
+			reason:       "TemplateReconciliationFailed",
+			errorMessage: "Exoscale template reconciliation failed",
+		},
+		{
+			reconcileFn:  r.reconcileSecurityGroups,
+			reason:       "SecurityGroupResolutionFailed",
+			errorMessage: "Security group resolution failed",
+		},
+		{
+			reconcileFn:  r.reconcileAntiAffinityGroups,
+			reason:       "AntiAffinityGroupResolutionFailed",
+			errorMessage: "Anti-affinity group resolution failed",
+		},
+		{
+			reconcileFn:  r.reconcilePrivateNetworks,
+			reason:       "PrivateNetworkResolutionFailed",
+			errorMessage: "Private network resolution failed",
+		},
+	}
 
-	if err := r.Status().Update(ctx, nodeClass); err != nil {
-		log.FromContext(ctx).Error(err, "failed to update status")
-		return reconcile.Result{}, err
+	var err error
+	for _, step := range reconcileSteps {
+		if err = step.reconcileFn(ctx, nodeClass); err != nil {
+			log.FromContext(ctx).Error(err, step.errorMessage)
+			nodeClass.StatusConditions().SetFalse(status.ConditionReady, step.reason, step.errorMessage+": "+err.Error())
+			r.Recorder.Eventf(nodeClass, "Warning", step.reason, "%s: %v", step.errorMessage, err)
+			break
+		}
+	}
+
+	if err == nil {
+		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
+		r.Recorder.Event(nodeClass, "Normal", "Ready", "NodeClass is ready for use")
+	}
+
+	// if resource is different, patch it
+	if !equality.Semantic.DeepEqual(stored, nodeClass) {
+		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
+			if errors.IsConflict(err) {
+				return reconcile.Result{Requeue: true}, nil
+			}
+
+			return reconcile.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("failed to patch nodeclass status: %w", err)
+		}
 	}
 
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+func (r *ExoscaleNodeClassReconciler) reconcileSecurityGroups(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	sgIDs := []string{}
+
+	// Deprecated field, use selector instead now
+	for _, sgID := range nodeClass.Spec.SecurityGroups {
+		log.FromContext(ctx).V(1).Info("resolving security group", "securityGroupID", sgID)
+		sg, err := r.ExoscaleClient.GetSecurityGroup(ctx, egov3.UUID(sgID))
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get security group", "securityGroupID", sgID)
+			return fmt.Errorf("failed to get security group %s: %w", sgID, err)
+		}
+		sgIDs = append(sgIDs, sg.ID.String())
+	}
+
+	for _, selector := range nodeClass.Spec.SecurityGroupSelectorTerms {
+		var sg *egov3.SecurityGroup
+		var err error
+		if selector.ID != "" {
+			log.FromContext(ctx).V(1).Info("resolving security group by ID", "securityGroupID", selector.ID)
+			sg, err = r.ExoscaleClient.GetSecurityGroup(ctx, egov3.UUID(selector.ID))
+		} else if selector.Name != "" {
+			log.FromContext(ctx).V(1).Info("resolving security group by Name", "securityGroupName", selector.Name)
+			// Discover security group by name
+			sg, err = r.getCachedSecurityGroupByName(ctx, selector.Name)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to get security group by name")
+				return fmt.Errorf("failed to get security group by name: %w", err)
+			}
+
+			if sg == nil {
+				err = fmt.Errorf("security group with name %s not found", selector.Name)
+			}
+		}
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get security group", "selector", selector)
+			return fmt.Errorf("failed to get security group for selector %+v: %w", selector, err)
+		}
+
+		sgIDs = append(sgIDs, sg.ID.String())
+	}
+
+	nodeClass.Status.SecurityGroups = sgIDs
+	return nil
+}
+
+func (r *ExoscaleNodeClassReconciler) reconcileAntiAffinityGroups(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	aagIDs := []string{}
+
+	// Deprecated field, use selector instead now
+	for _, aagID := range nodeClass.Spec.AntiAffinityGroups {
+		log.FromContext(ctx).V(1).Info("resolving anti-affinity group", "antiAffinityGroupID", aagID)
+		aag, err := r.ExoscaleClient.GetAntiAffinityGroup(ctx, egov3.UUID(aagID))
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get anti-affinity group", "antiAffinityGroupID", aagID)
+			return fmt.Errorf("failed to get anti-affinity group %s: %w", aagID, err)
+		}
+		aagIDs = append(aagIDs, aag.ID.String())
+	}
+
+	for _, selector := range nodeClass.Spec.AntiAffinityGroupSelectorTerms {
+		var aag *egov3.AntiAffinityGroup
+		var err error
+		if selector.ID != "" {
+			log.FromContext(ctx).V(1).Info("resolving anti-affinity group by ID", "antiAffinityGroupID", selector.ID)
+			aag, err = r.ExoscaleClient.GetAntiAffinityGroup(ctx, egov3.UUID(selector.ID))
+		} else if selector.Name != "" {
+			log.FromContext(ctx).V(1).Info("resolving anti-affinity group by Name", "antiAffinityGroupName", selector.Name)
+			// Discover anti-affinity group by name
+			aag, err = r.getCachedAntiAffinityGroupByName(ctx, selector.Name)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to get anti-affinity group by name")
+				return fmt.Errorf("failed to get anti-affinity group by name: %w", err)
+			}
+
+			if aag == nil {
+				err = fmt.Errorf("anti-affinity group with name %s not found", selector.Name)
+			}
+		}
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get anti-affinity group", "selector", selector)
+			return fmt.Errorf("failed to get anti-affinity group for selector %+v: %w", selector, err)
+		}
+
+		aagIDs = append(aagIDs, aag.ID.String())
+	}
+
+	nodeClass.Status.AntiAffinityGroups = aagIDs
+	return nil
+}
+
+func (r *ExoscaleNodeClassReconciler) reconcilePrivateNetworks(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	privNetIDs := []string{}
+
+	// Deprecated field, use selector instead now
+	for _, netID := range nodeClass.Spec.PrivateNetworks {
+		log.FromContext(ctx).V(1).Info("resolving private network", "privateNetworkID", netID)
+		net, err := r.ExoscaleClient.GetPrivateNetwork(ctx, egov3.UUID(netID))
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get private network", "privateNetworkID", netID)
+			return fmt.Errorf("failed to get private network %s: %w", netID, err)
+		}
+		privNetIDs = append(privNetIDs, net.ID.String())
+	}
+
+	for _, selector := range nodeClass.Spec.PrivateNetworkSelectorTerms {
+		var net *egov3.PrivateNetwork
+		var err error
+		if selector.ID != "" {
+			log.FromContext(ctx).V(1).Info("resolving private network by ID", "privateNetworkID", selector.ID)
+			net, err = r.ExoscaleClient.GetPrivateNetwork(ctx, egov3.UUID(selector.ID))
+		} else if selector.Name != "" {
+			log.FromContext(ctx).V(1).Info("resolving private network by Name", "privateNetworkName", selector.Name)
+			// Discover private network by name
+			net, err = r.getCachedPrivateNetworkByName(ctx, selector.Name)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to get private network by name")
+				return fmt.Errorf("failed to get private network by name: %w", err)
+			}
+
+			if net == nil {
+				err = fmt.Errorf("private network with name %s not found", selector.Name)
+			}
+		}
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get private network", "selector", selector)
+			return fmt.Errorf("failed to get private network for selector %+v: %w", selector, err)
+		}
+
+		privNetIDs = append(privNetIDs, net.ID.String())
+	}
+
+	nodeClass.Status.PrivateNetworks = privNetIDs
+	return nil
 }
 
 func isNodeClaimUsingNodeClass(nc *karpenterv1.NodeClaim, nodeClassName string) bool {
@@ -239,7 +419,7 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 	return nil
 }
 
-func (r *ExoscaleNodeClassReconciler) verifyExoscaleResources(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+func (r *ExoscaleNodeClassReconciler) reconcileTemplate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
 
 	t, err := r.TemplateResolver.ResolveTemplate(ctx, nodeClass)
@@ -252,31 +432,6 @@ func (r *ExoscaleNodeClassReconciler) verifyExoscaleResources(ctx context.Contex
 		return fmt.Errorf("template %s not found or not accessible: %w", t.ID, err)
 	}
 
-	for _, sgID := range nodeClass.Spec.SecurityGroups {
-		log.FromContext(ctx).V(1).Info("verifying security group", "securityGroupID", sgID)
-		if _, err := r.ExoscaleClient.GetSecurityGroup(ctx, egov3.UUID(sgID)); err != nil {
-			return fmt.Errorf("security group %s not found or not accessible: %w", sgID, err)
-		}
-	}
-
-	for _, netID := range nodeClass.Spec.PrivateNetworks {
-		log.FromContext(ctx).V(1).Info("verifying private network", "networkID", netID)
-		if _, err := r.ExoscaleClient.GetPrivateNetwork(ctx, egov3.UUID(netID)); err != nil {
-			return fmt.Errorf("private network %s not found or not accessible: %w", netID, err)
-		}
-	}
-
-	for _, aagID := range nodeClass.Spec.AntiAffinityGroups {
-		log.FromContext(ctx).V(1).Info("verifying anti-affinity group", "antiAffinityGroupID", aagID)
-		aag, err := r.ExoscaleClient.GetAntiAffinityGroup(ctx, egov3.UUID(aagID))
-		if err != nil {
-			return fmt.Errorf("anti-affinity group %s not found or not accessible: %w", aagID, err)
-		}
-
-		if len(aag.Instances) >= constants.MaxInstancesPerAntiAffinityGroup {
-			log.FromContext(ctx).Info("anti-affinity group at capacity", "antiAffinityGroupID", aagID, "instances", len(aag.Instances))
-		}
-	}
 	return nil
 }
 
@@ -290,7 +445,7 @@ func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *ExoscaleNodeClassReconciler) validate(nodeClass *apiv1.ExoscaleNodeClass) error {
+func (r *ExoscaleNodeClassReconciler) validateSpec(nodeClass *apiv1.ExoscaleNodeClass) error {
 	kr := nodeClass.Spec.Kubelet.KubeReserved
 	if err := validateResourceQuantities(kr.CPU, kr.Memory, kr.EphemeralStorage); err != nil {
 		return fmt.Errorf("invalid kubelet.kubeReserved: %w", err)

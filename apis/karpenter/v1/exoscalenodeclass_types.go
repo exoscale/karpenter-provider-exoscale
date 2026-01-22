@@ -42,6 +42,15 @@ type ImageTemplateSelector struct {
 	Variant string `json:"variant,omitempty"`
 }
 
+// SelectorTerms defines a way to select resources by ID or Name
+// +kubebuilder:validation:XValidation:rule="(has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))",message="exactly one of id or name must be specified"
+type SelectorTerms struct {
+	// +optional
+	ID string `json:"id,omitempty"`
+	// +optional
+	Name string `json:"name,omitempty"`
+}
+
 // ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
 // +kubebuilder:validation:XValidation:rule="!has(self.kubelet) || !has(self.kubelet.imageGCHighThresholdPercent) || !has(self.kubelet.imageGCLowThresholdPercent) || self.kubelet.imageGCLowThresholdPercent < self.kubelet.imageGCHighThresholdPercent",message="imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent"
 // +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
@@ -61,18 +70,36 @@ type ExoscaleNodeClassSpec struct {
 	DiskSize int64 `json:"diskSize,omitempty"`
 
 	// SecurityGroups is a list of security group IDs to attach to instances
+	// Deprecated: Use SecurityGroupSelectorTerms instead
 	// +optional
 	// +kubebuilder:validation:MaxItems=50
 	SecurityGroups []string `json:"securityGroups,omitempty"`
 
+	// SecurityGroupSelectorTerms is a list of selector terms to select security groups
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	SecurityGroupSelectorTerms []SelectorTerms `json:"securityGroupSelectorTerms,omitempty"`
+
 	// AntiAffinityGroups is a list of anti-affinity group IDs
+	// Deprecated: Use AntiAffinityGroupSelectorTerms instead
 	// +optional
 	AntiAffinityGroups []string `json:"antiAffinityGroups,omitempty"`
 
+	// AntiAffinityGroupSelectorTerms is a list of selector terms to select anti-affinity groups
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	AntiAffinityGroupSelectorTerms []SelectorTerms `json:"antiAffinityGroupSelectorTerms,omitempty"`
+
 	// PrivateNetworks is a list of private network IDs to attach to instances
+	// Deprecated: Use PrivateNetworkSelectorTerms instead
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
+
+	// PrivateNetworkSelectorTerms is a list of selector terms to select private networks
+	// +optional
+	// +kubebuilder:validation:MaxItems=10
+	PrivateNetworkSelectorTerms []SelectorTerms `json:"privateNetworkSelectorTerms,omitempty"`
 
 	// Kubelet contains configuration for kubelet
 	// +optional
@@ -175,6 +202,18 @@ func (in *ExoscaleNodeClass) SetConditions(conditions []status.Condition) {
 type ExoscaleNodeClassStatus struct {
 	// Conditions contains signals for health and readiness
 	Conditions []status.Condition `json:"conditions,omitempty"`
+
+	// Computed SecurityGroup IDs after applying selectors
+	// +optional
+	SecurityGroups []string `json:"securityGroups,omitempty"`
+
+	// Computed AntiAffinityGroup IDs after applying selectors
+	// +optional
+	AntiAffinityGroups []string `json:"antiAffinityGroups,omitempty"`
+
+	// Computed PrivateNetwork IDs after applying selectors
+	// +optional
+	PrivateNetworks []string `json:"privateNetworks,omitempty"`
 }
 
 // ExoscaleNodeClassList contains a list of ExoscaleNodeClass

@@ -77,9 +77,19 @@ spec:
   
   # Security groups (optional)
   # List the security group IDs to attach to instances
-  securityGroups: []
-  antiAffinityGroups: []
-  privateNetworks: []
+  securityGroupsSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-security-group"
+
+  # Anti-affinity groups (optional)
+  antiAffinityGroupsSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-anti-affinity-group"
+
+  # Private networks (optional)
+  privateNetworksSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-private-network"
 
   # Kubelet exposed configuration (all those parameters are optional)
   # https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
