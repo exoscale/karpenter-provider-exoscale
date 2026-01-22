@@ -14,7 +14,7 @@ require (
 	k8s.io/apimachinery v0.35.0-alpha.0
 	k8s.io/client-go v0.35.0-alpha.0
 	sigs.k8s.io/controller-runtime v0.22.4
-	sigs.k8s.io/karpenter v1.8.1
+	sigs.k8s.io/karpenter v1.8.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
