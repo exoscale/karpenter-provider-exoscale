@@ -6,9 +6,10 @@ UNRELASED
 
 - rbac: add missing permissions
 - ci: wrong build date (using month for minutes)
+- add support for feature gates
 
 0.0.11
--------------------
+----------
 
 - cloudprovider: record events when drift is detected on NodeClaims
 - provider: add nodepool name label to instances

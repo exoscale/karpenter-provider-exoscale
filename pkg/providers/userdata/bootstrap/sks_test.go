@@ -89,3 +89,54 @@ func TestCompressAndEncode(t *testing.T) {
 		t.Error("compressAndEncode() returned empty string")
 	}
 }
+
+func TestBuildConfigWithFeatureGates(t *testing.T) {
+	s := &SKSBootstrap{}
+	options := &Options{
+		ClusterEndpoint: "https://api.exoscale-cloud.com",
+		BootstrapToken:  "token123",
+		CABundle:        []byte("test-ca-bundle"),
+		FeatureGates: map[string]bool{
+			"ImageVolume": true,
+			"MemoryQoS":   true,
+			"TestFeature": false,
+		},
+	}
+
+	config := s.buildConfig(options)
+
+	if config.Settings.Kubernetes.FeatureGates == nil {
+		t.Fatal("FeatureGates should not be nil")
+	}
+
+	if len(config.Settings.Kubernetes.FeatureGates) != 3 {
+		t.Errorf("Expected 3 feature gates, got %d", len(config.Settings.Kubernetes.FeatureGates))
+	}
+
+	if config.Settings.Kubernetes.FeatureGates["ImageVolume"] != true {
+		t.Error("ImageVolume should be true")
+	}
+
+	if config.Settings.Kubernetes.FeatureGates["MemoryQoS"] != true {
+		t.Error("MemoryQoS should be true")
+	}
+
+	if config.Settings.Kubernetes.FeatureGates["TestFeature"] != false {
+		t.Error("TestFeature should be false")
+	}
+}
+
+func TestBuildConfigWithoutFeatureGates(t *testing.T) {
+	s := &SKSBootstrap{}
+	options := &Options{
+		ClusterEndpoint: "https://api.exoscale-cloud.com",
+		BootstrapToken:  "token123",
+		CABundle:        []byte("test-ca-bundle"),
+	}
+
+	config := s.buildConfig(options)
+
+	if config.Settings.Kubernetes.FeatureGates != nil {
+		t.Error("FeatureGates should be nil when not provided")
+	}
+}
