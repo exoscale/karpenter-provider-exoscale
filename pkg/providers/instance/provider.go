@@ -94,7 +94,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		return nil, fmt.Errorf("failed to find instance type ID for %s", instanceTypeName)
 	}
 
-	if err := p.checkAntiAffinityGroups(ctx, nodeClass.Spec.AntiAffinityGroups); err != nil {
+	if err := p.checkAntiAffinityGroups(ctx, nodeClass.Status.AntiAffinityGroups); err != nil {
 		return nil, fmt.Errorf("anti-affinity group capacity check failed: %w", err)
 	}
 
@@ -110,8 +110,8 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		DiskSize:           nodeClass.Spec.DiskSize,
 		UserData:           userData,
 		Labels:             p.GenerateInstanceLabels(nodeClaim),
-		SecurityGroups:     p.convertSecurityGroups(nodeClass.Spec.SecurityGroups),
-		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Spec.AntiAffinityGroups),
+		SecurityGroups:     p.convertSecurityGroups(nodeClass.Status.SecurityGroups),
+		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Status.AntiAffinityGroups),
 	}
 
 	createCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
@@ -151,8 +151,8 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		}
 	}
 
-	if len(nodeClass.Spec.PrivateNetworks) > 0 {
-		if err := p.attachPrivateNetworks(ctx, createdInstance.ID, nodeClass.Spec.PrivateNetworks); err != nil {
+	if len(nodeClass.Status.PrivateNetworks) > 0 {
+		if err := p.attachPrivateNetworks(ctx, createdInstance.ID, nodeClass.Status.PrivateNetworks); err != nil {
 			log.FromContext(ctx).Error(err, "failed to attach private networks, cleaning up instance")
 
 			deleteErr := p.Delete(ctx, createdInstance.ID.String())

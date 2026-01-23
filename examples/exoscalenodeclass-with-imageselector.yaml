@@ -19,10 +19,16 @@ spec:
   diskSize: 50
 
   # Security groups (optional)
-  securityGroups: []
+  securityGroupsSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-security-group"
 
   # Anti-affinity groups (optional)
-  antiAffinityGroups: []
+  antiAffinityGroupsSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-anti-affinity-group"
 
   # Private networks (optional)
-  privateNetworks: []
+  privateNetworksSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-private-network"

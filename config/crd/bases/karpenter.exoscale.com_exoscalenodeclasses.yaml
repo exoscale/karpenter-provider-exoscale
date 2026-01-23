@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   name: exoscalenodeclasses.karpenter.exoscale.com
 spec:
   group: karpenter.exoscale.com
@@ -48,8 +48,27 @@ spec:
           spec:
             description: ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
             properties:
+              antiAffinityGroupSelectorTerms:
+                description: AntiAffinityGroupSelectorTerms is a list of selector
+                  terms to select anti-affinity groups
+                items:
+                  description: SelectorTerms defines a way to select resources by
+                    ID or Name
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of id or name must be specified
+                    rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
+                maxItems: 50
+                type: array
               antiAffinityGroups:
-                description: AntiAffinityGroups is a list of anti-affinity group IDs
+                description: |-
+                  AntiAffinityGroups is a list of anti-affinity group IDs
+                  Deprecated: Use AntiAffinityGroupSelectorTerms instead
                 items:
                   type: string
                 type: array
@@ -153,16 +172,52 @@ spec:
                         type: string
                     type: object
                 type: object
+              privateNetworkSelectorTerms:
+                description: PrivateNetworkSelectorTerms is a list of selector terms
+                  to select private networks
+                items:
+                  description: SelectorTerms defines a way to select resources by
+                    ID or Name
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of id or name must be specified
+                    rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
+                maxItems: 10
+                type: array
               privateNetworks:
-                description: PrivateNetworks is a list of private network IDs to attach
-                  to instances
+                description: |-
+                  PrivateNetworks is a list of private network IDs to attach to instances
+                  Deprecated: Use PrivateNetworkSelectorTerms instead
                 items:
                   type: string
                 maxItems: 10
                 type: array
+              securityGroupSelectorTerms:
+                description: SecurityGroupSelectorTerms is a list of selector terms
+                  to select security groups
+                items:
+                  description: SelectorTerms defines a way to select resources by
+                    ID or Name
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of id or name must be specified
+                    rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
+                maxItems: 50
+                type: array
               securityGroups:
-                description: SecurityGroups is a list of security group IDs to attach
-                  to instances
+                description: |-
+                  SecurityGroups is a list of security group IDs to attach to instances
+                  Deprecated: Use SecurityGroupSelectorTerms instead
                 items:
                   type: string
                 maxItems: 50
@@ -183,6 +238,11 @@ spec:
           status:
             description: ExoscaleNodeClassStatus defines the observed state of ExoscaleNodeClass
             properties:
+              antiAffinityGroups:
+                description: Computed AntiAffinityGroup IDs after applying selectors
+                items:
+                  type: string
+                type: array
               conditions:
                 description: Conditions contains signals for health and readiness
                 items:
@@ -239,6 +299,16 @@ spec:
                   - status
                   - type
                   type: object
+                type: array
+              privateNetworks:
+                description: Computed PrivateNetwork IDs after applying selectors
+                items:
+                  type: string
+                type: array
+              securityGroups:
+                description: Computed SecurityGroup IDs after applying selectors
+                items:
+                  type: string
                 type: array
             type: object
         required:

@@ -7,6 +7,7 @@ UNRELASED
 - rbac: add missing permissions
 - ci: wrong build date (using month for minutes)
 - add support for feature gates
+- add nodeclass privateNetwork, anti-affinity groups & securityGroups selectorTerms & status
 
 0.0.11
 ----------

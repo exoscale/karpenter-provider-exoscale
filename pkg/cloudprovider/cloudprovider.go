@@ -236,27 +236,27 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return DriftReasonImageID, nil
 	}
 
-	left, right := lo.Difference(nodeClass.Spec.AntiAffinityGroups, inst.AntiAffinityGroups)
+	left, right := lo.Difference(nodeClass.Status.AntiAffinityGroups, inst.AntiAffinityGroups)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected anti-affinity groups drift", "reason", DriftReasonAntiAffinityGroups)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
-			fmt.Sprintf("Instance anti-affinity groups drift detected: nodeClass AntiAffinityGroups %v != instance AntiAffinityGroups %v", nodeClass.Spec.AntiAffinityGroups, inst.AntiAffinityGroups))
+			fmt.Sprintf("Instance anti-affinity groups drift detected: nodeClass AntiAffinityGroups %v != instance AntiAffinityGroups %v", nodeClass.Status.AntiAffinityGroups, inst.AntiAffinityGroups))
 		return DriftReasonAntiAffinityGroups, nil
 	}
 
-	left, right = lo.Difference(nodeClass.Spec.SecurityGroups, inst.SecurityGroups)
+	left, right = lo.Difference(nodeClass.Status.SecurityGroups, inst.SecurityGroups)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected security groups drift", "reason", DriftReasonSecurityGroups)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
-			fmt.Sprintf("Instance security groups drift detected: nodeClass SecurityGroups %v != instance SecurityGroups %v", nodeClass.Spec.SecurityGroups, inst.SecurityGroups))
+			fmt.Sprintf("Instance security groups drift detected: nodeClass SecurityGroups %v != instance SecurityGroups %v", nodeClass.Status.SecurityGroups, inst.SecurityGroups))
 		return DriftReasonSecurityGroups, nil
 	}
 
-	left, right = lo.Difference(nodeClass.Spec.PrivateNetworks, inst.PrivateNetworks)
+	left, right = lo.Difference(nodeClass.Status.PrivateNetworks, inst.PrivateNetworks)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected private networks drift", "reason", DriftReasonPrivateNetworks)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
-			fmt.Sprintf("Instance private networks drift detected: nodeClass PrivateNetworks %v != instance PrivateNetworks %v", nodeClass.Spec.PrivateNetworks, inst.PrivateNetworks))
+			fmt.Sprintf("Instance private networks drift detected: nodeClass PrivateNetworks %v != instance PrivateNetworks %v", nodeClass.Status.PrivateNetworks, inst.PrivateNetworks))
 		return DriftReasonPrivateNetworks, nil
 	}
 
