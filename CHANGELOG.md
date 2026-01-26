@@ -1,8 +1,11 @@
 Changelog
 =========
 
-UNRELASED
+UNRELEASED
 ------------------
+
+0.0.12
+----------
 
 - rbac: add missing permissions
 - ci: wrong build date (using month for minutes)
