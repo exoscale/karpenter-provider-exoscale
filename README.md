@@ -77,17 +77,17 @@ spec:
   
   # Security groups (optional)
   # List the security group IDs to attach to instances
-  securityGroupsSelectorTerms: []
+  securityGroupSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-security-group"
 
   # Anti-affinity groups (optional)
-  antiAffinityGroupsSelectorTerms: []
+  antiAffinityGroupSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-anti-affinity-group"
 
   # Private networks (optional)
-  privateNetworksSelectorTerms: []
+  privateNetworkSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
 

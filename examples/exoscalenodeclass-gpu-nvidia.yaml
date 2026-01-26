@@ -13,16 +13,16 @@ spec:
   # Minimal disk for GPU nodes
   diskSize: 50
   
-  securityGroupsSelectorTerms: []
+  securityGroupSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-security-group"
   
   # Anti-affinity groups for spreading GPU nodes across hosts
-  antiAffinityGroupsSelectorTerms: []
+  antiAffinityGroupSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-anti-affinity-group"
   
-  privateNetworksSelectorTerms: []
+  privateNetworkSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
 
