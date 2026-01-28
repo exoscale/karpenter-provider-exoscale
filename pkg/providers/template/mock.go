@@ -17,4 +17,3 @@ func (m *MockResolver) ResolveTemplate(ctx context.Context, nodeClass *apiv1.Exo
 	}
 	return nil, nil
 }
-
