@@ -27,7 +27,11 @@ import (
 )
 
 const (
-	Finalizer = "exoscale.com/nodeclass-finalizer"
+	Finalizer                           = "exoscale.com/nodeclass-finalizer"
+	ConditionTemplateResolved           = "TemplateResolved"
+	ConditionSecurityGroupsResolved     = "SecurityGroupsResolved"
+	ConditionAntiAffinityGroupsResolved = "AntiAffinityGroupsResolved"
+	ConditionPrivateNetworksResolved    = "PrivateNetworksResolved"
 )
 
 type ExoscaleNodeClassReconciler struct {
@@ -104,42 +108,54 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 		reconcileFn  func(context.Context, *apiv1.ExoscaleNodeClass) error
 		reason       string
 		errorMessage string
+		condition    string
 	}
 
 	reconcileSteps := []reconcileStep{
 		{
 			reconcileFn:  r.reconcileTemplate,
-			reason:       "TemplateReconciliationFailed",
-			errorMessage: "Exoscale template reconciliation failed",
+			reason:       "TemplateResolutionFailed",
+			errorMessage: "Exoscale template resolution failed",
+			condition:    ConditionTemplateResolved,
 		},
 		{
 			reconcileFn:  r.reconcileSecurityGroups,
 			reason:       "SecurityGroupResolutionFailed",
 			errorMessage: "Security group resolution failed",
+			condition:    ConditionSecurityGroupsResolved,
 		},
 		{
 			reconcileFn:  r.reconcileAntiAffinityGroups,
 			reason:       "AntiAffinityGroupResolutionFailed",
 			errorMessage: "Anti-affinity group resolution failed",
+			condition:    ConditionAntiAffinityGroupsResolved,
 		},
 		{
 			reconcileFn:  r.reconcilePrivateNetworks,
 			reason:       "PrivateNetworkResolutionFailed",
 			errorMessage: "Private network resolution failed",
+			condition:    ConditionPrivateNetworksResolved,
 		},
 	}
 
+	nodeClass.StatusConditions().SetFalse(status.ConditionReady, "Reconciling", "Reconciling node class resources")
 	var err error
 	for _, step := range reconcileSteps {
 		if err = step.reconcileFn(ctx, nodeClass); err != nil {
 			log.FromContext(ctx).Error(err, step.errorMessage)
-			nodeClass.StatusConditions().SetFalse(status.ConditionReady, step.reason, step.errorMessage+": "+err.Error())
+			nodeClass.StatusConditions().SetFalse(step.condition, step.reason, err.Error())
+			// It will only record the first failure event during reconciliation loop
+			// but we have all errors on each condition
+			nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ReconcilingFailed", "Reconciling node class resources failed")
 			r.Recorder.Eventf(nodeClass, "Warning", step.reason, "%s: %v", step.errorMessage, err)
-			break
+			continue
 		}
+
+		nodeClass.StatusConditions().SetTrue(step.condition)
 	}
 
-	if err == nil {
+	if nodeClass.StatusConditions().IsTrue(ConditionTemplateResolved, ConditionSecurityGroupsResolved, ConditionAntiAffinityGroupsResolved,
+		ConditionPrivateNetworksResolved) {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 		r.Recorder.Event(nodeClass, "Normal", "Ready", "NodeClass is ready for use")
 	}
