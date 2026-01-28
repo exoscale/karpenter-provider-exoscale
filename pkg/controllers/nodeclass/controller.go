@@ -34,11 +34,24 @@ const (
 	ConditionPrivateNetworksResolved    = "PrivateNetworksResolved"
 )
 
+// ExoscaleClient is an interface for interacting with the Exoscale API
+type ExoscaleClient interface {
+	GetTemplate(ctx context.Context, id egov3.UUID) (*egov3.Template, error)
+	GetSecurityGroup(ctx context.Context, id egov3.UUID) (*egov3.SecurityGroup, error)
+	GetAntiAffinityGroup(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
+	GetPrivateNetwork(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
+	ListInstances(ctx context.Context) (*egov3.ListInstancesResponse, error)
+	DeleteInstance(ctx context.Context, id egov3.UUID) (*egov3.Resource, error)
+	ListSecurityGroups(ctx context.Context) (*egov3.ListSecurityGroupsResponse, error)
+	ListAntiAffinityGroups(ctx context.Context) (*egov3.ListAntiAffinityGroupsResponse, error)
+	ListPrivateNetworks(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error)
+}
+
 type ExoscaleNodeClassReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
-	ExoscaleClient   *egov3.Client
-	TemplateResolver *template.Provider
+	ExoscaleClient   ExoscaleClient
+	TemplateResolver template.Resolver
 	Recorder         record.EventRecorder
 	Zone             string
 	aagCache         utils.ResourceCache[egov3.AntiAffinityGroup]

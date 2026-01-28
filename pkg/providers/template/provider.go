@@ -15,6 +15,11 @@ import (
 
 var gitVersionRegex = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)`)
 
+// Resolver is an interface for resolving templates
+type Resolver interface {
+	ResolveTemplate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (*Template, error)
+}
+
 type Provider struct {
 	client     *egov3.Client
 	zone       string
