@@ -1,0 +1,173 @@
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: gpu-nvidia
+spec:
+  # imageTemplateSelector with nvidia variant for GPU workloads
+  # Omit 'version' or use imageTemplateSelector: {variant: "nvidia"}
+  # to auto-detect control plane version
+  imageTemplateSelector:
+    version: "1.35.0"
+    variant: "nvidia"
+
+  securityGroups: []
+  # Minimal disk for GPU nodes
+  diskSize: 200
+---
+apiVersion: karpenter.exoscale.com/v1
+kind: ExoscaleNodeClass
+metadata:
+  name: standard
+spec:
+  # imageTemplateSelector automatically selects the appropriate OS template
+  # based on Kubernetes version and variant (alternative to templateID)
+  imageTemplateSelector:
+    # version: Kubernetes version (semver format like "1.34.1")
+    # If omitted (or if you use imageTemplateSelector: {}), the control plane's
+    # current Kubernetes version will be auto-detected at runtime
+    version: "1.35.0"
+
+    # variant: Template variant (optional, defaults to "standard")
+    # Options: "standard" for regular workloads, "nvidia" for GPU-enabled nodes
+    variant: "standard"
+
+  securityGroups: []
+  # Disk size in GB (default: 50, min: 10, max: 8000)
+  diskSize: 50
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: standard
+spec:
+  template:
+    metadata:
+      labels:
+        nodepool: standard
+    spec:
+      nodeClassRef:
+        group: karpenter.exoscale.com
+        kind: ExoscaleNodeClass
+        name: standard
+
+      # Startup taints prevent scheduling until node is fully ready
+      startupTaints: []
+
+      # Instance type requirements
+      requirements:
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values:
+            - "standard.medium"
+            - "standard.large"
+            - "standard.extra-large"
+
+      # Expire nodes after 30 days for security updates
+      expireAfter: 720h
+
+  # Disruption settings for cost optimization
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+
+    # Wait 30 minutes before consolidating
+    consolidateAfter: 1m
+
+    # Limit disruption rate
+    budgets:
+      - nodes: "10%" # Disrupt at most 10% of nodes at once
+
+  # Weight for prioritization (higher = higher priority)
+  weight: 50
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu
+spec:
+  template:
+    metadata:
+      labels:
+        nodepool: gpu
+        workload-type: gpu
+    spec:
+      nodeClassRef:
+        group: karpenter.exoscale.com
+        kind: ExoscaleNodeClass
+        name: gpu-nvidia
+
+      # Startup taints prevent scheduling until node is fully ready
+      startupTaints:
+        - key: karpenter.sh/unregistered
+          effect: NoExecute
+
+      # GPU instance type requirements
+      requirements:
+        - key: "node.kubernetes.io/instance-type"
+          operator: In
+          values:
+            - "gpurtx6000pro.small"
+        - key: "topology.csi.exoscale.com/zone"
+          operator: In
+          values: ["ch-gva-2"]
+
+      # Taints inherited from ExoscaleNodeClass ensure only GPU workloads run here
+      taints:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NoSchedule"
+
+      # Expire GPU nodes after 30 days
+      expireAfter: 720h
+
+  limits:
+    nodes: 2
+  # Disruption settings for GPU workloads
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+
+    # Consolidate quickly when empty to save costs
+    consolidateAfter: 30m
+
+    # Allow full disruption budget for GPU pool
+    budgets:
+      - nodes: "100%"
+
+  # Lower weight for GPU nodes (use only when needed)
+  weight: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      tolerations:
+        - key: "nvidia.com/gpu"
+          value: "true"
+          effect: "NoSchedule"
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - "ollama serve & sleep 5 && ollama pull mistral && wait"
+          ports:
+            - containerPort: 11434  # expose Ollama API port
+          resources:
+            limits:
+              cpu: "10"
+              memory: 20G
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: "2"
+              memory: 6G
+              nvidia.com/gpu: "1"
