@@ -4,6 +4,13 @@ Changelog
 UNRELEASED
 ------------------
 
+- node: set Hostname, ExternalIP and InternalIP addresses on Node objects based on instance metadata
+
+0.0.13
+----------
+
+- exoscalenodeclass: use multiple conditions to report ready state
+
 0.0.12
 ----------
 
