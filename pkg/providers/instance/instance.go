@@ -31,6 +31,7 @@ type Instance struct {
 	PrivateNetworks    []string
 	AntiAffinityGroups []string
 	Capacity           map[v1.ResourceName]resource.Quantity
+	Addresses          []v1.NodeAddress
 	CreatedAt          time.Time
 }
 
@@ -50,6 +51,24 @@ func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.
 		Labels:       instance.Labels,
 		CreatedAt:    instance.CreatedAT,
 		Capacity:     make(map[v1.ResourceName]resource.Quantity),
+		Addresses: []v1.NodeAddress{
+			{
+				Type:    v1.NodeHostName,
+				Address: instance.Name,
+			},
+		},
+	}
+
+	// Preprovision IPv4 addresses in order to ensure konnectivity can connect very early to the nodes
+	if instance.PublicIP != nil {
+		i.Addresses = append(i.Addresses, v1.NodeAddress{
+			Type:    v1.NodeExternalIP,
+			Address: instance.PublicIP.String(),
+		})
+		i.Addresses = append(i.Addresses, v1.NodeAddress{
+			Type:    v1.NodeInternalIP,
+			Address: instance.PublicIP.String(),
+		})
 	}
 
 	family := string(instance.InstanceType.Family)

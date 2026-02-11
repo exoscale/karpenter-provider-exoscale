@@ -391,6 +391,7 @@ func (c *CloudProvider) createNode(ctx context.Context, nodeClaim *karpenterv1.N
 				// See https://github.com/exoscale/exoscale-cloud-controller-manager/blob/v0.34.0/exoscale/instances.go#L187
 				SystemUUID: exoInstance.ID,
 			},
+			Addresses: exoInstance.Addresses,
 		},
 	}
 

@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -62,6 +63,74 @@ func TestFromExoscaleInstance(t *testing.T) {
 
 	if got.InstanceTypeName != "standard.medium" {
 		t.Errorf("FromExoscaleInstance() InstanceTypeName = %v, want standard.medium", got.InstanceTypeName)
+	}
+}
+
+func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
+	instanceID := "instance-456"
+	instanceName := "test-instance-with-ip"
+	zone := "ch-gva-2"
+
+	exoInstance := &egov3.Instance{
+		ID:       egov3.UUID(instanceID),
+		Name:     instanceName,
+		State:    egov3.InstanceStateRunning,
+		DiskSize: 50,
+		PublicIP: net.IP{192, 168, 1, 100},
+		Labels: map[string]string{
+			constants.InstanceLabelNodeClaim: "test-claim-with-ip",
+		},
+		CreatedAT: time.Now(),
+		InstanceType: &egov3.InstanceType{
+			Family: "standard",
+			Size:   "medium",
+		},
+		Template: &egov3.Template{
+			ID: egov3.UUID("template-456"),
+		},
+	}
+
+	instanceType := &cloudprovider.InstanceType{
+		Capacity: v1.ResourceList{
+			v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+			v1.ResourceMemory: *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+		},
+	}
+
+	got := FromExoscaleInstance(exoInstance, instanceType, zone)
+
+	if got == nil {
+		t.Fatal("FromExoscaleInstance() returned nil")
+	}
+
+	// Vérifie qu'on a exactement 3 adresses
+	if len(got.Addresses) != 3 {
+		t.Fatalf("FromExoscaleInstance() Addresses count = %d, want 3", len(got.Addresses))
+	}
+
+	// Vérifie qu'on a un Hostname par défaut
+	if got.Addresses[0].Type != v1.NodeHostName {
+		t.Errorf("Addresses[0].Type = %v, want %v", got.Addresses[0].Type, v1.NodeHostName)
+	}
+	if got.Addresses[0].Address != instanceName {
+		t.Errorf("Addresses[0].Address = %v, want %v", got.Addresses[0].Address, instanceName)
+	}
+
+	// Vérifie l'adresse IP externe
+	expectedIP := "192.168.1.100"
+	if got.Addresses[1].Type != v1.NodeExternalIP {
+		t.Errorf("Addresses[1].Type = %v, want %v", got.Addresses[1].Type, v1.NodeExternalIP)
+	}
+	if got.Addresses[1].Address != expectedIP {
+		t.Errorf("Addresses[1].Address = %v, want %v", got.Addresses[1].Address, expectedIP)
+	}
+
+	// Vérifie l'adresse IP interne (qui est la même que l'externe)
+	if got.Addresses[2].Type != v1.NodeInternalIP {
+		t.Errorf("Addresses[2].Type = %v, want %v", got.Addresses[2].Type, v1.NodeInternalIP)
+	}
+	if got.Addresses[2].Address != expectedIP {
+		t.Errorf("Addresses[2].Address = %v, want %v", got.Addresses[2].Address, expectedIP)
 	}
 }
 
