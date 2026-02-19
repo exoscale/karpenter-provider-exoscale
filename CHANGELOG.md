@@ -4,6 +4,7 @@ Changelog
 UNRELEASED
 ------------------
 
+- docs: add upgrade notes for 1.0.0
 
 1.0.0
 ------------------
