@@ -4,7 +4,14 @@ Changelog
 UNRELEASED
 ------------------
 
+
+1.0.0
+------------------
+
+- bump to major version
 - node: set Hostname, ExternalIP and InternalIP addresses on Node objects based on instance metadata
+- fix(deps): update module sigs.k8s.io/karpenter to v1.9.0 (#105)
+- chore(deps): update golang docker tag to v1.26.0 (#103)
 
 0.0.13
 ----------
