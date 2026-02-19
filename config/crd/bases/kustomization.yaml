@@ -2,6 +2,7 @@ kind: Kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 
 resources:
-  - https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.8.0/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
-  - https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.8.0/pkg/apis/crds/karpenter.sh_nodepools.yaml
+  - https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+  - https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodepools.yaml
+  - https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodeoverlays.yaml
   - karpenter.exoscale.com_exoscalenodeclasses.yaml

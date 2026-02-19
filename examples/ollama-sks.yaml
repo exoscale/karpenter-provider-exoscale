@@ -10,7 +10,7 @@ spec:
     version: "1.35.0"
     variant: "nvidia"
 
-  securityGroups: []
+  securityGroupSelectorTerms: []
   # Minimal disk for GPU nodes
   diskSize: 200
 ---
@@ -31,7 +31,7 @@ spec:
     # Options: "standard" for regular workloads, "nvidia" for GPU-enabled nodes
     variant: "standard"
 
-  securityGroups: []
+  securityGroupSelectorTerms: []
   # Disk size in GB (default: 50, min: 10, max: 8000)
   diskSize: 50
 ---

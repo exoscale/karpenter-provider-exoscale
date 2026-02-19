@@ -44,9 +44,9 @@ Only if out-of-cluster:
 If you are deploying Karpenter Exoscale provider yourself, you'll need to install the required CRDs:
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.7.1/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.7.1/pkg/apis/crds/karpenter.sh_nodepools.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.7.1/pkg/apis/crds/karpenter.sh_nodeoverlays.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodepools.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodeoverlays.yaml
 ```
 
 ## NodeClasses and NodeClaims
@@ -134,12 +134,12 @@ spec:
   # Minimal disk to save costs
   diskSize: 50  # Minimum viable disk size
   
-  securityGroups: []
+  securityGroupSelectorTerms: []
   
   # Anti-affinity groups for spreading GPU nodes
-  antiAffinityGroups: []
+  antiAffinityGroupSelectorTerms: []
 
-  privateNetworks: []
+  privateNetworkSelectorTerms: []
   
   # GPU-specific labels
   nodeLabels:
@@ -179,8 +179,8 @@ spec:
     version: "1.34.1"
     variant: "standard"
   diskSize: 50
-  securityGroups: []
-  privateNetworks: []
+  securityGroupSelectorTerms: []
+  privateNetworkSelectorTerms: []
 ```
 
 Example using `imageTemplateSelector: {}` to auto-detect control plane version:
@@ -194,8 +194,8 @@ spec:
   # Empty imageTemplateSelector automatically uses the control plane K8s version
   imageTemplateSelector: {}
   diskSize: 50
-  securityGroups: []
-  privateNetworks: []
+  securityGroupSelectorTerms: []
+  privateNetworkSelectorTerms: []
 ```
 
 When `imageTemplateSelector` is used the provider will resolve the optimal template ID for the given `version`
@@ -294,6 +294,10 @@ spec:
 
   weight: 10
 ```
+
+## Upgrading
+
+See [UPGRADE.md](UPGRADE.md) for version-specific migration instructions.
 
 ## License
 
