@@ -66,10 +66,9 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		}
 		return nil, fmt.Errorf("resolving node class from nodeclaim, %w", err)
 	}
-	if nodeClassStatus := nodeClass.StatusConditions().Get(status.ConditionReady); nodeClassStatus.IsFalse() {
-		if nodeClassStatus == nil {
-			return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("unable to determine node class status, %w", err))
-		}
+	if nodeClassStatus := nodeClass.StatusConditions().Get(status.ConditionReady); nodeClassStatus == nil {
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("unable to determine node class status"))
+	} else if nodeClassStatus.IsFalse() {
 		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassStatus.Message))
 	}
 
