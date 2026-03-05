@@ -7,6 +7,7 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
+	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -14,8 +15,6 @@ import (
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
-
-const ExoscaleProviderIDPrefix = "exoscale://"
 
 type Instance struct {
 	ID                 string
@@ -130,7 +129,7 @@ func (i *Instance) ToNodeClaim() *karpenterv1.NodeClaim {
 			Labels:            lo.Assign(instanceLabels, i.Template.Labels),
 		},
 		Status: karpenterv1.NodeClaimStatus{
-			ProviderID:  ExoscaleProviderIDPrefix + i.ID,
+			ProviderID:  utils.ExoscaleProviderIDPrefix + i.ID,
 			ImageID:     i.Template.ID,
 			Capacity:    capacity,
 			Allocatable: allocatable,

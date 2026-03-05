@@ -25,14 +25,18 @@ This provider enables Karpenter to provision and manage Exoscale compute instanc
 
 Karpenter Exoscale implementation requires some configuration to work properly.
 
-Here is the required environment variables:
+Here are the required environment variables:
 * `EXOSCALE_SKS_CLUSTER_ID`: unique identifier (UUID) of your Kubernetes cluster. It will be used to filter nodes in Exoscale APIs.
-* `EXOSCALE_COMPUTE_INSTANCE_PREFIX`: prefix used to name instances created by Karpenter. Defaults to `karpenter`.
-* `CLUSTER_DNS_IP`: DNS IP of your Kubernetes cluster. It will be setup in Kubelet configuration.
-* `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be setup in Kubelet configuration.
 * `EXOSCALE_API_KEY`: Your Exoscale API key
 * `EXOSCALE_API_SECRET`: Your Exoscale API secret
-* `EXOSCALE_ZONE`: SKS zone hosting your SKS cluster
+* `EXOSCALE_ZONE`: Exoscale zone hosting your cluster
+
+Optional environment variables:
+* `EXOSCALE_COMPUTE_INSTANCE_PREFIX`: prefix used to name instances created by Karpenter. Defaults to `karpenter`.
+* `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be set in Kubelet configuration. Defaults to `cluster.local`.
+* `CLUSTER_ENDPOINT`: Kubernetes API server endpoint. If not set, it is auto-detected from the in-cluster configuration.
+* `EXOSCALE_API_ENDPOINT`: Custom Exoscale API endpoint URL. If not set, the endpoint is auto-detected from the zone.
+* `EXOSCALE_API_ENVIRONMENT`: Exoscale API environment (e.g., `ppapi` for pre-production). If not set, the production environment is used.
 
 Only if out-of-cluster:
 * `KUBECONFIG`: Path to your kubeconfig file. You can extract it from your cluster view in our

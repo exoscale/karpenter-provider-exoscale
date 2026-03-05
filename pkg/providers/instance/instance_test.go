@@ -7,6 +7,7 @@ import (
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -103,12 +104,12 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 		t.Fatal("FromExoscaleInstance() returned nil")
 	}
 
-	// Vérifie qu'on a exactement 3 adresses
+	// Verify we have exactly 3 addresses
 	if len(got.Addresses) != 3 {
 		t.Fatalf("FromExoscaleInstance() Addresses count = %d, want 3", len(got.Addresses))
 	}
 
-	// Vérifie qu'on a un Hostname par défaut
+	// Verify we have a default Hostname
 	if got.Addresses[0].Type != v1.NodeHostName {
 		t.Errorf("Addresses[0].Type = %v, want %v", got.Addresses[0].Type, v1.NodeHostName)
 	}
@@ -116,7 +117,7 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 		t.Errorf("Addresses[0].Address = %v, want %v", got.Addresses[0].Address, instanceName)
 	}
 
-	// Vérifie l'adresse IP externe
+	// Verify the external IP address
 	expectedIP := "192.168.1.100"
 	if got.Addresses[1].Type != v1.NodeExternalIP {
 		t.Errorf("Addresses[1].Type = %v, want %v", got.Addresses[1].Type, v1.NodeExternalIP)
@@ -125,7 +126,7 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 		t.Errorf("Addresses[1].Address = %v, want %v", got.Addresses[1].Address, expectedIP)
 	}
 
-	// Vérifie l'adresse IP interne (qui est la même que l'externe)
+	// Verify the internal IP address (same as external)
 	if got.Addresses[2].Type != v1.NodeInternalIP {
 		t.Errorf("Addresses[2].Type = %v, want %v", got.Addresses[2].Type, v1.NodeInternalIP)
 	}
@@ -190,8 +191,8 @@ func TestInstance_ToNodeClaim(t *testing.T) {
 		t.Errorf("ToNodeClaim() Name = %v, want test-claim", got.Name)
 	}
 
-	if got.Status.ProviderID != ExoscaleProviderIDPrefix+"instance-123" {
-		t.Errorf("ToNodeClaim() ProviderID = %v, want %v", got.Status.ProviderID, ExoscaleProviderIDPrefix+"instance-123")
+	if got.Status.ProviderID != utils.ExoscaleProviderIDPrefix+"instance-123" {
+		t.Errorf("ToNodeClaim() ProviderID = %v, want %v", got.Status.ProviderID, utils.ExoscaleProviderIDPrefix+"instance-123")
 	}
 
 	if got.Labels[v1.LabelInstanceTypeStable] != "standard.medium" {
