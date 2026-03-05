@@ -7,6 +7,7 @@ import (
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -190,8 +191,8 @@ func TestInstance_ToNodeClaim(t *testing.T) {
 		t.Errorf("ToNodeClaim() Name = %v, want test-claim", got.Name)
 	}
 
-	if got.Status.ProviderID != ExoscaleProviderIDPrefix+"instance-123" {
-		t.Errorf("ToNodeClaim() ProviderID = %v, want %v", got.Status.ProviderID, ExoscaleProviderIDPrefix+"instance-123")
+	if got.Status.ProviderID != utils.ExoscaleProviderIDPrefix+"instance-123" {
+		t.Errorf("ToNodeClaim() ProviderID = %v, want %v", got.Status.ProviderID, utils.ExoscaleProviderIDPrefix+"instance-123")
 	}
 
 	if got.Labels[v1.LabelInstanceTypeStable] != "standard.medium" {
