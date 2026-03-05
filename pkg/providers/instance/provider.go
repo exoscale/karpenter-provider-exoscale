@@ -13,7 +13,6 @@ import (
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/instancetype"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata"
-	"github.com/patrickmn/go-cache"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -23,7 +22,6 @@ import (
 
 type Provider struct {
 	exoClient            *egov3.Client
-	cache                *cache.Cache
 	instanceTypeProvider *instancetype.Provider
 	templateProvider     *template.Provider
 	userdataProvider     *userdata.Provider
@@ -39,7 +37,6 @@ func NewProvider(
 ) *Provider {
 	return &Provider{
 		exoClient:            exoClient,
-		cache:                cache.New(5*time.Minute, 10*time.Minute),
 		instanceTypeProvider: instanceTypeProvider,
 		templateProvider:     templateProvider,
 		userdataProvider:     userdataProvider,
@@ -178,15 +175,6 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("instanceID", id))
 
-	if cached, found := p.cache.Get(id); found {
-		instance := cached.(*Instance)
-		if instance != nil {
-			log.FromContext(ctx).V(2).Info("cache hit for instance")
-			return instance, nil
-		}
-	}
-	log.FromContext(ctx).V(2).Info("cache miss for instance")
-
 	instance, err := p.exoClient.GetInstance(ctx, egov3.UUID(id))
 	if err != nil {
 		if p.IsNotFoundError(err) {
@@ -257,7 +245,6 @@ func (p *Provider) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		if p.IsNotFoundError(err) {
 			log.FromContext(ctx).Info("instance not found, nothing to delete")
-			p.cache.Delete(id)
 			return err
 		}
 		log.FromContext(ctx).Error(err, "failed to delete instance")
@@ -275,7 +262,6 @@ func (p *Provider) Delete(ctx context.Context, id string) error {
 		log.FromContext(ctx).Info("instance deleted successfully", "operationID", operation.ID)
 	}
 
-	p.cache.Delete(id)
 	return nil
 }
 
@@ -313,8 +299,6 @@ func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]st
 			return fmt.Errorf("failed waiting for instance label update: %w", err)
 		}
 	}
-
-	p.cache.Delete(id)
 
 	log.FromContext(ctx).Info("instance labels updated successfully", "tagsCount", len(tags))
 	return nil
