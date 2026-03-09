@@ -4,7 +4,7 @@ builds:
     main: ./cmd/karpenter-exoscale
     env:
       - CGO_ENABLED=0
-      - GO_PKG=github.com/exoscale/karpenter-exoscale
+      - GO_PKG=github.com/exoscale/karpenter-provider-exoscale
     flags:
       # - -mod=vendor
       - -trimpath

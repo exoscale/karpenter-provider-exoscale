@@ -1,4 +1,4 @@
-module github.com/exoscale/karpenter-exoscale
+module github.com/exoscale/karpenter-provider-exoscale
 
 go 1.25.7
 

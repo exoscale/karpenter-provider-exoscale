@@ -3,7 +3,7 @@ package template
 import (
 	"context"
 
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 )
 
 // MockResolver is a mock implementation of the Resolver interface for testing

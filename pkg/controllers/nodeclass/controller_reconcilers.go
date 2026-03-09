@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	egov3 "github.com/exoscale/egoscale/v3"
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 

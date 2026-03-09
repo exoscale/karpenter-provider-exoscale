@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	egov3 "github.com/exoscale/egoscale/v3"
-	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )

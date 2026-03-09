@@ -6,7 +6,7 @@ ARG BUILD_DATE
 
 LABEL org.label-schema.build-date=${BUILD_DATE} \
       org.label-schema.vcs-ref=${VCS_REF} \
-      org.label-schema.vcs-url="https://github.com/exoscale/karpenter-exoscale" \
+      org.label-schema.vcs-url="https://github.com/exoscale/karpenter-provider-exoscale" \
       org.label-schema.version=${VERSION} \
       org.label-schema.name="karpenter-exoscale" \
       org.label-schema.vendor="Exoscale" \

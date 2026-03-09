@@ -3,7 +3,7 @@ package instancetype
 import (
 	"testing"
 
-	exov1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	exov1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"

@@ -44,7 +44,7 @@ install: manifests
 	
 ## Project
 
-PACKAGE := github.com/exoscale/karpenter-exoscale
+PACKAGE := github.com/exoscale/karpenter-provider-exoscale
 PROJECT_URL := https://$(PACKAGE)
 GO_MAIN_PKG_PATH := ./cmd/karpenter-exoscale
 
