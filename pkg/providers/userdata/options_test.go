@@ -3,7 +3,7 @@ package userdata
 import (
 	"testing"
 
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"

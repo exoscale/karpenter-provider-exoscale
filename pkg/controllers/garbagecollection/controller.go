@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/instance"
-	"github.com/exoscale/karpenter-exoscale/pkg/utils"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instance"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"

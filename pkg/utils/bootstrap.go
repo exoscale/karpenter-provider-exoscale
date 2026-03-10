@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"

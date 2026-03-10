@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/userdata/bootstrap"
+	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata/bootstrap"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

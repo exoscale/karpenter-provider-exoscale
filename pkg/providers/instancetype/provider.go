@@ -12,8 +12,8 @@ import (
 	"sync"
 
 	egov3 "github.com/exoscale/egoscale/v3"
-	v1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
-	"github.com/exoscale/karpenter-exoscale/pkg/constants"
+	v1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"

@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"testing"
 
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 )
 
 func TestConvertKubeResourceReservation(t *testing.T) {

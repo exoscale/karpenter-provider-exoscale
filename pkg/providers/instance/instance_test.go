@@ -6,8 +6,8 @@ import (
 	"time"
 
 	egov3 "github.com/exoscale/egoscale/v3"
-	"github.com/exoscale/karpenter-exoscale/pkg/constants"
-	"github.com/exoscale/karpenter-exoscale/pkg/utils"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"

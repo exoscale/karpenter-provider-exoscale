@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
+	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/pelletier/go-toml/v2"
 	v1 "k8s.io/api/core/v1"
 )

@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	egov3 "github.com/exoscale/egoscale/v3"
-	apiv1 "github.com/exoscale/karpenter-exoscale/apis/karpenter/v1"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers"
-	"github.com/exoscale/karpenter-exoscale/pkg/providers/template"
+	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/template"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
