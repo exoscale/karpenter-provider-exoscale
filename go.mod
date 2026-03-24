@@ -6,7 +6,7 @@ require (
 	github.com/awslabs/operatorpkg v0.0.0-20251222193911-34e9a1898737
 	github.com/exoscale/egoscale/v3 v3.1.34
 	github.com/google/uuid v1.6.0
-	github.com/pelletier/go-toml/v2 v2.2.4
+	github.com/pelletier/go-toml/v2 v2.3.0
 	github.com/samber/lo v1.53.0
 	github.com/stretchr/testify v1.11.1
 	k8s.io/api v0.35.2
