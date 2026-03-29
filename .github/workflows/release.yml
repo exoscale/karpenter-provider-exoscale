@@ -24,7 +24,7 @@ jobs:
         # To be on the safer side, we should always pin to the commit SHA.
         # It's not a perfect mitigation, but we should always do some due diligence before upgrading.
         # The author seems trustworthy, as the author is part of the docker and goreleaser organizations on GitHub.
-        uses: crazy-max/ghaction-import-gpg@92a10f995fd20944e1cae9a2e86e62dafe4f6171
+        uses: crazy-max/ghaction-import-gpg@1c06494168d0ed3f75efd4e4e0c8412310a0b87a
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
