@@ -21,6 +21,10 @@
     - [`settings.kubernetes.static-pods.<identifier>`](#settingskubernetesstatic-podsidentifier)
     - [`settings.kubernetes.standalone-mode`](#settingskubernetesstandalone-mode)
     - [`settings.kubernetes.system-reserved`](#settingskubernetessystem-reserved)
+  - [Kubelet Device Plugins Settings (`settings.kubelet-device-plugins.*`)](#kubelet-device-plugins-settings-settingskubelet-device-plugins)
+    - [`settings.kubelet-device-plugins.nvidia` (EXPERIMENTAL)](#settingskubelet-device-pluginsnvidia-experimental)
+    - [`settings.kubelet-device-plugins.nvidia.time-slicing` (EXPERIMENTAL)](#settingskubelet-device-pluginsnvidiatime-slicing-experimental)
+    - [`settings.kubelet-device-plugins.nvidia.mig` (EXPERIMENTAL)](#settingskubelet-device-pluginsnvidiamig-experimental)
 - [Additional Resources](#additional-resources)
 
 ## Overview
@@ -148,30 +152,13 @@ Defines [feature gates](https://kubernetes.io/docs/reference/command-line-tools-
 > The Feature Gates list **MUST** be validated prior to defining
 > `settings.kubernetes.feature-gates` since no further validation is performed
 > by the image/sks-node-agent itself.
-> Currently, SKS Orchestrator defines and validates the [allowed Feature
-> Gates](https://github.com/exoscale/sks-orchestrator/blob/master/modules/orchestrator/resources/feature-gates.edn).
 
-- **TOML Example**:
+- **Example**:
 
   ```toml
   [settings.kubernetes.feature-gates]
   "ImageVolume" = true
   "MemoryQoS" = true
-  ```
-
-- **ExoscaleNodeClass Example**:
-
-  ```yaml
-  apiVersion: karpenter.exoscale.com/v1
-  kind: ExoscaleNodeClass
-  metadata:
-    name: default
-  spec:
-    templateID: "12345678-1234-1234-1234-123456789012"
-    kubelet:
-      featureGates:
-        ImageVolume: true
-        MemoryQoS: true
   ```
 
 ### `settings.kubernetes.image-gc-high-threshold-percent`
@@ -304,8 +291,97 @@ Resources reserved for system components.
   ephemeral-storage = "3Gi"
   ```
 
+## Kubelet Device Plugins Settings (`settings.kubelet-device-plugins.*`)
+
+These settings configure device plugins for Kubernetes. Currently only nvidia device plugin is supported.
+
+### `settings.kubelet-device-plugins.nvidia` (EXPERIMENTAL)
+
+Configures the NVIDIA Kubernetes device plugin behavior.
+
+- **Parameters**:
+  - `device-sharing-strategy` (string): GPU sharing strategy. Options: `"none"` (default), `"time-slicing"`, `"mps"`
+  - `device-partitioning-strategy` (string): MIG partitioning strategy. Options: `"none"` (default), `"mig"`
+  - `device-list-strategy` (string): How device list is exposed to containers. Options: `"envvar"` (default), `"volume-mounts"`
+  - `device-id-strategy` (string): Device ID exposure strategy. Options: `"index"` (default), `"uuid"`
+  - `pass-device-specs` (boolean): Pass device specifications to the container runtime. Default: `true`
+
+- **Example**:
+
+  ```toml
+  [settings.kubelet-device-plugins.nvidia]
+  device-sharing-strategy = "none"
+  device-partitioning-strategy = "none"
+  device-list-strategy = "envvar"
+  device-id-strategy = "index"
+  pass-device-specs = true
+  ```
+
+### `settings.kubelet-device-plugins.nvidia.time-slicing` (EXPERIMENTAL)
+
+Configures time-slicing parameters when `device-sharing-strategy` is set to `"time-slicing"`. Time-slicing allows multiple containers to share a single GPU by time-multiplexing GPU access.
+
+- **Parameters**:
+  - `replicas` (integer): Number of virtual GPUs to create per physical GPU. Default: `1`
+  - `rename-by-default` (boolean): Rename shared GPU resources. Default: `false`
+  - `fail-requests-greater-than-one` (boolean): Fail pod requests asking for more than one GPU. Default: `false`
+
+- **Example**:
+
+  ```toml
+  [settings.kubelet-device-plugins.nvidia]
+  device-sharing-strategy = "time-slicing"
+  
+  [settings.kubelet-device-plugins.nvidia.time-slicing]
+  replicas = 10
+  rename-by-default = false
+  fail-requests-greater-than-one = false
+  ```
+
+  ```toml
+  # Enable NVIDIA GPU time-slicing with 4 virtual GPUs per physical GPU
+  [settings.kubelet-device-plugins.nvidia]
+  device-sharing-strategy = "time-slicing"
+  device-list-strategy = "envvar"
+  pass-device-specs = false
+
+  [settings.kubelet-device-plugins.nvidia.time-slicing]
+  replicas = 4
+  rename-by-default = false
+  fail-requests-greater-than-one = true  # Prevent pods from requesting multiple GPUs
+  ```
+
+### `settings.kubelet-device-plugins.nvidia.mig` (EXPERIMENTAL)
+
+Configures Multi-Instance GPU (MIG) profiles when `device-partitioning-strategy` is set to `"mig"`. MIG allows partitioning of compatible GPUs (A30, RTX pro 6000) into multiple isolated instances.
+
+- **Parameters**:
+  - `profile` (map): GPU model to MIG profile mapping
+    - Key format: `{gpu-model}.{memory}gb` (e.g., `"a30.24g"`, `"rtxpro6000.96g"`)
+    - Value: MIG profile name (e.g., `"2g.12gb"`) or number of partitions (e.g., `"4"`)
+
+- **Example**:
+
+  ```toml
+  [settings.kubelet-device-plugins.nvidia]
+  device-partitioning-strategy = "mig"
+
+  [settings.kubelet-device-plugins.nvidia.mig.profile]
+  "a30.24g" = "2g.12gb"  # Partition A30 24GB into 2g.12gb instances
+  "rtxpro6000.96g" = "4" # Partition RTX pro 6000 96GB into 4 equal instances
+  ```
+
+> [!NOTE]
+> MIG (Multi-Instance GPU) and MPS (Multi-Process Service) are not supported as they require GPUs not available on Exoscale (A100/H100 for MIG).
+
+> [!IMPORTANT]
+> The NVIDIA device plugin service requires the kubelet to be running. It will automatically start when kubelet starts and restart if kubelet restarts.
+
 # Additional Resources
 
 - **Kubernetes Official Documentation**: [Kubelet TLS Bootstrapping](https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet-tls-bootstrapping/)
 - **Exoscale Cloud Controller Manager**: [GitHub Repository](https://github.com/exoscale/exoscale-cloud-controller-manager)
 - **Bottlerocket Settings**: [Bottlerocket OS Settings](https://bottlerocket.dev/docs/settings)
+- **NVIDIA Device Plugin for Kubernetes**: [GitHub Repository](https://github.com/NVIDIA/k8s-device-plugin)
+- **NVIDIA GPU Sharing Strategies**: [Time-Slicing and MPS Documentation](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/gpu-sharing.html)
+- **Bottlerocket NVIDIA Configuration**: [Kubelet Device Plugins Settings](https://bottlerocket.dev/en/os/1.34.x/api/settings/kubelet-device-plugins/)
