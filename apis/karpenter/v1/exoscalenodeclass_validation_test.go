@@ -295,6 +295,27 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 			wantValid: false,
 			testField: "variant",
 		},
+		{
+			name: "valid nodeclass with userData",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					TemplateID: "20000000-0000-0000-0000-000000000001",
+					UserData: stringPtr(`[settings.kubelet-device-plugins.nvidia]
+device-sharing-strategy = "time-slicing"
+`),
+				},
+			},
+			wantValid: true,
+		},
+		{
+			name: "valid nodeclass without userData",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					TemplateID: "20000000-0000-0000-0000-000000000001",
+				},
+			},
+			wantValid: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -390,4 +411,8 @@ func generateUUIDs(format string, count int) []string {
 
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+func stringPtr(s string) *string {
+	return &s
 }
