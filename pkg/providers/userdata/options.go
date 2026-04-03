@@ -20,6 +20,7 @@ type Options struct {
 	ImageGCLowThresholdPercent  *int32
 	ImageMinimumGCAge           string
 	FeatureGates                map[string]bool
+	UserData                    *string
 }
 
 func NewOptions(
@@ -36,5 +37,6 @@ func NewOptions(
 		ImageGCLowThresholdPercent:  nodeClass.Spec.Kubelet.ImageGCLowThresholdPercent,
 		ImageMinimumGCAge:           nodeClass.Spec.Kubelet.ImageMinimumGCAge,
 		FeatureGates:                nodeClass.Spec.Kubelet.FeatureGates,
+		UserData:                    nodeClass.Spec.UserData,
 	}
 }
