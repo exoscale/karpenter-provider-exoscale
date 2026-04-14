@@ -1,12 +1,21 @@
 package nodeclass
 
 import (
+	"context"
+	"reflect"
 	"strings"
 	"testing"
 
+	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/karpenter/pkg/apis"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
@@ -423,5 +432,88 @@ func TestValidateSpec(t *testing.T) {
 				t.Errorf("validateSpec() error = %v, want error containing %v", err, tt.errContains)
 			}
 		})
+	}
+}
+
+func TestCleanupOrphanedInstancesOnlyDeletesInstancesForCurrentCluster(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = apiv1.AddToScheme(scheme)
+	gv := schema.GroupVersion{Group: apis.Group, Version: "v1"}
+	scheme.AddKnownTypes(gv, &karpenterv1.NodeClaim{}, &karpenterv1.NodeClaimList{})
+	metav1.AddToGroupVersion(scheme, gv)
+
+	nodeClass := &apiv1.ExoscaleNodeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "worker-node",
+		},
+	}
+	activeNodeClaim := &karpenterv1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster-b-worker-active",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass, activeNodeClaim).
+		Build()
+
+	deletedIDs := make([]egov3.UUID, 0)
+	reconciler := &ExoscaleNodeClassReconciler{
+		Client:    fakeClient,
+		Scheme:    scheme,
+		Recorder:  record.NewFakeRecorder(10),
+		ClusterID: "cluster-b-id",
+		ExoscaleClient: &providers.MockClient{
+			ListInstancesFunc: func(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error) {
+				return &egov3.ListInstancesResponse{
+					Instances: []egov3.ListInstancesResponseInstances{
+						{
+							ID:   egov3.UUID("11111111-1111-1111-1111-111111111111"),
+							Name: "k-cluster-b-worker-orphan",
+							Labels: map[string]string{
+								constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+								constants.InstanceLabelClusterID: "cluster-b-id",
+								constants.InstanceLabelNodeClaim: "cluster-b-worker-missing",
+							},
+						},
+						{
+							ID:   egov3.UUID("22222222-2222-2222-2222-222222222222"),
+							Name: "k-cluster-a-worker",
+							Labels: map[string]string{
+								constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+								constants.InstanceLabelClusterID: "cluster-a-id",
+								constants.InstanceLabelNodeClaim: "cluster-a-worker",
+							},
+						},
+						{
+							ID:   egov3.UUID("33333333-3333-3333-3333-333333333333"),
+							Name: "k-cluster-b-worker-active",
+							Labels: map[string]string{
+								constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+								constants.InstanceLabelClusterID: "cluster-b-id",
+								constants.InstanceLabelNodeClaim: "cluster-b-worker-active",
+							},
+						},
+					},
+				}, nil
+			},
+			DeleteInstanceFunc: func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error) {
+				deletedIDs = append(deletedIDs, id)
+				return &egov3.Operation{}, nil
+			},
+		},
+	}
+
+	err := reconciler.cleanupOrphanedInstances(context.Background(), nodeClass)
+	if err != nil {
+		t.Fatalf("cleanupOrphanedInstances() unexpected error = %v", err)
+	}
+
+	wantDeleted := []egov3.UUID{
+		egov3.UUID("11111111-1111-1111-1111-111111111111"),
+	}
+	if !reflect.DeepEqual(deletedIDs, wantDeleted) {
+		t.Fatalf("cleanupOrphanedInstances() deleted IDs = %v, want %v", deletedIDs, wantDeleted)
 	}
 }

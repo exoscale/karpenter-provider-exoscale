@@ -53,6 +53,7 @@ type ExoscaleNodeClassReconciler struct {
 	ExoscaleClient   ExoscaleClient
 	TemplateResolver template.Resolver
 	Recorder         record.EventRecorder
+	ClusterID        string
 	Zone             string
 	aagCache         utils.ResourceCache[egov3.AntiAffinityGroup]
 	sgCache          utils.ResourceCache[egov3.SecurityGroup]
@@ -250,6 +251,10 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
 	log.FromContext(ctx).V(1).Info("checking for orphaned instances")
 
+	if r.ClusterID == "" {
+		return fmt.Errorf("cluster ID is not configured")
+	}
+
 	instances, err := r.ExoscaleClient.ListInstances(ctx)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to list instances")
@@ -269,12 +274,7 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 
 	orphanedCount := 0
 	for _, inst := range instances.Instances {
-		if inst.Labels == nil {
-			continue
-		}
-
-		managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
-		if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
+		if !r.isManagedInstanceForCluster(inst) {
 			continue
 		}
 
@@ -311,6 +311,20 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 	}
 
 	return nil
+}
+
+func (r *ExoscaleNodeClassReconciler) isManagedInstanceForCluster(inst egov3.ListInstancesResponseInstances) bool {
+	if inst.Labels == nil {
+		return false
+	}
+
+	managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
+	if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
+		return false
+	}
+
+	clusterID, hasClusterID := inst.Labels[constants.InstanceLabelClusterID]
+	return hasClusterID && clusterID == r.ClusterID
 }
 
 func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
