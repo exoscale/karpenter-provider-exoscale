@@ -274,10 +274,6 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 
 	orphanedCount := 0
 	for _, inst := range instances.Instances {
-		if !r.isManagedInstanceForCluster(inst) {
-			continue
-		}
-
 		nodeClaimName, isOrphanedNodeClaim := r.orphanedNodeClaimName(inst, validNodeClaims)
 		if !isOrphanedNodeClaim {
 			continue
@@ -314,7 +310,17 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 }
 
 func (r *ExoscaleNodeClassReconciler) orphanedNodeClaimName(inst egov3.ListInstancesResponseInstances, validNodeClaims map[string]bool) (string, bool) {
-	if !r.isManagedInstanceForCluster(inst) {
+	if inst.Labels == nil {
+		return "", false
+	}
+
+	managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
+	if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
+		return "", false
+	}
+
+	clusterID, hasClusterID := inst.Labels[constants.InstanceLabelClusterID]
+	if !hasClusterID || clusterID != r.ClusterID {
 		return "", false
 	}
 
@@ -324,20 +330,6 @@ func (r *ExoscaleNodeClassReconciler) orphanedNodeClaimName(inst egov3.ListInsta
 	}
 
 	return nodeClaimName, true
-}
-
-func (r *ExoscaleNodeClassReconciler) isManagedInstanceForCluster(inst egov3.ListInstancesResponseInstances) bool {
-	if inst.Labels == nil {
-		return false
-	}
-
-	managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
-	if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
-		return false
-	}
-
-	clusterID, hasClusterID := inst.Labels[constants.InstanceLabelClusterID]
-	return hasClusterID && clusterID == r.ClusterID
 }
 
 func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
