@@ -278,8 +278,8 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 			continue
 		}
 
-		nodeClaimName, hasNodeClaim := inst.Labels[constants.InstanceLabelNodeClaim]
-		if !hasNodeClaim || validNodeClaims[nodeClaimName] {
+		nodeClaimName, isOrphanedNodeClaim := r.orphanedNodeClaimName(inst, validNodeClaims)
+		if !isOrphanedNodeClaim {
 			continue
 		}
 
@@ -311,6 +311,19 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 	}
 
 	return nil
+}
+
+func (r *ExoscaleNodeClassReconciler) orphanedNodeClaimName(inst egov3.ListInstancesResponseInstances, validNodeClaims map[string]bool) (string, bool) {
+	if !r.isManagedInstanceForCluster(inst) {
+		return "", false
+	}
+
+	nodeClaimName, hasNodeClaim := inst.Labels[constants.InstanceLabelNodeClaim]
+	if !hasNodeClaim || validNodeClaims[nodeClaimName] {
+		return "", false
+	}
+
+	return nodeClaimName, true
 }
 
 func (r *ExoscaleNodeClassReconciler) isManagedInstanceForCluster(inst egov3.ListInstancesResponseInstances) bool {

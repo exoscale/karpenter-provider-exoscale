@@ -87,7 +87,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		op.InstanceTypeStore,
 	)
 
-	if err := registerControllers(op.Manager, exoClient, instanceProvider, templateResolver, options.ClusterID, options.Zone); err != nil {
+	if err := registerControllers(op.Manager, exoClient, instanceProvider, templateResolver, options.Zone, options.ClusterID); err != nil {
 		return fmt.Errorf("failed to register custom controllers: %w", err)
 	}
 
@@ -96,7 +96,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 	return nil
 }
 
-func registerControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProvider *instance.Provider, templateResolver *template.Provider, clusterID, zone string) error {
+func registerControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProvider *instance.Provider, templateResolver *template.Provider, zone, clusterID string) error {
 	if err := (&bootstraptoken.Controller{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
