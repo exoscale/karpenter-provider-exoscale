@@ -517,3 +517,114 @@ func TestCleanupOrphanedInstancesOnlyDeletesInstancesForCurrentCluster(t *testin
 		t.Fatalf("cleanupOrphanedInstances() deleted IDs = %v, want %v", deletedIDs, wantDeleted)
 	}
 }
+
+func TestOrphanedNodeClaimName(t *testing.T) {
+	reconciler := &ExoscaleNodeClassReconciler{
+		ClusterID: "cluster-b-id",
+	}
+
+	tests := []struct {
+		name            string
+		instance        egov3.ListInstancesResponseInstances
+		validNodeClaims map[string]bool
+		wantName        string
+		wantOK          bool
+	}{
+		{
+			name:            "rejects instance without labels",
+			instance:        egov3.ListInstancesResponseInstances{},
+			validNodeClaims: map[string]bool{},
+			wantName:        "",
+			wantOK:          false,
+		},
+		{
+			name: "rejects instance not managed by karpenter",
+			instance: egov3.ListInstancesResponseInstances{
+				Labels: map[string]string{
+					constants.InstanceLabelManagedBy: "someone-else",
+					constants.InstanceLabelClusterID: "cluster-b-id",
+					constants.InstanceLabelNodeClaim: "cluster-b-worker-missing",
+				},
+			},
+			validNodeClaims: map[string]bool{},
+			wantName:        "",
+			wantOK:          false,
+		},
+		{
+			name: "rejects instance without cluster id",
+			instance: egov3.ListInstancesResponseInstances{
+				Labels: map[string]string{
+					constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+					constants.InstanceLabelNodeClaim: "cluster-b-worker-missing",
+				},
+			},
+			validNodeClaims: map[string]bool{},
+			wantName:        "",
+			wantOK:          false,
+		},
+		{
+			name: "rejects instance from another cluster",
+			instance: egov3.ListInstancesResponseInstances{
+				Labels: map[string]string{
+					constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+					constants.InstanceLabelClusterID: "cluster-a-id",
+					constants.InstanceLabelNodeClaim: "cluster-a-worker",
+				},
+			},
+			validNodeClaims: map[string]bool{},
+			wantName:        "",
+			wantOK:          false,
+		},
+		{
+			name: "rejects instance without nodeclaim label",
+			instance: egov3.ListInstancesResponseInstances{
+				Labels: map[string]string{
+					constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+					constants.InstanceLabelClusterID: "cluster-b-id",
+				},
+			},
+			validNodeClaims: map[string]bool{},
+			wantName:        "",
+			wantOK:          false,
+		},
+		{
+			name: "rejects instance with existing nodeclaim in current cluster",
+			instance: egov3.ListInstancesResponseInstances{
+				Labels: map[string]string{
+					constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+					constants.InstanceLabelClusterID: "cluster-b-id",
+					constants.InstanceLabelNodeClaim: "cluster-b-worker-active",
+				},
+			},
+			validNodeClaims: map[string]bool{
+				"cluster-b-worker-active": true,
+			},
+			wantName: "",
+			wantOK:   false,
+		},
+		{
+			name: "returns orphaned nodeclaim for current cluster",
+			instance: egov3.ListInstancesResponseInstances{
+				Labels: map[string]string{
+					constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+					constants.InstanceLabelClusterID: "cluster-b-id",
+					constants.InstanceLabelNodeClaim: "cluster-b-worker-missing",
+				},
+			},
+			validNodeClaims: map[string]bool{
+				"cluster-b-worker-active": true,
+			},
+			wantName: "cluster-b-worker-missing",
+			wantOK:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotOK := reconciler.orphanedNodeClaimName(tt.instance, tt.validNodeClaims)
+			if gotName != tt.wantName || gotOK != tt.wantOK {
+				t.Fatalf("orphanedNodeClaimName() = (%q, %v), want (%q, %v)", gotName, gotOK, tt.wantName, tt.wantOK)
+			}
+		})
+	}
+}
