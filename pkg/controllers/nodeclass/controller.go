@@ -53,6 +53,7 @@ type ExoscaleNodeClassReconciler struct {
 	ExoscaleClient   ExoscaleClient
 	TemplateResolver template.Resolver
 	Recorder         record.EventRecorder
+	ClusterID        string
 	Zone             string
 	aagCache         utils.ResourceCache[egov3.AntiAffinityGroup]
 	sgCache          utils.ResourceCache[egov3.SecurityGroup]
@@ -250,6 +251,10 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
 	log.FromContext(ctx).V(1).Info("checking for orphaned instances")
 
+	if r.ClusterID == "" {
+		return fmt.Errorf("cluster ID is not configured")
+	}
+
 	instances, err := r.ExoscaleClient.ListInstances(ctx)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to list instances")
@@ -269,17 +274,8 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 
 	orphanedCount := 0
 	for _, inst := range instances.Instances {
-		if inst.Labels == nil {
-			continue
-		}
-
-		managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
-		if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
-			continue
-		}
-
-		nodeClaimName, hasNodeClaim := inst.Labels[constants.InstanceLabelNodeClaim]
-		if !hasNodeClaim || validNodeClaims[nodeClaimName] {
+		nodeClaimName, isOrphanedNodeClaim := r.orphanedNodeClaimName(inst, validNodeClaims)
+		if !isOrphanedNodeClaim {
 			continue
 		}
 
@@ -311,6 +307,29 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 	}
 
 	return nil
+}
+
+func (r *ExoscaleNodeClassReconciler) orphanedNodeClaimName(inst egov3.ListInstancesResponseInstances, validNodeClaims map[string]bool) (string, bool) {
+	if inst.Labels == nil {
+		return "", false
+	}
+
+	managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
+	if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
+		return "", false
+	}
+
+	clusterID, hasClusterID := inst.Labels[constants.InstanceLabelClusterID]
+	if !hasClusterID || clusterID != r.ClusterID {
+		return "", false
+	}
+
+	nodeClaimName, hasNodeClaim := inst.Labels[constants.InstanceLabelNodeClaim]
+	if !hasNodeClaim || validNodeClaims[nodeClaimName] {
+		return "", false
+	}
+
+	return nodeClaimName, true
 }
 
 func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
