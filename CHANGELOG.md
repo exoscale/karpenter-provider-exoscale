@@ -4,6 +4,9 @@ Changelog
 UNRELEASED
 ------------------
 
+1.35.0
+------------------
+
 - docs: add upgrade notes for 1.0.0
 - chore(deps): update golang docker tag to v1.26.2 (#124)
 - fix(deps): update module github.com/pelletier/go-toml/v2 to v2.3.0 (#119)
@@ -12,6 +15,9 @@ UNRELEASED
 - fix(deps): update module github.com/samber/lo to v1.53.0 (#111)
 - fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.34 (#116)
 - fix(nodeclass): scope orphan cleanup to cluster ID (#126)
+- fix(deps): update module sigs.k8s.io/karpenter to v1.11.1 (#123)
+- fix(deps): update kubernetes monorepo to v0.35.4 (#127)
+- align karpenter version with currently latest supported Kubernetes minor version (1.35)
 
 1.0.0
 ------------------
