@@ -70,6 +70,17 @@ func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.
 		})
 	}
 
+	if instance.Ipv6Address != "" {
+		i.Addresses = append(i.Addresses, v1.NodeAddress{
+			Type:    v1.NodeExternalIP,
+			Address: instance.Ipv6Address,
+		})
+		i.Addresses = append(i.Addresses, v1.NodeAddress{
+			Type:    v1.NodeInternalIP,
+			Address: instance.Ipv6Address,
+		})
+	}
+
 	family := string(instance.InstanceType.Family)
 	size := string(instance.InstanceType.Size)
 	i.InstanceTypeName = family + "." + size

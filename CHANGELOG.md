@@ -4,6 +4,8 @@ Changelog
 UNRELEASED
 ------------------
 
+- feat: add compute instances IPv6 support
+
 1.35.0
 ------------------
 

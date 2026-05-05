@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: exoscalenodeclasses.karpenter.exoscale.com
 spec:
   group: karpenter.exoscale.com
@@ -79,6 +79,10 @@ spec:
                 maximum: 8000
                 minimum: 10
                 type: integer
+              enableIPv6:
+                description: EnableIPv6 indicates whether to enable IPv6 for instances
+                  created with this NodeClass
+                type: boolean
               imageTemplateSelector:
                 properties:
                   variant:
