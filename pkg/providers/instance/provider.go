@@ -109,6 +109,11 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		Labels:             p.GenerateInstanceLabels(nodeClaim),
 		SecurityGroups:     p.convertSecurityGroups(nodeClass.Status.SecurityGroups),
 		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Status.AntiAffinityGroups),
+		Ipv6Enabled:        &nodeClass.Spec.EnableIPv6,
+	}
+
+	if nodeClass.Spec.EnableIPv6 {
+		createRequest.PublicIPAssignment = egov3.PublicIPAssignmentDual
 	}
 
 	createCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)

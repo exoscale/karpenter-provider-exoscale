@@ -29,6 +29,7 @@ const (
 	DriftReasonAntiAffinityGroups cloudprovider.DriftReason = "AntiAffinityGroups"
 	DriftReasonSecurityGroups     cloudprovider.DriftReason = "SecurityGroups"
 	DriftReasonPrivateNetworks    cloudprovider.DriftReason = "PrivateNetworks"
+	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
 )
 
 type CloudProvider struct {
@@ -233,6 +234,19 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
 			fmt.Sprintf("Instance template ID drift detected: nodeClaim ImageID %s != instance Template ID %s", nodeClaim.Status.ImageID, inst.Template.ID))
 		return DriftReasonImageID, nil
+	}
+
+	// Verify if IPv6 enable is compliant with instance reported addresses
+	if nodeClass.Spec.EnableIPv6 && !utils.ContainsIPv6Address(inst.Addresses) {
+		log.FromContext(ctx).Info("detected IPv6 drift", "reason", DriftReasonIPv6)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			"Instance IPv6 drift detected: nodeClass EnableIPv6 is true but instance doesn't have any IPv6Address")
+		return DriftReasonIPv6, nil
+	} else if !nodeClass.Spec.EnableIPv6 && utils.ContainsIPv6Address(inst.Addresses) {
+		log.FromContext(ctx).Info("detected IPv6 drift", "reason", DriftReasonIPv6)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			"Instance IPv6 drift detected: nodeClass EnableIPv6 is false but instance has IPv6Address")
+		return DriftReasonIPv6, nil
 	}
 
 	left, right := lo.Difference(nodeClass.Status.AntiAffinityGroups, inst.AntiAffinityGroups)

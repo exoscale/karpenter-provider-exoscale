@@ -2,8 +2,12 @@ package utils
 
 import (
 	"fmt"
+	"net"
 	"regexp"
+	"slices"
 	"strings"
+
+	v1 "k8s.io/api/core/v1"
 )
 
 const ExoscaleProviderIDPrefix = "exoscale://"
@@ -25,4 +29,11 @@ func ParseProviderID(providerID string) (string, error) {
 	}
 
 	return instanceID, nil
+}
+
+func ContainsIPv6Address(addresses []v1.NodeAddress) bool {
+	return slices.ContainsFunc(addresses, func(addr v1.NodeAddress) bool {
+		ip := net.ParseIP(addr.Address)
+		return ip != nil && ip.To4() == nil
+	})
 }

@@ -73,11 +73,12 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 	zone := "ch-gva-2"
 
 	exoInstance := &egov3.Instance{
-		ID:       egov3.UUID(instanceID),
-		Name:     instanceName,
-		State:    egov3.InstanceStateRunning,
-		DiskSize: 50,
-		PublicIP: net.IP{192, 168, 1, 100},
+		ID:          egov3.UUID(instanceID),
+		Name:        instanceName,
+		State:       egov3.InstanceStateRunning,
+		DiskSize:    50,
+		PublicIP:    net.IP{192, 168, 1, 100},
+		Ipv6Address: "fe80::1:2:3",
 		Labels: map[string]string{
 			constants.InstanceLabelNodeClaim: "test-claim-with-ip",
 		},
@@ -105,8 +106,8 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 	}
 
 	// Verify we have exactly 3 addresses
-	if len(got.Addresses) != 3 {
-		t.Fatalf("FromExoscaleInstance() Addresses count = %d, want 3", len(got.Addresses))
+	if len(got.Addresses) != 5 {
+		t.Fatalf("FromExoscaleInstance() Addresses count = %d, want 5", len(got.Addresses))
 	}
 
 	// Verify we have a default Hostname
@@ -132,6 +133,23 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 	}
 	if got.Addresses[2].Address != expectedIP {
 		t.Errorf("Addresses[2].Address = %v, want %v", got.Addresses[2].Address, expectedIP)
+	}
+
+	// Verify the external IPv6 address
+	expectedIPv6 := "fe80::1:2:3"
+	if got.Addresses[3].Type != v1.NodeExternalIP {
+		t.Errorf("Addresses[3].Type = %v, want %v", got.Addresses[3].Type, v1.NodeExternalIP)
+	}
+	if got.Addresses[3].Address != expectedIPv6 {
+		t.Errorf("Addresses[3].Address = %v, want %v", got.Addresses[3].Address, expectedIPv6)
+	}
+
+	// Verify the internal IPv6 address (same as external)
+	if got.Addresses[4].Type != v1.NodeInternalIP {
+		t.Errorf("Addresses[4].Type = %v, want %v", got.Addresses[4].Type, v1.NodeInternalIP)
+	}
+	if got.Addresses[4].Address != expectedIPv6 {
+		t.Errorf("Addresses[4].Address = %v, want %v", got.Addresses[4].Address, expectedIPv6)
 	}
 }
 

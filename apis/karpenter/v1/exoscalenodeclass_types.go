@@ -104,6 +104,10 @@ type ExoscaleNodeClassSpec struct {
 	// Kubelet contains configuration for kubelet
 	// +optional
 	Kubelet KubeletConfiguration `json:"kubelet,omitempty"`
+
+	// EnableIPv6 indicates whether to enable IPv6 for instances created with this NodeClass
+	// +optional
+	EnableIPv6 bool `json:"enableIPv6,omitempty"`
 }
 
 type KubeletConfiguration struct {
