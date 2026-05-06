@@ -1,10 +1,13 @@
 Changelog
 =========
 
-UNRELEASED
+1.36.0
 ------------------
 
 - feat: add compute instances IPv6 support
+- fix(deps): update module sigs.k8s.io/karpenter to v1.12.0 (#130)
+- fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.35 (#128)
+- fix(deps): update module github.com/pelletier/go-toml/v2 to v2.3.1 (#131)
 
 1.35.0
 ------------------
