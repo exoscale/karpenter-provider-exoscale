@@ -415,10 +415,50 @@ func (c *CloudProvider) createNode(ctx context.Context, nodeClaim *karpenterv1.N
 	}
 
 	if err := c.kubeClient.Create(ctx, node); err != nil {
-		return fmt.Errorf("creating node %s: %w", nodeName, err)
+		if !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("creating node %s: %w", nodeName, err)
+		}
+		// The Node already exists.
+		if err := c.ensureNodeIdentity(ctx, nodeName, node); err != nil {
+			return err
+		}
+		log.FromContext(ctx).Info("reconciled existing node", "nodeName", nodeName)
+		return nil
 	}
 
 	log.FromContext(ctx).Info("created Pending node", "nodeName", nodeName)
+	return nil
+}
+
+// ensureNodeIdentity patches the CCM-critical identity onto an already-existing Node so
+// it stays resolvable: Spec.ProviderID (the kubelet registers with an empty ProviderID
+// under cloud-provider=external) and Status.NodeInfo.SystemUUID / Addresses (the
+// identifier the Exoscale CCM looks the instance up by).
+func (c *CloudProvider) ensureNodeIdentity(ctx context.Context, nodeName string, desired *v1.Node) error {
+	existing := &v1.Node{}
+	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, existing); err != nil {
+		return fmt.Errorf("getting existing node %s: %w", nodeName, err)
+	}
+
+	if existing.Spec.ProviderID == "" {
+		patch := client.MergeFrom(existing.DeepCopy())
+		existing.Spec.ProviderID = desired.Spec.ProviderID
+		if err := c.kubeClient.Patch(ctx, existing, patch); err != nil {
+			return fmt.Errorf("patching node %s provider ID: %w", nodeName, err)
+		}
+	}
+
+	if existing.Status.NodeInfo.SystemUUID == "" {
+		patch := client.MergeFrom(existing.DeepCopy())
+		existing.Status.NodeInfo.SystemUUID = desired.Status.NodeInfo.SystemUUID
+		if len(existing.Status.Addresses) == 0 {
+			existing.Status.Addresses = desired.Status.Addresses
+		}
+		if err := c.kubeClient.Status().Patch(ctx, existing, patch); err != nil {
+			return fmt.Errorf("patching node %s status: %w", nodeName, err)
+		}
+	}
+
 	return nil
 }
 
