@@ -119,6 +119,7 @@ func registerControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProv
 
 	if err := garbagecollection.StartController(mgr, &garbagecollection.Controller{
 		Client:           mgr.GetClient(),
+		APIReader:        mgr.GetAPIReader(),
 		InstanceProvider: instanceProvider,
 	}); err != nil {
 		return fmt.Errorf("unable to create garbage collection controller: %w", err)
