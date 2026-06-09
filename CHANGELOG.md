@@ -5,6 +5,9 @@ Changelog
 ------------------
 
 - feat: add support for custom user-data configuration (#122)
+- fix(drift): skip drift detection for instances that are still provisioning
+- fix(gc): do not delete instances that are still being provisioned
+- fix(node): make Node pre-creation idempotent to avoid "node already exists" failures
 - fix(deps): update module sigs.k8s.io/karpenter to v1.12.1 (#137)
 - fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.37 (#137)
 
