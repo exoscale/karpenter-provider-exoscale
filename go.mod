@@ -1,10 +1,10 @@
 module github.com/exoscale/karpenter-provider-exoscale
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/awslabs/operatorpkg v0.0.0-20251222193911-34e9a1898737
-	github.com/exoscale/egoscale/v3 v3.1.35
+	github.com/exoscale/egoscale/v3 v3.1.37
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/samber/lo v1.53.0
@@ -13,7 +13,7 @@ require (
 	k8s.io/apimachinery v0.35.4
 	k8s.io/client-go v0.35.4
 	sigs.k8s.io/controller-runtime v0.22.4
-	sigs.k8s.io/karpenter v1.12.0
+	sigs.k8s.io/karpenter v1.12.1
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -80,14 +80,14 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

@@ -1,6 +1,12 @@
 Changelog
 =========
 
+1.36.1 - UNRELEASED
+------------------
+
+- fix(deps): update module sigs.k8s.io/karpenter to v1.12.1 (#137)
+- fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.37 (#137)
+
 1.36.0
 ------------------
 
