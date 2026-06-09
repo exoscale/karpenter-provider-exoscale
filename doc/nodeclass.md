@@ -261,7 +261,7 @@ The user-provided TOML is deep-merged with the Karpenter-generated configuration
 
 See [user-data.md](user-data.md) for the full list of settings available.
 
-#### Example: NVIDIA GPU Time-Slicing
+#### Example: NVIDIA GPU MIG configuration
 
 ```yaml
 spec:
@@ -271,12 +271,10 @@ spec:
   diskSize: 100
   userData: |
     [settings.kubelet-device-plugins.nvidia]
-    device-sharing-strategy = "time-slicing"
+    device-partitioning-strategy = "mig"
 
-    [settings.kubelet-device-plugins.nvidia.time-slicing]
-    replicas = 4
-    rename-by-default = false
-    fail-requests-greater-than-one = true
+    [settings.kubelet-device-plugins.nvidia.mig.profile]
+    "rtxpro6000.96gb" = "1g.24gb"
 ```
 
 ---
