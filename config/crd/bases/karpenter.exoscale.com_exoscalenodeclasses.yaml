@@ -229,6 +229,15 @@ spec:
               templateID:
                 pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
                 type: string
+              userData:
+                description: |-
+                  UserData is raw TOML content that will be merged with the generated
+                  user-data configuration. This allows specifying additional settings
+                  (e.g. static-pods, device plugins) that are not directly exposed
+                  by the ExoscaleNodeClass API.
+                  Karpenter-managed fields (api-server, bootstrap-token, cloud-provider,
+                  cluster-certificate) will always take precedence over user-provided values.
+                type: string
             type: object
             x-kubernetes-validations:
             - message: imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent
