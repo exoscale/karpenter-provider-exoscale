@@ -229,6 +229,12 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return "", err
 	}
 
+	// Only evaluate drift for instances that are fully running.
+	if !inst.IsRunning() {
+		log.FromContext(ctx).V(2).Info("instance not running yet, skipping drift detection", "state", inst.State)
+		return "", nil
+	}
+
 	if nodeClaim.Status.ImageID != inst.Template.ID {
 		log.FromContext(ctx).Info("detected template drift", "reason", DriftReasonImageID)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
