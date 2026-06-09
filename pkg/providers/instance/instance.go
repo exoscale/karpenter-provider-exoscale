@@ -118,7 +118,14 @@ func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.
 	return i
 }
 
-// ToNodeClaim creates a NodeClaim from the instance
+// IsRunning reports whether the instance is in the running state. Steady-state
+// checks such as drift detection should only run on running instances: a
+// still-provisioning instance (e.g. "starting") may not yet report all of its
+// attached resources — private networks, IPv6 address, etc.
+func (i *Instance) IsRunning() bool {
+	return i.State == egov3.InstanceStateRunning
+}
+
 func (i *Instance) ToNodeClaim() *karpenterv1.NodeClaim {
 	capacity := v1.ResourceList{}
 	allocatable := v1.ResourceList{}

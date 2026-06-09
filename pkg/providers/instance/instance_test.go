@@ -221,3 +221,28 @@ func TestInstance_ToNodeClaim(t *testing.T) {
 		t.Errorf("ToNodeClaim() capacity type = %v, want %v", got.Labels[karpenterv1.CapacityTypeLabelKey], karpenterv1.CapacityTypeOnDemand)
 	}
 }
+
+func TestInstance_IsRunning(t *testing.T) {
+	tests := []struct {
+		name  string
+		state egov3.InstanceState
+		want  bool
+	}{
+		{name: "running", state: egov3.InstanceStateRunning, want: true},
+		{name: "starting", state: egov3.InstanceStateStarting, want: false},
+		{name: "stopping", state: egov3.InstanceStateStopping, want: false},
+		{name: "stopped", state: egov3.InstanceStateStopped, want: false},
+		{name: "destroying", state: egov3.InstanceStateDestroying, want: false},
+		{name: "error", state: egov3.InstanceStateError, want: false},
+		{name: "empty", state: egov3.InstanceState(""), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			i := &Instance{State: tt.state}
+			if got := i.IsRunning(); got != tt.want {
+				t.Errorf("IsRunning() with state %q = %v, want %v", tt.state, got, tt.want)
+			}
+		})
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -16,14 +17,21 @@ import (
 )
 
 const (
-	GCInterval               = 5 * time.Minute
-	StuckNodeClaimTimeout    = 10 * time.Minute
-	TerminationFinalizerName = "karpenter.sh/termination"
+	GCInterval                = 5 * time.Minute
+	StuckNodeClaimTimeout     = 10 * time.Minute
+	TerminationFinalizerName  = "karpenter.sh/termination"
+	OrphanInstanceGracePeriod = 15 * time.Minute
 )
 
 type Controller struct {
 	Client           client.Client
 	InstanceProvider *instance.Provider
+
+	// APIReader is an uncached reader used to confirm that an instance really has
+	// no NodeClaim before deleting it. Reading orphan candidates straight from the
+	// API server (rather than the informer cache) avoids deleting a live instance
+	// off a momentarily stale cache view.
+	APIReader client.Reader
 }
 
 func StartController(mgr manager.Manager, gc *Controller) error {
@@ -66,23 +74,41 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 
 	log.FromContext(ctx).Info("listed cloud instances", "count", len(cloudInstances))
 
+	// Read NodeClaims straight from the API server rather than the informer cache.
 	var nodeClaims karpenterv1.NodeClaimList
-	if err := c.Client.List(ctx, &nodeClaims); err != nil {
+	if err := c.APIReader.List(ctx, &nodeClaims); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to list NodeClaims: %w", err)
 	}
 
 	nodeClaimProviderIDs := make(map[string]bool)
+	nodeClaimNames := make(map[string]bool)
 	for _, nc := range nodeClaims.Items {
+		nodeClaimNames[nc.Name] = true
+
 		instanceID, err := utils.ParseProviderID(nc.Status.ProviderID)
 		if err != nil {
-			log.FromContext(ctx).Error(err, "invalid provider ID in NodeClaim", "nodeClaim", nc.Name)
+			// A NodeClaim whose ProviderID isn't set/parseable yet (e.g. still being
+			// created) is matched by name below instead, so this isn't fatal.
+			log.FromContext(ctx).V(1).Info("NodeClaim has no parseable provider ID yet", "nodeClaim", nc.Name)
 			continue
 		}
 		nodeClaimProviderIDs[instanceID] = true
 	}
 
+	// Delete instances that have no matching NodeClaim. An instance is only a true
+	// orphan when it matches neither by ProviderID nor by node-claim label name
+	// (the name match covers a NodeClaim whose ProviderID isn't populated yet,
+	// e.g. mid-creation) and is past the provisioning grace period (cheap
+	// defense-in-depth against transient races at creation time).
 	for _, inst := range cloudInstances {
-		if nodeClaimProviderIDs[inst.ID] {
+		if hasMatchingNodeClaim(inst, nodeClaimProviderIDs, nodeClaimNames) {
+			continue
+		}
+		if !isOrphanInstanceReapable(inst.CreatedAt, time.Now(), OrphanInstanceGracePeriod) {
+			log.FromContext(ctx).V(1).Info("skipping orphaned instance within grace period",
+				"instanceID", inst.ID,
+				"name", inst.Name,
+				"age", time.Since(inst.CreatedAt))
 			continue
 		}
 
@@ -147,6 +173,30 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 	log.FromContext(ctx).Info("garbage collection completed", "stuckNodeClaimsProcessed", stuckCount)
 
 	return reconcile.Result{}, nil
+}
+
+// hasMatchingNodeClaim reports whether a cloud instance still corresponds to a
+// known NodeClaim. It matches first on the NodeClaim ProviderID and then falls
+// back to the instance's node-claim label against the set of NodeClaim names.
+func hasMatchingNodeClaim(inst *instance.Instance, providerIDs, names map[string]bool) bool {
+	if providerIDs[inst.ID] {
+		return true
+	}
+	if name := inst.Labels[constants.InstanceLabelNodeClaim]; name != "" && names[name] {
+		return true
+	}
+	return false
+}
+
+// isOrphanInstanceReapable reports whether an orphaned cloud instance (one with no
+// matching NodeClaim) is old enough to be safely garbage collected. Instances that
+// are younger than gracePeriod or whose creation time is unknown (zero), are
+// spared, to avoid deleting instances that are still being provisioned.
+func isOrphanInstanceReapable(createdAt, now time.Time, gracePeriod time.Duration) bool {
+	if createdAt.IsZero() {
+		return false
+	}
+	return now.Sub(createdAt) >= gracePeriod
 }
 
 func hasTerminationFinalizer(nc *karpenterv1.NodeClaim) bool {
