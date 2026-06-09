@@ -26,6 +26,7 @@ type Options struct {
 	KubeReserved                apiv1.KubeResourceReservation
 	SystemReserved              apiv1.SystemResourceReservation
 	FeatureGates                map[string]bool
+	UserData                    *string
 }
 
 type KubernetesSettings struct {
@@ -78,9 +79,19 @@ func (s *SKSBootstrap) Generate(options *Options) (string, error) {
 
 	config := s.buildConfig(options)
 
-	userData, err := s.marshalTOML(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal user data to TOML: %w", err)
+	var userData []byte
+	var err error
+
+	if options.UserData != nil && *options.UserData != "" {
+		userData, err = s.mergeUserData(config, *options.UserData)
+		if err != nil {
+			return "", fmt.Errorf("failed to merge user data: %w", err)
+		}
+	} else {
+		userData, err = s.marshalTOML(config)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal user data to TOML: %w", err)
+		}
 	}
 
 	encodedUserData, err := s.compressAndEncode(userData)
@@ -89,6 +100,59 @@ func (s *SKSBootstrap) Generate(options *Options) (string, error) {
 	}
 
 	return encodedUserData, nil
+}
+
+// mergeUserData deep-merges user-provided TOML with the Karpenter-generated config.
+// The generated config always takes precedence for Karpenter-managed fields.
+func (s *SKSBootstrap) mergeUserData(config *Config, rawUserData string) ([]byte, error) {
+	// Marshal generated config to a generic map
+	generatedTOML, err := s.marshalTOML(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal generated config: %w", err)
+	}
+	var generatedMap map[string]interface{}
+	if err := toml.Unmarshal(generatedTOML, &generatedMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal generated config: %w", err)
+	}
+
+	// Parse user-provided TOML into a generic map
+	var userMap map[string]interface{}
+	if err := toml.Unmarshal([]byte(rawUserData), &userMap); err != nil {
+		return nil, fmt.Errorf("failed to parse user data as TOML: %w", err)
+	}
+
+	// Deep merge: start with user-provided, overlay generated on top
+	// This ensures Karpenter-managed fields always win while preserving
+	// user-provided sections that Karpenter doesn't manage.
+	merged := deepMerge(userMap, generatedMap)
+
+	var buf bytes.Buffer
+	encoder := toml.NewEncoder(&buf)
+	encoder.SetIndentTables(false)
+	if err := encoder.Encode(merged); err != nil {
+		return nil, fmt.Errorf("failed to encode merged config: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// deepMerge recursively merges src into dst. Values from src take precedence.
+// For nested maps, merging is recursive. For all other types, src overwrites dst.
+func deepMerge(dst, src map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(dst))
+	for k, v := range dst {
+		result[k] = v
+	}
+	for k, v := range src {
+		if srcMap, ok := v.(map[string]interface{}); ok {
+			if dstMap, ok := result[k].(map[string]interface{}); ok {
+				result[k] = deepMerge(dstMap, srcMap)
+				continue
+			}
+		}
+		result[k] = v
+	}
+	return result
 }
 
 func (s *SKSBootstrap) buildConfig(options *Options) *Config {

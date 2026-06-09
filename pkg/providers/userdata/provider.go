@@ -64,6 +64,7 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		KubeReserved:                options.KubeReserved,
 		SystemReserved:              options.SystemReserved,
 		FeatureGates:                options.FeatureGates,
+		UserData:                    options.UserData,
 	}
 
 	if bootstrapOptions.Labels == nil {
@@ -75,8 +76,17 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 
 	userData, err := p.sksBootstrap.Generate(bootstrapOptions)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to generate user data")
-		return "", fmt.Errorf("failed to generate user data: %w", err)
+		if bootstrapOptions.UserData != nil && *bootstrapOptions.UserData != "" {
+			log.FromContext(ctx).Error(err, "spec.userData contains invalid TOML, skipping merge")
+			bootstrapOptions.UserData = nil
+			userData, err = p.sksBootstrap.Generate(bootstrapOptions)
+			if err != nil {
+				return "", fmt.Errorf("failed to generate user data: %w", err)
+			}
+		} else {
+			log.FromContext(ctx).Error(err, "failed to generate user data")
+			return "", fmt.Errorf("failed to generate user data: %w", err)
+		}
 	}
 
 	return userData, nil

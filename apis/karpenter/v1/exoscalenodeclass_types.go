@@ -108,6 +108,15 @@ type ExoscaleNodeClassSpec struct {
 	// EnableIPv6 indicates whether to enable IPv6 for instances created with this NodeClass
 	// +optional
 	EnableIPv6 bool `json:"enableIPv6,omitempty"`
+
+	// UserData is raw TOML content that will be merged with the generated
+	// user-data configuration. This allows specifying additional settings
+	// (e.g. static-pods, device plugins) that are not directly exposed
+	// by the ExoscaleNodeClass API.
+	// Karpenter-managed fields (api-server, bootstrap-token, cloud-provider,
+	// cluster-certificate) will always take precedence over user-provided values.
+	// +optional
+	UserData *string `json:"userData,omitempty"`
 }
 
 type KubeletConfiguration struct {
