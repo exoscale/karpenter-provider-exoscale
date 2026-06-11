@@ -1,7 +1,7 @@
 Changelog
 =========
 
-1.36.1 - UNRELEASED
+1.36.1
 ------------------
 
 - feat: add support for custom user-data configuration (#122)
