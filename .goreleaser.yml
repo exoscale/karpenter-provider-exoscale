@@ -1,5 +1,5 @@
 builds:
-  - id: karpenter-exoscale
+  - id: karpenter-sexoscale
     binary: karpenter-exoscale
     main: ./cmd/karpenter-exoscale
     env:
@@ -50,4 +50,4 @@ snapshot:
 release:
   github:
     owner: exoscale
-    name: karpenter-exoscale
+    name: karpenter-provider-exoscale
