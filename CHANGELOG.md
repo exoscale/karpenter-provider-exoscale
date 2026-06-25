@@ -1,6 +1,8 @@
 Changelog
 =========
 
+- fix(rbac): allow pod deletion (after an eviction was attempted and failed)
+
 1.36.1
 ------------------
 
