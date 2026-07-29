@@ -115,6 +115,35 @@ func (r *ExoscaleNodeClassReconciler) reconcileAntiAffinityGroups(ctx context.Co
 	return nil
 }
 
+func (r *ExoscaleNodeClassReconciler) reconcileElasticIPs(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	ids := []string{}
+	for _, selector := range nodeClass.Spec.ElasticIPSelectorTerms {
+		var eip *egov3.ElasticIP
+		var err error
+		switch {
+		case selector.ID != "":
+			log.FromContext(ctx).V(1).Info("resolving elastic IP by ID", "elasticIPID", selector.ID)
+			eip, err = r.ExoscaleClient.GetElasticIP(ctx, egov3.UUID(selector.ID))
+		case selector.Name != "":
+			// Elastic IPs don't have a "name" attribute in the Exoscale API;
+			// we treat the selector `name` field as the IP address to match
+			// against `ElasticIP.IP`.
+			log.FromContext(ctx).V(1).Info("resolving elastic IP by address", "elasticIPAddress", selector.Name)
+			eip, err = r.getCachedElasticIPByAddress(ctx, selector.Name)
+			if err == nil && eip == nil {
+				err = fmt.Errorf("elastic IP with address %s not found", selector.Name)
+			}
+		default:
+			err = fmt.Errorf("elastic IP selector requires id or name: selector %+v", selector)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to get elastic IP for selector %+v: %w", selector, err)
+		}
+		ids = append(ids, eip.ID.String())
+	}
+	nodeClass.Status.ElasticIPs = ids
+	return nil
+}
 func (r *ExoscaleNodeClassReconciler) reconcilePrivateNetworks(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
 	privNetIDs := []string{}
 

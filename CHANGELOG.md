@@ -2,6 +2,10 @@ Changelog
 =========
 
 - fix(rbac): allow pod deletion (after an eviction was attempted and failed)
+- feat: add support for EIP attachment to instances
+- fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.43 (#135)
+- fix(deps): update golang docker tag to v1.26.5 (#146)
+- fix(deps): update go-toml to v2.4.3 (#140)
 
 1.36.1
 ------------------

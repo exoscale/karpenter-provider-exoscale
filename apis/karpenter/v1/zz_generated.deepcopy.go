@@ -120,6 +120,11 @@ func (in *ExoscaleNodeClassSpec) DeepCopyInto(out *ExoscaleNodeClassSpec) {
 		*out = make([]SelectorTerms, len(*in))
 		copy(*out, *in)
 	}
+	if in.ElasticIPSelectorTerms != nil {
+		in, out := &in.ElasticIPSelectorTerms, &out.ElasticIPSelectorTerms
+		*out = make([]SelectorTerms, len(*in))
+		copy(*out, *in)
+	}
 	in.Kubelet.DeepCopyInto(&out.Kubelet)
 	if in.UserData != nil {
 		in, out := &in.UserData, &out.UserData
@@ -160,6 +165,11 @@ func (in *ExoscaleNodeClassStatus) DeepCopyInto(out *ExoscaleNodeClassStatus) {
 	}
 	if in.PrivateNetworks != nil {
 		in, out := &in.PrivateNetworks, &out.PrivateNetworks
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.ElasticIPs != nil {
+		in, out := &in.ElasticIPs, &out.ElasticIPs
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}

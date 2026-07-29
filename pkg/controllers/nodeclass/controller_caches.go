@@ -53,6 +53,27 @@ func (r *ExoscaleNodeClassReconciler) getCachedAntiAffinityGroupByName(ctx conte
 	return &aagList[0], nil
 }
 
+func (r *ExoscaleNodeClassReconciler) getCachedElasticIPByAddress(ctx context.Context, address string) (*egov3.ElasticIP, error) {
+	eipList, err := r.eipCache.GetFiltered(ctx, resourceCacheTTL, "elastic IPs", func(ctx context.Context) ([]egov3.ElasticIP, error) {
+		eips, err := r.ExoscaleClient.ListElasticIPS(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return eips.ElasticIPS, nil
+	}, func(eip egov3.ElasticIP) bool {
+		return eip.IP == address
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(eipList) == 0 {
+		return nil, nil
+	}
+
+	return &eipList[0], nil
+}
+
 func (r *ExoscaleNodeClassReconciler) getCachedPrivateNetworkByName(ctx context.Context, name string) (*egov3.PrivateNetwork, error) {
 	netList, err := r.pnCache.GetFiltered(ctx, resourceCacheTTL, "private networks", func(ctx context.Context) ([]egov3.PrivateNetwork, error) {
 		nets, err := r.ExoscaleClient.ListPrivateNetworks(ctx)

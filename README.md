@@ -9,7 +9,7 @@ This provider enables Karpenter to provision and manage Exoscale compute instanc
 ## Key Features
 
 - **Direct instance provisioning** with automatic cost optimization
-- **Drift detection** for templates, security groups, networks, and anti-affinity groups  
+- **Drift detection** for templates, security groups, networks, anti-affinity groups, and elastic IPs  
 - **Self-healing** with node repair policies
 - **Secure bootstrapping** using temporary tokens with automatic cleanup
 - **Full Exoscale integration** including private networks and anti-affinity groups
@@ -37,6 +37,11 @@ Optional environment variables:
 * `CLUSTER_ENDPOINT`: Kubernetes API server endpoint. If not set, it is auto-detected from the in-cluster configuration.
 * `EXOSCALE_API_ENDPOINT`: Custom Exoscale API endpoint URL. If not set, the endpoint is auto-detected from the zone.
 * `EXOSCALE_API_ENVIRONMENT`: Exoscale API environment (e.g., `ppapi` for pre-production). If not set, the production environment is used.
+
+> [!IMPORTANT]
+> The IAM role bound to `EXOSCALE_API_KEY` must allow every API operation the
+> provider invokes. See [Required IAM policy](doc/iam.md) for the exact list
+> and a ready-to-paste policy covering both base compute operations.
 
 Only if out-of-cluster:
 * `KUBECONFIG`: Path to your kubeconfig file. You can extract it from your cluster view in our
@@ -94,6 +99,11 @@ spec:
   privateNetworkSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
+
+  # Elastic IPs (optional)
+  elasticIPSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "203.0.113.42"   # matched against the EIP public address
 
   # Kubelet exposed configuration (all those parameters are optional)
   # https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/

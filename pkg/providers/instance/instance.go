@@ -28,6 +28,7 @@ type Instance struct {
 	Labels             map[string]string
 	SecurityGroups     []string
 	PrivateNetworks    []string
+	ElasticIPs         []string
 	AntiAffinityGroups []string
 	Capacity           map[v1.ResourceName]resource.Quantity
 	Addresses          []v1.NodeAddress
@@ -91,6 +92,10 @@ func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.
 
 	for _, pn := range instance.PrivateNetworks {
 		i.PrivateNetworks = append(i.PrivateNetworks, string(pn.ID))
+	}
+
+	for _, eip := range instance.ElasticIPS {
+		i.ElasticIPs = append(i.ElasticIPs, string(eip.ID))
 	}
 
 	for _, aag := range instance.AntiAffinityGroups {

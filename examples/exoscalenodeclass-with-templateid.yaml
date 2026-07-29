@@ -26,6 +26,13 @@ spec:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
 
+  # Elastic IPs (optional, attached after instance creation)
+  # - id:    matches the EIP UUID
+  # - name:  matched against the EIP's public IP address (Elastic IPs have no name attribute)
+  elasticIPSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "203.0.113.42"
+
   # Kubelet exposed configuration (all those parameters are optional)
   # https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
   # imageGCHighThresholdPercent: 80
