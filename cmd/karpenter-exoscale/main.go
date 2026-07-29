@@ -41,6 +41,18 @@ func main() {
 	}
 }
 
+// +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims/status;nodepools/status,verbs=get;update;patch;watch
+// +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=create;delete
+// +kubebuilder:rbac:groups=karpenter.sh,resources=nodepools,verbs=create;delete;update;get;list;watch;patch
+// +kubebuilder:rbac:groups=,resources=nodes,verbs=create;delete;patch;update;watch
+// +kubebuilder:rbac:groups=,resources=configmaps;persistentvolumes;persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=,resources=pods/eviction,verbs=create
+// +kubebuilder:rbac:groups=,resources=pods,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments;csinodes;storageclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=create;get;list;update;watch
+
 func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) error {
 	options, err := instance.NewOptionsFromEnvironment(op.GetConfig().Host)
 	if err != nil {

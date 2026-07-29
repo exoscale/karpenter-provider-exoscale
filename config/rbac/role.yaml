@@ -7,6 +7,16 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  - persistentvolumeclaims
+  - persistentvolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -15,17 +25,6 @@ rules:
   - ""
   resources:
   - nodes
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - secrets
   verbs:
   - create
@@ -35,23 +34,21 @@ rules:
   - patch
   - update
   - watch
-- apiGroups: [ "" ]
+- apiGroups:
+  - ""
   resources:
-  - configmaps
+  - pods
   verbs:
+  - delete
   - get
   - list
   - watch
 - apiGroups:
-  - coordination.k8s.io
+  - ""
   resources:
-  - leases
+  - pods/eviction
   verbs:
-  - get
-  - list
-  - watch
   - create
-  - update
 - apiGroups:
   - apps
   resources:
@@ -61,12 +58,14 @@ rules:
   - list
   - watch
 - apiGroups:
-  - policy
+  - coordination.k8s.io
   resources:
-  - poddisruptionbudgets
+  - leases
   verbs:
+  - create
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - karpenter.exoscale.com
@@ -98,6 +97,7 @@ rules:
   - karpenter.sh
   resources:
   - nodeclaims
+  - nodepools
   verbs:
   - create
   - delete
@@ -110,25 +110,6 @@ rules:
   - karpenter.sh
   resources:
   - nodeclaims/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - karpenter.sh
-  resources:
-  - nodepools
-  verbs:
-  - get
-  - list
-  - watch
-  - create
-  - update
-  - delete
-  - patch
-- apiGroups:
-  - karpenter.sh
-  resources:
   - nodepools/status
   verbs:
   - get
@@ -136,35 +117,19 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ""
+  - policy
   resources:
-  - persistentvolumes
-  - persistentvolumeclaims
+  - poddisruptionbudgets
   verbs:
   - get
   - list
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-  - delete
-- apiGroups:
-  - ""
-  resources:
-  - pods/eviction
-  verbs:
-  - create
 - apiGroups:
   - storage.k8s.io
   resources:
-  - volumeattachments
   - csinodes
   - storageclasses
+  - volumeattachments
   verbs:
   - get
   - list
