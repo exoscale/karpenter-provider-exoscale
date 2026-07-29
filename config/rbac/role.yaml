@@ -4,7 +4,9 @@ kind: ClusterRole
 metadata:
   name: karpenter
 rules:
-- resources:
+- apiGroups:
+  - ""
+  resources:
   - configmaps
   - persistentvolumeclaims
   - persistentvolumes
@@ -32,14 +34,18 @@ rules:
   - patch
   - update
   - watch
-- resources:
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - delete
   - get
   - list
   - watch
-- resources:
+- apiGroups:
+  - ""
+  resources:
   - pods/eviction
   verbs:
   - create
