@@ -6,7 +6,8 @@ Changelog
 - fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.43 (#135)
 - fix(deps): update golang docker tag to v1.26.5 (#146)
 - fix(deps): update go-toml to v2.4.3 (#140)
-
+- feat(deps): update module sigs.k8s.io/karpenter to v1.14.0 (#134)
+- fix(deps): update module sigs.k8s.io/controller-runtime to v0.24.1 (#99)
 
 1.36.1
 ------------------
