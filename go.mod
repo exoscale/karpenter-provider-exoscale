@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/awslabs/operatorpkg v0.0.0-20251222193911-34e9a1898737
-	github.com/exoscale/egoscale/v3 v3.1.37
+	github.com/exoscale/egoscale/v3 v3.1.43
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/samber/lo v1.53.0
