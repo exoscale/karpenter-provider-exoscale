@@ -7,6 +7,7 @@ Changelog
 - fix(deps): update golang docker tag to v1.26.5 (#146)
 - fix(deps): update go-toml to v2.4.3 (#140)
 
+
 1.36.1
 ------------------
 

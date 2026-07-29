@@ -205,7 +205,7 @@ type SystemResourceReservation struct {
 	EphemeralStorage string `json:"ephemeralStorage,omitempty"`
 }
 
-func (in *ExoscaleNodeClass) StatusConditions() status.ConditionSet {
+func (in *ExoscaleNodeClass) StatusConditions(_ ...status.ForOption) status.ConditionSet {
 	return status.NewReadyConditions().For(in)
 }
 
