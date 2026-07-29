@@ -8,17 +8,26 @@ import (
 
 // MockClient is a mock implementation of the ExoscaleClient interface for testing
 type MockClient struct {
-	GetTemplateFunc            func(ctx context.Context, id egov3.UUID) (*egov3.Template, error)
-	GetSecurityGroupFunc       func(ctx context.Context, id egov3.UUID) (*egov3.SecurityGroup, error)
-	GetAntiAffinityGroupFunc   func(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
-	GetPrivateNetworkFunc      func(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
-	ListInstancesFunc          func(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
-	DeleteInstanceFunc         func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
-	ListSecurityGroupsFunc     func(ctx context.Context, opts ...egov3.ListSecurityGroupsOpt) (*egov3.ListSecurityGroupsResponse, error)
-	ListAntiAffinityGroupsFunc func(ctx context.Context) (*egov3.ListAntiAffinityGroupsResponse, error)
-	ListPrivateNetworksFunc    func(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error)
+	GetTemplateFunc               func(ctx context.Context, id egov3.UUID) (*egov3.Template, error)
+	GetSecurityGroupFunc          func(ctx context.Context, id egov3.UUID) (*egov3.SecurityGroup, error)
+	GetAntiAffinityGroupFunc      func(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
+	GetPrivateNetworkFunc         func(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
+	GetElasticIPFunc              func(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error)
+	ListInstancesFunc             func(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
+	DeleteInstanceFunc            func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
+	ListSecurityGroupsFunc        func(ctx context.Context, opts ...egov3.ListSecurityGroupsOpt) (*egov3.ListSecurityGroupsResponse, error)
+	ListAntiAffinityGroupsFunc    func(ctx context.Context) (*egov3.ListAntiAffinityGroupsResponse, error)
+	ListPrivateNetworksFunc       func(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error)
+	ListElasticIPSFunc            func(ctx context.Context) (*egov3.ListElasticIPSResponse, error)
+	AttachInstanceToElasticIPFunc func(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToElasticIPRequest) (*egov3.Operation, error)
 }
 
+func (m *MockClient) GetElasticIP(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error) {
+	if m.GetElasticIPFunc != nil {
+		return m.GetElasticIPFunc(ctx, id)
+	}
+	return nil, nil
+}
 func (m *MockClient) GetTemplate(ctx context.Context, id egov3.UUID) (*egov3.Template, error) {
 	if m.GetTemplateFunc != nil {
 		return m.GetTemplateFunc(ctx, id)
@@ -26,6 +35,19 @@ func (m *MockClient) GetTemplate(ctx context.Context, id egov3.UUID) (*egov3.Tem
 	return nil, nil
 }
 
+func (m *MockClient) AttachInstanceToElasticIP(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToElasticIPRequest) (*egov3.Operation, error) {
+	if m.AttachInstanceToElasticIPFunc != nil {
+		return m.AttachInstanceToElasticIPFunc(ctx, id, req)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) ListElasticIPS(ctx context.Context) (*egov3.ListElasticIPSResponse, error) {
+	if m.ListElasticIPSFunc != nil {
+		return m.ListElasticIPSFunc(ctx)
+	}
+	return nil, nil
+}
 func (m *MockClient) GetSecurityGroup(ctx context.Context, id egov3.UUID) (*egov3.SecurityGroup, error) {
 	if m.GetSecurityGroupFunc != nil {
 		return m.GetSecurityGroupFunc(ctx, id)

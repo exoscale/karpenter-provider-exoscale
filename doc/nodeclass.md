@@ -16,6 +16,7 @@ kind: ExoscaleNodeClass
   - [`spec.securityGroupSelectorTerms`](#specsecurityGroupSelectorTerms)
   - [`spec.antiAffinityGroupSelectorTerms`](#specantiAffinityGroupSelectorTerms)
   - [`spec.privateNetworkSelectorTerms`](#specprivateNetworkSelectorTerms)
+  - [`spec.elasticIPSelectorTerms`](#specelasticIPSelectorTerms)
   - [`spec.kubelet`](#speckubelet)
   - [`spec.userData`](#specuserData)
 - [Status Fields](#status-fields)
@@ -160,6 +161,38 @@ spec:
 
 ---
 
+### `spec.elasticIPSelectorTerms`
+
+**Type**: List of selector terms
+**Max items**: 10
+
+Selects [Exoscale Elastic IPs](https://www.exoscale.com/elastic-ip/) to attach to instances.
+
+Each term must specify exactly one of `id` or `name`.
+
+- `id` — the UUID of the EIP.
+- `name` — the public IP address of the EIP. Elastic IPs do not have a `name`
+  attribute in the Exoscale API, so the reconciler matches this value against
+  the EIP's `IP` field (e.g. `"203.0.113.42"`).
+
+```yaml
+spec:
+  elasticIPSelectorTerms:
+    - id: "40000000-0000-0000-0000-000000000001"
+    - name: "203.0.113.42"
+```
+
+EIPs are attached to every instance launched from this NodeClass right after creation. The list of resolved EIP IDs is published in `status.elasticIPs` and is part of the drift detection: a change to the resolved set triggers Karpenter to roll the affected nodes.
+
+> [!NOTE]
+> The IAM role bound to `EXOSCALE_API_KEY` must allow the EIP operations used
+> by the provider: `list-elastic-ips`, `get-elastic-ip`, and
+> `attach-instance-to-elastic-ip`. See the [Required IAM policy](iam.md) for
+> a ready-to-paste least-privilege policy covering all operations the provider
+> uses (including EIPs).
+
+---
+
 ### `spec.kubelet`
 
 **Type**: Object
@@ -289,3 +322,4 @@ The `status` subresource is managed by the controller and reflects the resolved 
 | `securityGroups`     | List of Strings  | Resolved security group IDs after applying selectors.      |
 | `antiAffinityGroups` | List of Strings  | Resolved anti-affinity group IDs after applying selectors. |
 | `privateNetworks`    | List of Strings  | Resolved private network IDs after applying selectors.     |
+| `elasticIPs`         | List of Strings  | Resolved Elastic IP IDs after applying selectors.          |

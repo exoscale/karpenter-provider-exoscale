@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.1
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: exoscalenodeclasses.karpenter.exoscale.com
 spec:
   group: karpenter.exoscale.com
@@ -79,6 +79,24 @@ spec:
                 maximum: 8000
                 minimum: 10
                 type: integer
+              elasticIPSelectorTerms:
+                description: |-
+                  ElasticIPSelectorTerms is a list of selector terms to select elastic IPs
+                  to attach to every instance launched from this NodeClass.
+                items:
+                  description: SelectorTerms defines a way to select resources by
+                    ID or Name
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of id or name must be specified
+                    rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
+                maxItems: 10
+                type: array
               enableIPv6:
                 description: EnableIPv6 indicates whether to enable IPv6 for instances
                   created with this NodeClass
@@ -312,6 +330,12 @@ spec:
                   - status
                   - type
                   type: object
+                type: array
+              elasticIPs:
+                description: Computed ElasticIP IDs after applying selectors
+                items:
+                  pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                  type: string
                 type: array
               privateNetworks:
                 description: Computed PrivateNetwork IDs after applying selectors

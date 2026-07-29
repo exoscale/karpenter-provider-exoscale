@@ -101,6 +101,12 @@ type ExoscaleNodeClassSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworkSelectorTerms []SelectorTerms `json:"privateNetworkSelectorTerms,omitempty"`
 
+	// ElasticIPSelectorTerms is a list of selector terms to select elastic IPs
+	// to attach to every instance launched from this NodeClass.
+	// +optional
+	// +kubebuilder:validation:MaxItems=10
+	ElasticIPSelectorTerms []SelectorTerms `json:"elasticIPSelectorTerms,omitempty"`
+
 	// Kubelet contains configuration for kubelet
 	// +optional
 	Kubelet KubeletConfiguration `json:"kubelet,omitempty"`
@@ -227,6 +233,11 @@ type ExoscaleNodeClassStatus struct {
 	// Computed PrivateNetwork IDs after applying selectors
 	// +optional
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
+
+	// Computed ElasticIP IDs after applying selectors
+	// +optional
+	// +kubebuilder:validation:items:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+	ElasticIPs []string `json:"elasticIPs,omitempty"`
 }
 
 // ExoscaleNodeClassList contains a list of ExoscaleNodeClass

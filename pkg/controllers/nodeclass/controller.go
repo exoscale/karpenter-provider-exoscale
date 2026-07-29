@@ -32,6 +32,7 @@ const (
 	ConditionSecurityGroupsResolved     = "SecurityGroupsResolved"
 	ConditionAntiAffinityGroupsResolved = "AntiAffinityGroupsResolved"
 	ConditionPrivateNetworksResolved    = "PrivateNetworksResolved"
+	ConditionElasticIPsResolved         = "ElasticIPsResolved"
 )
 
 // ExoscaleClient is an interface for interacting with the Exoscale API
@@ -40,11 +41,14 @@ type ExoscaleClient interface {
 	GetSecurityGroup(ctx context.Context, id egov3.UUID) (*egov3.SecurityGroup, error)
 	GetAntiAffinityGroup(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
 	GetPrivateNetwork(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
+	GetElasticIP(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error)
 	ListInstances(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
 	DeleteInstance(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
 	ListSecurityGroups(ctx context.Context, opts ...egov3.ListSecurityGroupsOpt) (*egov3.ListSecurityGroupsResponse, error)
 	ListAntiAffinityGroups(ctx context.Context) (*egov3.ListAntiAffinityGroupsResponse, error)
 	ListPrivateNetworks(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error)
+	ListElasticIPS(ctx context.Context) (*egov3.ListElasticIPSResponse, error)
+	AttachInstanceToElasticIP(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToElasticIPRequest) (*egov3.Operation, error)
 }
 
 type ExoscaleNodeClassReconciler struct {
@@ -58,6 +62,7 @@ type ExoscaleNodeClassReconciler struct {
 	aagCache         utils.ResourceCache[egov3.AntiAffinityGroup]
 	sgCache          utils.ResourceCache[egov3.SecurityGroup]
 	pnCache          utils.ResourceCache[egov3.PrivateNetwork]
+	eipCache         utils.ResourceCache[egov3.ElasticIP]
 }
 
 // +kubebuilder:rbac:groups=karpenter.exoscale.com,resources=exoscalenodeclasses,verbs=get;list;watch;create;update;patch;delete
@@ -145,6 +150,12 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 			condition:    ConditionAntiAffinityGroupsResolved,
 		},
 		{
+			reconcileFn:  r.reconcileElasticIPs,
+			reason:       "ElasticIPResolutionFailed",
+			errorMessage: "Elastic IP resolution failed",
+			condition:    ConditionElasticIPsResolved,
+		},
+		{
 			reconcileFn:  r.reconcilePrivateNetworks,
 			reason:       "PrivateNetworkResolutionFailed",
 			errorMessage: "Private network resolution failed",
@@ -169,7 +180,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	}
 
 	if nodeClass.StatusConditions().IsTrue(ConditionTemplateResolved, ConditionSecurityGroupsResolved, ConditionAntiAffinityGroupsResolved,
-		ConditionPrivateNetworksResolved) {
+		ConditionPrivateNetworksResolved, ConditionElasticIPsResolved) {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 		r.Recorder.Event(nodeClass, "Normal", "Ready", "NodeClass is ready for use")
 	}

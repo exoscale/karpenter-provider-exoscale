@@ -29,6 +29,7 @@ const (
 	DriftReasonAntiAffinityGroups cloudprovider.DriftReason = "AntiAffinityGroups"
 	DriftReasonSecurityGroups     cloudprovider.DriftReason = "SecurityGroups"
 	DriftReasonPrivateNetworks    cloudprovider.DriftReason = "PrivateNetworks"
+	DriftReasonElasticIPs         cloudprovider.DriftReason = "ElasticIPs"
 	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
 )
 
@@ -279,7 +280,14 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return DriftReasonPrivateNetworks, nil
 	}
 
-	// fix instance labels drift
+	left, right = lo.Difference(nodeClass.Status.ElasticIPs, inst.ElasticIPs)
+	if len(left) != 0 || len(right) != 0 {
+		log.FromContext(ctx).Info("detected elastic IPs drift", "reason", DriftReasonElasticIPs)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance elastic IPs drift detected: nodeClass ElasticIPs %v != instance ElasticIPs %v", nodeClass.Status.ElasticIPs, inst.ElasticIPs))
+		return DriftReasonElasticIPs, nil
+	}
+
 	expectedInstanceLabels := c.instanceProvider.GenerateInstanceLabels(nodeClaim)
 	if !reflect.DeepEqual(expectedInstanceLabels, inst.Labels) {
 		log.FromContext(ctx).Info("detected instance labels drift, fixing them", "reason", "Labels")

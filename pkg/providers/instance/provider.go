@@ -166,6 +166,19 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		}
 	}
 
+	if len(nodeClass.Status.ElasticIPs) > 0 {
+		if err := p.attachElasticIPs(ctx, createdInstance.ID, nodeClass.Status.ElasticIPs); err != nil {
+			log.FromContext(ctx).Error(err, "failed to attach elastic IPs, cleaning up instance")
+
+			deleteErr := p.Delete(ctx, createdInstance.ID.String())
+			if deleteErr != nil {
+				log.FromContext(ctx).Error(deleteErr, "failed to delete instance after elastic IP attachment failure")
+			}
+
+			return nil, fmt.Errorf("failed to attach elastic IPs to instance %s: %w", createdInstance.ID.String(), err)
+		}
+	}
+
 	instanceType, err = p.instanceTypeProvider.GetByName(instanceTypeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get instance type %s: %w", createdInstance.InstanceType.ID, err)
@@ -343,6 +356,51 @@ func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleN
 	return userData, nil
 }
 
+func (p *Provider) attachElasticIPs(ctx context.Context, instanceID egov3.UUID, eipIDs []string) error {
+	for _, eipID := range eipIDs {
+		if err := p.attachElasticIP(ctx, instanceID, eipID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Provider) attachElasticIP(ctx context.Context, instanceID egov3.UUID, eipID string) error {
+	const maxAttempts = 30
+
+	// The Exoscale API returns 400 Bad Request when AttachInstanceToElasticIP
+	// is called on an instance that has just been created and is still in
+	// the `starting` state. Retry with a short backoff so we don't fail the
+	// NodeClaim just because the API hasn't observed the state transition yet.
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attachCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
+		operation, err := p.exoClient.AttachInstanceToElasticIP(attachCtx, egov3.UUID(eipID), egov3.AttachInstanceToElasticIPRequest{
+			Instance: &egov3.InstanceTarget{ID: instanceID},
+		})
+		cancel()
+		if err != nil {
+			lastErr = err
+			if stderrors.Is(err, egov3.ErrBadRequest) {
+				log.FromContext(ctx).V(1).Info("elastic IP attach returned 400, retrying",
+					"elasticIPID", eipID, "attempt", attempt, "maxAttempts", maxAttempts)
+				if attempt < maxAttempts {
+					time.Sleep(1 * time.Second)
+					continue
+				}
+			}
+			return fmt.Errorf("failed to attach elastic IP %s: %w", eipID, err)
+		}
+		if operation != nil {
+			_, err = p.exoClient.Wait(ctx, operation, egov3.OperationStateSuccess)
+			if err != nil {
+				return fmt.Errorf("failed waiting for elastic IP attachment %s: %w", eipID, err)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("failed to attach elastic IP %s after %d attempts: %w", eipID, maxAttempts, lastErr)
+}
 func (p *Provider) attachPrivateNetworks(ctx context.Context, instanceID egov3.UUID, networkIDs []string) error {
 	for _, networkID := range networkIDs {
 		if err := p.attachPrivateNetwork(ctx, instanceID, networkID); err != nil {
