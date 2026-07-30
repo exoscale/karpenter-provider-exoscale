@@ -13,7 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -179,7 +179,7 @@ func TestReconcileTemplate(t *testing.T) {
 				Scheme:           scheme,
 				ExoscaleClient:   mockExoClient,
 				TemplateResolver: mockResolver,
-				Recorder:         record.NewFakeRecorder(10),
+				Recorder:         events.NewFakeRecorder(10),
 				Zone:             "ch-gva-2",
 			}
 
@@ -442,7 +442,7 @@ func TestReconcileSecurityGroups(t *testing.T) {
 				Client:         fakeClient,
 				Scheme:         scheme,
 				ExoscaleClient: mockExoClient,
-				Recorder:       record.NewFakeRecorder(10),
+				Recorder:       events.NewFakeRecorder(10),
 				Zone:           "ch-gva-2",
 			}
 
@@ -726,7 +726,7 @@ func TestReconcileAntiAffinityGroups(t *testing.T) {
 				Client:         fakeClient,
 				Scheme:         scheme,
 				ExoscaleClient: mockExoClient,
-				Recorder:       record.NewFakeRecorder(10),
+				Recorder:       events.NewFakeRecorder(10),
 				Zone:           "ch-gva-2",
 			}
 
@@ -1004,7 +1004,7 @@ func TestReconcilePrivateNetworks(t *testing.T) {
 				Client:         fakeClient,
 				Scheme:         scheme,
 				ExoscaleClient: mockExoClient,
-				Recorder:       record.NewFakeRecorder(10),
+				Recorder:       events.NewFakeRecorder(10),
 				Zone:           "ch-gva-2",
 			}
 

@@ -12,7 +12,6 @@ func init() {
 	scheme.Scheme.AddKnownTypes(GroupVersion,
 		&ExoscaleNodeClass{},
 		&ExoscaleNodeClassList{})
-	SchemeBuilder.Register(&ExoscaleNodeClass{}, &ExoscaleNodeClassList{})
 }
 
 // ExoscaleNodeClass is the Schema for the ExoscaleNodeClass API

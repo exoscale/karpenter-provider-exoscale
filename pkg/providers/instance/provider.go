@@ -212,9 +212,9 @@ func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {
 }
 
 func (p *Provider) List(ctx context.Context) ([]*Instance, error) {
-	encodedLabels, err := labelfilter.EncodeFilter(labelfilter.KarpenterFilter(p.options.ClusterID))
+	encodedLabels, err := labelfilter.KarpenterFilter(p.options.ClusterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode labels filter: %w", err)
+		return nil, fmt.Errorf("failed to build labels filter: %w", err)
 	}
 
 	instances, err := p.exoClient.ListInstances(ctx, egov3.ListInstancesWithLabels(encodedLabels))

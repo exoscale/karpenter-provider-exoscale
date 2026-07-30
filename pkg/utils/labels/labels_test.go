@@ -2,6 +2,7 @@ package labels
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
@@ -9,80 +10,40 @@ import (
 
 func TestKarpenterFilter(t *testing.T) {
 	clusterID := "cluster-a-id"
-	got := KarpenterFilter(clusterID)
+	got, err := KarpenterFilter(clusterID)
+	if err != nil {
+		t.Fatalf("KarpenterFilter() unexpected error = %v", err)
+	}
 
-	expected := map[string]string{
+	decoded, err := url.QueryUnescape(got)
+	if err != nil {
+		t.Fatalf("QueryUnescape() unexpected error = %v", err)
+	}
+
+	pairs := strings.Split(decoded, " ")
+	if len(pairs) != 2 {
+		t.Fatalf("decoded filter has %d pairs, want 2 (raw=%q)", len(pairs), decoded)
+	}
+
+	gotMap := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		kv := strings.SplitN(p, "=", 2)
+		if len(kv) != 2 {
+			t.Fatalf("decoded pair %q is not k=v form", p)
+		}
+		gotMap[kv[0]] = kv[1]
+	}
+
+	want := map[string]string{
 		constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
 		constants.InstanceLabelClusterID: clusterID,
 	}
-
-	if len(got) != len(expected) {
-		t.Fatalf("KarpenterFilter() returned %d entries, want %d", len(got), len(expected))
+	if len(gotMap) != len(want) {
+		t.Fatalf("decoded filter has %d entries, want %d", len(gotMap), len(want))
 	}
-	for k, v := range expected {
-		if got[k] != v {
-			t.Errorf("KarpenterFilter()[%q] = %q, want %q", k, got[k], v)
+	for k, v := range want {
+		if gotMap[k] != v {
+			t.Errorf("decoded[%q] = %q, want %q", k, gotMap[k], v)
 		}
-	}
-}
-
-func TestEncodeFilter(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   map[string]string
-		want    string
-		wantErr bool
-	}{
-		{
-			name:  "empty map",
-			input: nil,
-			want:  "",
-		},
-		{
-			name:  "single key",
-			input: map[string]string{"foo": "bar"},
-			want:  url.QueryEscape(`{"foo":"bar"}`),
-		},
-		{
-			name: "multiple keys with special characters",
-			input: map[string]string{
-				"exoscale.com/managed-by": "karpenter",
-				"exoscale.com/cluster-id": "cluster/with spaces",
-			},
-			want: url.QueryEscape(`{"exoscale.com/cluster-id":"cluster/with spaces","exoscale.com/managed-by":"karpenter"}`),
-		},
-		{
-			name:  "values with quotes and unicode",
-			input: map[string]string{"k": `a"b\u00e9`},
-			want:  url.QueryEscape(`{"k":"a\"b\\u00e9"}`),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := EncodeFilter(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("EncodeFilter() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if got != tt.want {
-				t.Errorf("EncodeFilter() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestEncodeFilter_KarpenterFilterIsRoundTripSafe(t *testing.T) {
-	encoded, err := EncodeFilter(KarpenterFilter("cluster-a-id"))
-	if err != nil {
-		t.Fatalf("EncodeFilter() unexpected error: %v", err)
-	}
-
-	decoded, err := url.QueryUnescape(encoded)
-	if err != nil {
-		t.Fatalf("QueryUnescape() unexpected error: %v", err)
-	}
-
-	if decoded != `{"exoscale.com/cluster-id":"cluster-a-id","exoscale.com/managed-by":"karpenter"}` {
-		t.Errorf("decoded filter = %q, want exact JSON", decoded)
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,7 +30,7 @@ const (
 type Controller struct {
 	client.Client
 	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -159,14 +159,14 @@ func (r *Controller) cleanupToken(ctx context.Context, secret *v1.Secret) (recon
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("token", secret.Name))
 	log.FromContext(ctx).Info("cleaning up bootstrap token")
 
-	r.Recorder.Eventf(secret, "Normal", "TokenCleanup", "Cleaning up bootstrap token")
+	r.Recorder.Eventf(secret, nil, "Normal", "TokenCleanup", "CleanupFailed", "Cleaning up bootstrap token")
 
 	if err := r.Delete(ctx, secret); err != nil {
 		if errors.IsNotFound(err) {
 			return reconcile.Result{}, nil
 		}
 		log.FromContext(ctx).Error(err, "failed to delete bootstrap token")
-		r.Recorder.Eventf(secret, "Warning", "CleanupFailed", "Failed to cleanup token: %v", err)
+		r.Recorder.Eventf(secret, nil, "Warning", "CleanupFailed", "CleanupFailed", "Failed to cleanup token: %v", err)
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
