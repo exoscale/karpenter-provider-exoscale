@@ -12,11 +12,12 @@ import (
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
+	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -56,7 +57,7 @@ type ExoscaleNodeClassReconciler struct {
 	Scheme           *runtime.Scheme
 	ExoscaleClient   ExoscaleClient
 	TemplateResolver template.Resolver
-	Recorder         record.EventRecorder
+	Recorder         events.EventRecorder
 	ClusterID        string
 	Zone             string
 	aagCache         utils.ResourceCache[egov3.AntiAffinityGroup]
@@ -107,7 +108,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	if err := r.validateSpec(nodeClass); err != nil {
 		log.FromContext(ctx).Error(err, "validation failed")
 		nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ValidationFailed", "Validation failed: "+err.Error())
-		r.Recorder.Eventf(nodeClass, "Warning", "ValidationFailed", "NodeClass validation failed: %v", err)
+		r.Recorder.Eventf(nodeClass, nil, "Warning", "ValidationFailed", "ValidationFailed", "NodeClass validation failed: %v", err)
 
 		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 			if errors.IsConflict(err) {
@@ -120,7 +121,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
-	r.Recorder.Event(nodeClass, "Normal", "ValidationSucceeded", "NodeClass field validation succeeded")
+	r.Recorder.Eventf(nodeClass, nil, "Normal", "ValidationSucceeded", "ValidationSucceeded", "NodeClass field validation succeeded")
 
 	// Reconcile resources from Exoscale API now and resolve them into status fields
 	type reconcileStep struct {
@@ -172,7 +173,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 			// It will only record the first failure event during reconciliation loop
 			// but we have all errors on each condition
 			nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ReconcilingFailed", "Reconciling node class resources failed")
-			r.Recorder.Eventf(nodeClass, "Warning", step.reason, "%s: %v", step.errorMessage, err)
+			r.Recorder.Eventf(nodeClass, nil, "Warning", step.reason, step.reason, "%s: %v", step.errorMessage, err)
 			continue
 		}
 
@@ -182,7 +183,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	if nodeClass.StatusConditions().IsTrue(ConditionTemplateResolved, ConditionSecurityGroupsResolved, ConditionAntiAffinityGroupsResolved,
 		ConditionPrivateNetworksResolved, ConditionElasticIPsResolved) {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
-		r.Recorder.Event(nodeClass, "Normal", "Ready", "NodeClass is ready for use")
+		r.Recorder.Eventf(nodeClass, nil, "Normal", "Ready", "Ready", "NodeClass is ready for use")
 	}
 
 	// if resource is different, patch it
@@ -235,14 +236,14 @@ func (r *ExoscaleNodeClassReconciler) handleDeletion(ctx context.Context, nodeCl
 
 	if activeCount > 0 {
 		log.FromContext(ctx).Info("NodeClass still in use by active NodeClaims", "activeNodeClaims", activeCount)
-		r.Recorder.Eventf(nodeClass, "Warning", "DeletionBlocked",
+		r.Recorder.Eventf(nodeClass, nil, "Warning", "DeletionBlocked", "DeletionBlocked",
 			"Cannot delete NodeClass: %d active NodeClaim(s) still using this NodeClass", activeCount)
 		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	if err := r.cleanupOrphanedInstances(ctx, nodeClass); err != nil {
 		log.FromContext(ctx).Error(err, "failed to cleanup orphaned instances")
-		r.Recorder.Eventf(nodeClass, "Warning", "CleanupFailed", "Failed to cleanup orphaned instances: %v", err)
+		r.Recorder.Eventf(nodeClass, nil, "Warning", "CleanupFailed", "CleanupFailed", "Failed to cleanup orphaned instances: %v", err)
 	}
 
 	nodeClass.Finalizers = slices.DeleteFunc(nodeClass.Finalizers, func(s string) bool {
@@ -253,7 +254,7 @@ func (r *ExoscaleNodeClassReconciler) handleDeletion(ctx context.Context, nodeCl
 		return reconcile.Result{}, err
 	}
 
-	r.Recorder.Event(nodeClass, "Normal", "Deleted", "ExoscaleNodeClass deleted successfully")
+	r.Recorder.Eventf(nodeClass, nil, "Normal", "Deleted", "Deleted", "ExoscaleNodeClass deleted successfully")
 
 	return reconcile.Result{}, nil
 }
@@ -266,7 +267,14 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 		return fmt.Errorf("cluster ID is not configured")
 	}
 
-	instances, err := r.ExoscaleClient.ListInstances(ctx)
+	encodedLabels, err := labelfilter.KarpenterFilter(r.ClusterID)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to build labels filter")
+		return fmt.Errorf("failed to build labels filter: %w", err)
+	}
+
+	instances, err := r.ExoscaleClient.ListInstances(ctx, egov3.ListInstancesWithLabels(encodedLabels))
+
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to list instances")
 		return fmt.Errorf("failed to list instances: %w", err)
@@ -307,7 +315,7 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 			"instanceName", inst.Name)
 		orphanedCount++
 
-		r.Recorder.Eventf(nodeClass, "Normal", "OrphanedInstanceDeleted",
+		r.Recorder.Eventf(nodeClass, nil, "Normal", "OrphanedInstanceDeleted", "OrphanedInstanceDeleted",
 			"Deleted orphaned inst %s (NodeClaim: %s)", inst.Name, nodeClaimName)
 	}
 

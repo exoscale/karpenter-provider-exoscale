@@ -112,7 +112,7 @@ func registerControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProv
 	if err := (&bootstraptoken.Controller{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("bootstrap-token-controller"),
+		Recorder: mgr.GetEventRecorder("bootstrap-token-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create bootstrap token controller: %w", err)
 	}
@@ -122,7 +122,7 @@ func registerControllers(mgr ctrl.Manager, exoClient *egov3.Client, instanceProv
 		Scheme:           mgr.GetScheme(),
 		ExoscaleClient:   exoClient,
 		TemplateResolver: templateResolver,
-		Recorder:         mgr.GetEventRecorderFor("nodeclass-controller"),
+		Recorder:         mgr.GetEventRecorder("nodeclass-controller"),
 		ClusterID:        clusterID,
 		Zone:             zone,
 	}).SetupWithManager(mgr); err != nil {

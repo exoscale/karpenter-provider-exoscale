@@ -2,6 +2,7 @@ package nodeclass
 
 import (
 	"context"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,10 +11,11 @@ import (
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers"
+	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/karpenter/pkg/apis"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -459,13 +461,19 @@ func TestCleanupOrphanedInstancesOnlyDeletesInstancesForCurrentCluster(t *testin
 		Build()
 
 	deletedIDs := make([]egov3.UUID, 0)
+	var capturedLabels string
 	reconciler := &ExoscaleNodeClassReconciler{
 		Client:    fakeClient,
 		Scheme:    scheme,
-		Recorder:  record.NewFakeRecorder(10),
+		Recorder:  events.NewFakeRecorder(10),
 		ClusterID: "cluster-b-id",
 		ExoscaleClient: &providers.MockClient{
 			ListInstancesFunc: func(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error) {
+				q := url.Values{}
+				for _, opt := range opts {
+					opt(q)
+				}
+				capturedLabels = q.Get("labels")
 				return &egov3.ListInstancesResponse{
 					Instances: []egov3.ListInstancesResponseInstances{
 						{
@@ -508,6 +516,14 @@ func TestCleanupOrphanedInstancesOnlyDeletesInstancesForCurrentCluster(t *testin
 	err := reconciler.cleanupOrphanedInstances(context.Background(), nodeClass)
 	if err != nil {
 		t.Fatalf("cleanupOrphanedInstances() unexpected error = %v", err)
+	}
+
+	wantEncodedLabels, err := labelfilter.KarpenterFilter("cluster-b-id")
+	if err != nil {
+		t.Fatalf("KarpenterFilter() unexpected error = %v", err)
+	}
+	if !equalLabelsFilter(capturedLabels, wantEncodedLabels) {
+		t.Errorf("ListInstances labels filter = %q, want %q (order-independent)", capturedLabels, wantEncodedLabels)
 	}
 
 	wantDeleted := []egov3.UUID{
@@ -627,4 +643,25 @@ func TestOrphanedNodeClaimName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func equalLabelsFilter(a, b string) bool {
+	if a == b {
+		return true
+	}
+	aPairs := strings.Split(a, " ")
+	bPairs := strings.Split(b, " ")
+	if len(aPairs) != len(bPairs) {
+		return false
+	}
+	aSet := make(map[string]struct{}, len(aPairs))
+	for _, p := range aPairs {
+		aSet[p] = struct{}{}
+	}
+	for _, p := range bPairs {
+		if _, ok := aSet[p]; !ok {
+			return false
+		}
+	}
+	return true
 }

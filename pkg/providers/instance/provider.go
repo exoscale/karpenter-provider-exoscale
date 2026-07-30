@@ -13,6 +13,7 @@ import (
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instancetype"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata"
+	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -211,7 +212,12 @@ func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {
 }
 
 func (p *Provider) List(ctx context.Context) ([]*Instance, error) {
-	instances, err := p.exoClient.ListInstances(ctx)
+	encodedLabels, err := labelfilter.KarpenterFilter(p.options.ClusterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build labels filter: %w", err)
+	}
+
+	instances, err := p.exoClient.ListInstances(ctx, egov3.ListInstancesWithLabels(encodedLabels))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list instances: %w", err)
 	}
