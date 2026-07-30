@@ -8,7 +8,7 @@ Changelog
 - fix(deps): update go-toml to v2.4.3 (#140)
 - feat(deps): update module sigs.k8s.io/karpenter to v1.14.0 (#134)
 - fix(deps): update module sigs.k8s.io/controller-runtime to v0.24.1 (#99)
-
+- feat(perf): filter listed instances when calling compute API (#150)
 1.36.1
 ------------------
 

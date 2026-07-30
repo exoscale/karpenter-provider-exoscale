@@ -12,6 +12,7 @@ import (
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
+	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -266,7 +267,14 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 		return fmt.Errorf("cluster ID is not configured")
 	}
 
-	instances, err := r.ExoscaleClient.ListInstances(ctx)
+	encodedLabels, err := labelfilter.EncodeFilter(labelfilter.KarpenterFilter(r.ClusterID))
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to encode labels filter")
+		return fmt.Errorf("failed to encode labels filter: %w", err)
+	}
+
+	instances, err := r.ExoscaleClient.ListInstances(ctx, egov3.ListInstancesWithLabels(encodedLabels))
+
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to list instances")
 		return fmt.Errorf("failed to list instances: %w", err)

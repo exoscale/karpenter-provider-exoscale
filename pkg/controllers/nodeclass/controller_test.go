@@ -2,6 +2,7 @@ package nodeclass
 
 import (
 	"context"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers"
+	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -459,6 +461,7 @@ func TestCleanupOrphanedInstancesOnlyDeletesInstancesForCurrentCluster(t *testin
 		Build()
 
 	deletedIDs := make([]egov3.UUID, 0)
+	var capturedLabels string
 	reconciler := &ExoscaleNodeClassReconciler{
 		Client:    fakeClient,
 		Scheme:    scheme,
@@ -466,6 +469,11 @@ func TestCleanupOrphanedInstancesOnlyDeletesInstancesForCurrentCluster(t *testin
 		ClusterID: "cluster-b-id",
 		ExoscaleClient: &providers.MockClient{
 			ListInstancesFunc: func(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error) {
+				q := url.Values{}
+				for _, opt := range opts {
+					opt(q)
+				}
+				capturedLabels = q.Get("labels")
 				return &egov3.ListInstancesResponse{
 					Instances: []egov3.ListInstancesResponseInstances{
 						{
@@ -508,6 +516,14 @@ func TestCleanupOrphanedInstancesOnlyDeletesInstancesForCurrentCluster(t *testin
 	err := reconciler.cleanupOrphanedInstances(context.Background(), nodeClass)
 	if err != nil {
 		t.Fatalf("cleanupOrphanedInstances() unexpected error = %v", err)
+	}
+
+	wantEncodedLabels, err := labelfilter.EncodeFilter(labelfilter.KarpenterFilter("cluster-b-id"))
+	if err != nil {
+		t.Fatalf("EncodeFilter() unexpected error = %v", err)
+	}
+	if capturedLabels != wantEncodedLabels {
+		t.Errorf("ListInstances labels filter = %q, want %q", capturedLabels, wantEncodedLabels)
 	}
 
 	wantDeleted := []egov3.UUID{
