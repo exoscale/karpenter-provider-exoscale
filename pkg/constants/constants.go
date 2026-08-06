@@ -14,6 +14,12 @@ const (
 	AnnotationTokenCreated   = "exoscale.com/token-created"
 	LabelTokenProvider       = "exoscale.com/token-provider"
 
+	// AnnotationContainerRegistryHash records the SHA256 hash of the
+	// resolved container-registry configuration (including referenced
+	// Secret contents) on a NodeClaim, so the cloudprovider can detect
+	// drift when a referenced Secret is rotated.
+	AnnotationContainerRegistryHash = "karpenter.exoscale.com/container-registry-hash"
+
 	LabelInstanceFamily = "exoscale.com/instance-family"
 	LabelInstanceSize   = "exoscale.com/instance-size"
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/awslabs/operatorpkg/status"
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instancetype"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
@@ -31,6 +32,7 @@ const (
 	DriftReasonPrivateNetworks    cloudprovider.DriftReason = "PrivateNetworks"
 	DriftReasonElasticIPs         cloudprovider.DriftReason = "ElasticIPs"
 	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
+	DriftReasonUserDataChanged    cloudprovider.DriftReason = "UserDataChanged"
 )
 
 type CloudProvider struct {
@@ -286,6 +288,18 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
 			fmt.Sprintf("Instance elastic IPs drift detected: nodeClass ElasticIPs %v != instance ElasticIPs %v", nodeClass.Status.ElasticIPs, inst.ElasticIPs))
 		return DriftReasonElasticIPs, nil
+	}
+
+	expected := nodeClass.Status.ContainerRegistryHash
+	got := ""
+	if nodeClaim.Annotations != nil {
+		got = nodeClaim.Annotations[constants.AnnotationContainerRegistryHash]
+	}
+	if got != expected {
+		log.FromContext(ctx).Info("detected user-data drift", "reason", DriftReasonUserDataChanged)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("User data drift detected: nodeClaim hash %q != nodeClass hash %q", got, expected))
+		return DriftReasonUserDataChanged, nil
 	}
 
 	expectedInstanceLabels := c.instanceProvider.GenerateInstanceLabels(nodeClaim)

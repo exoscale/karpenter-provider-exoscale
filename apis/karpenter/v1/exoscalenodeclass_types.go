@@ -3,6 +3,7 @@ package v1
 
 import (
 	"github.com/awslabs/operatorpkg/status"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 )
@@ -53,6 +54,8 @@ type SelectorTerms struct {
 // ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
 // +kubebuilder:validation:XValidation:rule="!has(self.kubelet) || !has(self.kubelet.imageGCHighThresholdPercent) || !has(self.kubelet.imageGCLowThresholdPercent) || self.kubelet.imageGCLowThresholdPercent < self.kubelet.imageGCHighThresholdPercent",message="imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent"
 // +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
+// +kubebuilder:validation:XValidation:rule="!has(self.containerRegistry) || (self.containerRegistry.mirrors.all(m, m.endpoints.all(e, !has(e.tlsSecretRef) || size(e.tlsSecretRef.name) > 0)) && (!has(self.containerRegistry.credentials) || self.containerRegistry.credentials.all(c, [has(c.basic), has(c.auth), has(c.identityToken)].filter(x, x).size() == 1)))",message="containerRegistry.mirrors[*].endpoints[*].tlsSecretRef.name must be non-empty when set, and each credentials entry must declare exactly one of basic/auth/identityToken"
+// +kubebuilder:validation:XValidation:rule="!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))",message="userData and containerRegistry are mutually exclusive; configure container registry via the structured containerRegistry field only"
 type ExoscaleNodeClassSpec struct {
 	// +optional
 	// +kubebuilder:validation:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -122,6 +125,68 @@ type ExoscaleNodeClassSpec struct {
 	// cluster-certificate) will always take precedence over user-provided values.
 	// +optional
 	UserData *string `json:"userData,omitempty"`
+
+	// ContainerRegistry configures per-registry containerd mirrors and
+	// pull credentials. All credentials and TLS material must be sourced
+	// from Kubernetes Secrets in the `kube-system` namespace.
+	// +optional
+	ContainerRegistry *ContainerRegistrySpec `json:"containerRegistry,omitempty"`
+}
+
+type ContainerRegistrySpec struct {
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	Mirrors []ContainerRegistryMirror `json:"mirrors,omitempty"`
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
+}
+
+type ContainerRegistryMirror struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9._-]+$"
+	Registry string `json:"registry"`
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	Endpoints []ContainerRegistryMirrorEndpoint `json:"endpoints"`
+}
+
+type ContainerRegistryMirrorEndpoint struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern="^https?://.+"
+	URL string `json:"url"`
+	// +optional
+	TLSSecretRef *v1.SecretReference `json:"tlsSecretRef,omitempty"`
+	// +optional
+	OverridePath bool `json:"overridePath,omitempty"`
+	// +optional
+	SkipVerify bool `json:"skipVerify,omitempty"`
+}
+
+type ContainerRegistryCredential struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9._-]+$"
+	Registry string `json:"registry"`
+	// +optional
+	Basic *ContainerRegistryBasicAuth `json:"basic,omitempty"`
+	// +optional
+	Auth *ContainerRegistryAuth `json:"auth,omitempty"`
+	// +optional
+	IdentityToken *ContainerRegistryIdentityToken `json:"identityToken,omitempty"`
+}
+
+type ContainerRegistryBasicAuth struct {
+	// +kubebuilder:validation:Required
+	UsernameSecretRef v1.SecretKeySelector `json:"usernameSecretRef"`
+	// +kubebuilder:validation:Required
+	PasswordSecretRef v1.SecretKeySelector `json:"passwordSecretRef"`
+}
+
+type ContainerRegistryAuth struct {
+	AuthSecretRef v1.SecretKeySelector `json:"authSecretRef"`
+}
+type ContainerRegistryIdentityToken struct {
+	IdentityTokenSecretRef v1.SecretKeySelector `json:"identityTokenSecretRef"`
 }
 
 type KubeletConfiguration struct {
@@ -237,6 +302,12 @@ type ExoscaleNodeClassStatus struct {
 	// +optional
 	// +kubebuilder:validation:items:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 	ElasticIPs []string `json:"elasticIPs,omitempty"`
+
+	// ContainerRegistryHash is a SHA256 of the resolved container registry
+	// configuration (including referenced Secret contents). It is used for
+	// drift detection when a referenced Secret is rotated.
+	// +optional
+	ContainerRegistryHash string `json:"containerRegistryHash,omitempty"`
 }
 
 // ExoscaleNodeClassList contains a list of ExoscaleNodeClass

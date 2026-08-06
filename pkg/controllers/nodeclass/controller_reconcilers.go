@@ -2,10 +2,14 @@ package nodeclass
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -186,5 +190,76 @@ func (r *ExoscaleNodeClassReconciler) reconcilePrivateNetworks(ctx context.Conte
 	}
 
 	nodeClass.Status.PrivateNetworks = privNetIDs
+	return nil
+}
+
+// reconcileContainerRegistrySecrets validates every Secret referenced from
+// spec.containerRegistry (always resolved in the kube-system namespace),
+// computes a deterministic hash over the resolved values and stores it in
+// nodeClass.Status.ContainerRegistryHash. Secret loading is delegated to the
+// shared userdata.RegistryResolver so the provider and the reconciler apply
+// identical validation rules.
+func (r *ExoscaleNodeClassReconciler) reconcileContainerRegistrySecrets(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
+
+	spec := nodeClass.Spec.ContainerRegistry
+	if spec == nil {
+		nodeClass.Status.ContainerRegistryHash = ""
+		return nil
+	}
+
+	resolver := userdata.NewRegistryResolver(r.Client)
+	resolved, err := resolver.Resolve(ctx, spec)
+	if err != nil {
+		return err
+	}
+
+	type entry struct {
+		key   string
+		value []byte
+	}
+	var entries []entry
+
+	for _, mirror := range resolved.Mirrors {
+		for _, ep := range mirror.Endpoints {
+			if ep.TLS == nil {
+				continue
+			}
+			if len(ep.TLS.CA) > 0 {
+				entries = append(entries, entry{
+					key:   fmt.Sprintf("mirror/%s/tls/%s/ca.crt", mirror.Registry, ep.URL),
+					value: ep.TLS.CADec,
+				})
+			}
+			if len(ep.TLS.Cert) > 0 {
+				entries = append(entries, entry{
+					key:   fmt.Sprintf("mirror/%s/tls/%s/tls.crt", mirror.Registry, ep.URL),
+					value: ep.TLS.CertDec,
+				})
+				entries = append(entries, entry{
+					key:   fmt.Sprintf("mirror/%s/tls/%s/tls.key", mirror.Registry, ep.URL),
+					value: ep.TLS.KeyDec,
+				})
+			}
+		}
+	}
+
+	for _, credential := range resolved.Credentials {
+		entries = append(entries, entry{
+			key:   fmt.Sprintf("credential/%s/%s", credential.Registry, credential.Kind),
+			value: []byte(credential.Kind),
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+
+	h := sha256.New()
+	for _, e := range entries {
+		_, _ = h.Write([]byte(e.key))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write(e.value)
+		_, _ = h.Write([]byte{0})
+	}
+	nodeClass.Status.ContainerRegistryHash = hex.EncodeToString(h.Sum(nil))
 	return nil
 }

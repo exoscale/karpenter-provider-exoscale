@@ -75,7 +75,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 
 	templateResolver := template.NewResolver(exoClient, options.Zone, op.GetConfig())
 	userDataProvider := userdata.NewProvider(op.GetClient())
-	instanceProvider := instance.NewProvider(exoClient, instanceTypeProvider, templateResolver, userDataProvider, options)
+	instanceProvider := instance.NewProvider(exoClient, op.GetClient(), instanceTypeProvider, templateResolver, userDataProvider, options)
 
 	cloudProvider := cloudprovider.NewCloudProvider(
 		op.GetClient(),

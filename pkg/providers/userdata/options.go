@@ -21,6 +21,7 @@ type Options struct {
 	ImageMinimumGCAge           string
 	FeatureGates                map[string]bool
 	UserData                    *string
+	ContainerRegistry           *apiv1.ContainerRegistrySpec
 }
 
 func NewOptions(
@@ -38,5 +39,6 @@ func NewOptions(
 		ImageMinimumGCAge:           nodeClass.Spec.Kubelet.ImageMinimumGCAge,
 		FeatureGates:                nodeClass.Spec.Kubelet.FeatureGates,
 		UserData:                    nodeClass.Spec.UserData,
+		ContainerRegistry:           nodeClass.Spec.ContainerRegistry,
 	}
 }
