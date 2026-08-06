@@ -375,11 +375,6 @@ spec:
                         pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
                         type: string
                     type: object
-                    x-kubernetes-validations:
-                    - message: cpuManagerPolicyOptions requires cpuManagerPolicy to
-                        be 'static'
-                      rule: '!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy
-                        == ''static'''
                   systemReserved:
                     description: SystemReserved is resources reserved for OS system
                       components
@@ -401,6 +396,11 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: cpuManagerPolicyOptions requires cpuManagerPolicy to be
+                    'static'
+                  rule: '!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy
+                    == ''static'''
               privateNetworkSelectorTerms:
                 description: PrivateNetworkSelectorTerms is a list of selector terms
                   to select private networks

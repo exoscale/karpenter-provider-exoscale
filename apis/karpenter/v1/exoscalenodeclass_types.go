@@ -190,6 +190,8 @@ type ContainerRegistryIdentityToken struct {
 	IdentityTokenSecretRef v1.SecretKeySelector `json:"identityTokenSecretRef"`
 }
 
+// KubeletConfiguration holds kubelet settings applied at node bootstrap.
+// +kubebuilder:validation:XValidation:rule="!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy == 'static'",message="cpuManagerPolicyOptions requires cpuManagerPolicy to be 'static'"
 type KubeletConfiguration struct {
 	// ClusterDNS is a list of IP addresses for the cluster DNS server
 	// +kubebuilder:default={"10.96.0.10"}
@@ -248,8 +250,6 @@ type KubeletConfiguration struct {
 	// +optional
 	CPUManagerReconcilePeriod string `json:"cpuManagerReconcilePeriod,omitempty"`
 }
-
-// +kubebuilder:validation:XValidation:rule="!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy == 'static'",message="cpuManagerPolicyOptions requires cpuManagerPolicy to be 'static'"
 
 type KubeResourceReservation struct {
 	// CPU reservation for Kubernetes components
