@@ -335,6 +335,13 @@ type ExoscaleNodeClassStatus struct {
 	// Empty when all CPU manager fields are at their defaults.
 	// +optional
 	CPUManagerHash string `json:"cpuManagerHash,omitempty"`
+
+	// ImageID is the resolved Exoscale instance template ID currently
+	// desired by this NodeClass (after applying spec.templateID or
+	// spec.imageTemplateSelector). Used by IsDrifted to compare against the
+	// image ID stored on each NodeClaim's status.
+	// +optional
+	ImageID string `json:"imageID,omitempty"`
 }
 
 // ExoscaleNodeClassList contains a list of ExoscaleNodeClass

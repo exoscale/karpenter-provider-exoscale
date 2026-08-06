@@ -573,6 +573,13 @@ spec:
                   pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
                   type: string
                 type: array
+              imageID:
+                description: |-
+                  ImageID is the resolved Exoscale instance template ID currently
+                  desired by this NodeClass (after applying spec.templateID or
+                  spec.imageTemplateSelector). Used by IsDrifted to compare against the
+                  image ID stored on each NodeClaim's status.
+                type: string
               privateNetworks:
                 description: Computed PrivateNetwork IDs after applying selectors
                 items:

@@ -1,7 +1,6 @@
 Changelog
 =========
 
-- feat: add kubelet CPU manager settings
 - fix(rbac): allow pod deletion (after an eviction was attempted and failed)
 - feat: add support for EIP attachment to instances
 - fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.43 (#135)
@@ -10,6 +9,10 @@ Changelog
 - feat(deps): update module sigs.k8s.io/karpenter to v1.14.0 (#134)
 - fix(deps): update module sigs.k8s.io/controller-runtime to v0.24.1 (#99)
 - feat(perf): filter listed instances when calling compute API (#150)
+- feat: add container-registry settings to NodeClass spec (#151)
+- fix: instance template ID drift detection now works properly (#151)
+- feat: add kubelet CPU manager settings (#151)
+
 1.36.1
 ------------------
 

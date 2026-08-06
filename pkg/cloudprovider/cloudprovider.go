@@ -238,10 +238,12 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return "", nil
 	}
 
-	if nodeClaim.Status.ImageID != inst.Template.ID {
+	if nodeClass.Status.ImageID == "" {
+		log.FromContext(ctx).V(2).Info("nodeClass has no resolved ImageID yet, skipping template drift check")
+	} else if nodeClaim.Status.ImageID != nodeClass.Status.ImageID {
 		log.FromContext(ctx).Info("detected template drift", "reason", DriftReasonImageID)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
-			fmt.Sprintf("Instance template ID drift detected: nodeClaim ImageID %s != instance Template ID %s", nodeClaim.Status.ImageID, inst.Template.ID))
+			fmt.Sprintf("Instance template ID drift detected: nodeClaim ImageID %s != nodeClass desired ImageID %s (instance currently reports %s)", nodeClaim.Status.ImageID, nodeClass.Status.ImageID, inst.Template.ID))
 		return DriftReasonImageID, nil
 	}
 

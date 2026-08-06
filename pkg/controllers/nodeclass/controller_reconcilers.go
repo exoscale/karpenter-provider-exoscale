@@ -47,6 +47,7 @@ func (r *ExoscaleNodeClassReconciler) reconcileTemplate(ctx context.Context, nod
 		return fmt.Errorf("template %s not found or not accessible: %w", t.ID, err)
 	}
 
+	nodeClass.Status.ImageID = t.ID
 	return nil
 }
 

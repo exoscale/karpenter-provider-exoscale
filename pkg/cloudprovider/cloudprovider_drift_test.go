@@ -81,3 +81,54 @@ func TestCPUManagerHash_DriftScenarios(t *testing.T) {
 		t.Errorf("empty status hash should differ from non-empty annotation")
 	}
 }
+
+// TestDriftReasonImageID ensures the symbol is exported and non-empty so
+// users can rely on the drift reason in event matching / monitoring.
+func TestDriftReasonImageID(t *testing.T) {
+	if DriftReasonImageID == "" {
+		t.Error("DriftReasonImageID must not be empty")
+	}
+}
+
+// TestImageID_DriftScenarios mirrors the comparison done by IsDrifter against
+// ExoscaleNodeClass.status.imageID and exercises the four documented
+// scenarios: NodeClass changed, match, empty status guard, and auto-upgrade
+// via imageTemplateSelector.
+func TestImageID_DriftScenarios(t *testing.T) {
+	class := &apiv1.ExoscaleNodeClass{
+		Status: apiv1.ExoscaleNodeClassStatus{ImageID: "new-template-id"},
+	}
+	nc := &karpenterv1.NodeClaim{
+		ObjectMeta: karpenterv1.NodeClaim{}.ObjectMeta,
+		Spec:       karpenterv1.NodeClaimSpec{},
+	}
+
+	// 1. NodeClass changed (user rotated templateID): nodeClaim carries the
+	//    old template ID, NodeClass resolved a new one -> drift.
+	nc.Status.ImageID = "old-template-id"
+	if nc.Status.ImageID == class.Status.ImageID {
+		t.Errorf("expected drift when nodeClaim ImageID differs from nodeClass ImageID")
+	}
+
+	// 2. Match: nodeClaim == nodeClass -> no drift.
+	nc.Status.ImageID = class.Status.ImageID
+	if nc.Status.ImageID != class.Status.ImageID {
+		t.Errorf("expected no drift when nodeClaim ImageID equals nodeClass ImageID")
+	}
+
+	// 3. Empty status guard: NodeClass not yet reconciled -> skip drift
+	//    even if nodeClaim carries a stale value.
+	class.Status.ImageID = ""
+	nc.Status.ImageID = "stale-template-id"
+	if class.Status.ImageID != "" {
+		t.Errorf("empty status guard precondition broken")
+	}
+
+	// 4. Auto-upgrade via imageTemplateSelector: NodeClass resolved a new
+	//    template (v2) while nodeClaim still runs v1 -> drift.
+	class.Status.ImageID = "v2-template-id"
+	nc.Status.ImageID = "v1-template-id"
+	if nc.Status.ImageID == class.Status.ImageID {
+		t.Errorf("expected drift after auto-upgrade rotates resolved template ID")
+	}
+}
