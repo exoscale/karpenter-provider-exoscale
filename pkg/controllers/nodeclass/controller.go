@@ -173,6 +173,12 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 			errorMessage: "Container registry secret resolution failed",
 			condition:    ConditionContainerRegistryResolved,
 		},
+		{
+			reconcileFn:  r.reconcileCPUManagerHash,
+			reason:       "CPUManagerHashComputeFailed",
+			errorMessage: "CPU manager hash compute failed",
+			condition:    ConditionContainerRegistryResolved,
+		},
 	}
 
 	nodeClass.StatusConditions().SetFalse(status.ConditionReady, "Reconciling", "Reconciling node class resources")

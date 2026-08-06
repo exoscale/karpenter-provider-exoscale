@@ -28,6 +28,9 @@ type Options struct {
 	FeatureGates                map[string]bool
 	UserData                    *string
 	ContainerRegistry           *ContainerRegistrySettings
+	CPUManagerPolicy            string
+	CPUManagerPolicyOptions     []string
+	CPUManagerReconcilePeriod   string
 }
 
 type ContainerRegistrySettings struct {
@@ -69,6 +72,9 @@ type KubernetesSettings struct {
 	NodeTaints                  map[string][]string  `toml:"node-taints,omitempty"`
 	NodeLabels                  map[string]string    `toml:"node-labels,omitempty"`
 	FeatureGates                map[string]bool      `toml:"feature-gates,omitempty"`
+	CPUManagerPolicy            string               `toml:"cpu-manager-policy,omitempty"`
+	CPUManagerPolicyOptions     []string             `toml:"cpu-manager-policy-options,omitempty"`
+	CPUManagerReconcilePeriod   string               `toml:"cpu-manager-reconcile-period,omitempty"`
 }
 type ResourceReservation struct {
 	CPU              string `toml:"cpu,omitempty"`
@@ -261,6 +267,16 @@ func (s *SKSBootstrap) buildConfig(options *Options) *Config {
 
 	if len(options.FeatureGates) > 0 {
 		config.Settings.Kubernetes.FeatureGates = options.FeatureGates
+	}
+
+	if options.CPUManagerPolicy != "" {
+		config.Settings.Kubernetes.CPUManagerPolicy = options.CPUManagerPolicy
+	}
+	if options.CPUManagerPolicy == "static" && len(options.CPUManagerPolicyOptions) > 0 {
+		config.Settings.Kubernetes.CPUManagerPolicyOptions = options.CPUManagerPolicyOptions
+	}
+	if options.CPUManagerReconcilePeriod != "" {
+		config.Settings.Kubernetes.CPUManagerReconcilePeriod = options.CPUManagerReconcilePeriod
 	}
 
 	return config

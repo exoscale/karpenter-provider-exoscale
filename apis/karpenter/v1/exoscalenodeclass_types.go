@@ -56,6 +56,7 @@ type SelectorTerms struct {
 // +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
 // +kubebuilder:validation:XValidation:rule="!has(self.containerRegistry) || (self.containerRegistry.mirrors.all(m, m.endpoints.all(e, !has(e.tlsSecretRef) || size(e.tlsSecretRef.name) > 0)) && (!has(self.containerRegistry.credentials) || self.containerRegistry.credentials.all(c, [has(c.basic), has(c.auth), has(c.identityToken)].filter(x, x).size() == 1)))",message="containerRegistry.mirrors[*].endpoints[*].tlsSecretRef.name must be non-empty when set, and each credentials entry must declare exactly one of basic/auth/identityToken"
 // +kubebuilder:validation:XValidation:rule="!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))",message="userData and containerRegistry are mutually exclusive; configure container registry via the structured containerRegistry field only"
+// +kubebuilder:validation:XValidation:rule="!has(self.kubelet) || self.kubelet.cpuManagerPolicy != 'static' || ((has(self.kubelet.kubeReserved) && has(self.kubelet.kubeReserved.cpu) && self.kubelet.kubeReserved.cpu != '0') || (has(self.kubelet.systemReserved) && has(self.kubelet.systemReserved.cpu) && self.kubelet.systemReserved.cpu != '0'))",message="cpuManagerPolicy 'static' requires a non-zero cpu reservation in kube-reserved or system-reserved"
 type ExoscaleNodeClassSpec struct {
 	// +optional
 	// +kubebuilder:validation:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -227,7 +228,28 @@ type KubeletConfiguration struct {
 	// FeatureGates is a map of feature gates to enable/disable for the kubelet
 	// +optional
 	FeatureGates map[string]bool `json:"featureGates,omitempty"`
+
+	// CPUManagerPolicy selects the CPU management policy for the kubelet.
+	// "static" requires a non-zero cpu value in kube-reserved or system-reserved.
+	// +kubebuilder:validation:Enum=none;static
+	// +optional
+	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+
+	// CPUManagerPolicyOptions fine-tunes the static CPU manager policy.
+	// Ignored unless CPUManagerPolicy == "static".
+	// +kubebuilder:validation:items:Enum=full-pcpus-only;distribute-cpus-across-numa;prefer-align-cpus-by-uncorecache;strict-cpu-reservation;align-by-socket;distribute-cpus-across-cores
+	// +optional
+	// +listType=atomic
+	CPUManagerPolicyOptions []string `json:"cpuManagerPolicyOptions,omitempty"`
+
+	// CPUManagerReconcilePeriod is how often the kubelet reconciles CPU assignments.
+	// +kubebuilder:default="10s"
+	// +kubebuilder:validation:Pattern="^[0-9]+(ns|us|ms|s|m|h)$"
+	// +optional
+	CPUManagerReconcilePeriod string `json:"cpuManagerReconcilePeriod,omitempty"`
 }
+
+// +kubebuilder:validation:XValidation:rule="!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy == 'static'",message="cpuManagerPolicyOptions requires cpuManagerPolicy to be 'static'"
 
 type KubeResourceReservation struct {
 	// CPU reservation for Kubernetes components
@@ -308,6 +330,11 @@ type ExoscaleNodeClassStatus struct {
 	// drift detection when a referenced Secret is rotated.
 	// +optional
 	ContainerRegistryHash string `json:"containerRegistryHash,omitempty"`
+
+	// CPUManagerHash is a SHA256 of the kubelet CPU manager configuration.
+	// Empty when all CPU manager fields are at their defaults.
+	// +optional
+	CPUManagerHash string `json:"cpuManagerHash,omitempty"`
 }
 
 // ExoscaleNodeClassList contains a list of ExoscaleNodeClass

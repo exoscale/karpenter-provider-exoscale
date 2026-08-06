@@ -428,3 +428,124 @@ func TestGenerateWithEmptyUserData(t *testing.T) {
 		t.Errorf("api-server = %v, want https://api.example.com", k8s["api-server"])
 	}
 }
+
+func TestBuildConfigCPUManager(t *testing.T) {
+	s := &SKSBootstrap{}
+	base := &Options{
+		ClusterEndpoint: "https://api.example.com",
+		BootstrapToken:  "token123",
+		CABundle:        []byte("test-ca-bundle"),
+	}
+
+	t.Run("empty", func(t *testing.T) {
+		cfg := s.buildConfig(base)
+		k := cfg.Settings.Kubernetes
+		if k.CPUManagerPolicy != "" || k.CPUManagerPolicyOptions != nil || k.CPUManagerReconcilePeriod != "" {
+			t.Errorf("expected no CPU manager fields, got policy=%q options=%v period=%q",
+				k.CPUManagerPolicy, k.CPUManagerPolicyOptions, k.CPUManagerReconcilePeriod)
+		}
+	})
+
+	t.Run("static only", func(t *testing.T) {
+		o := *base
+		o.CPUManagerPolicy = "static"
+		cfg := s.buildConfig(&o)
+		if cfg.Settings.Kubernetes.CPUManagerPolicy != "static" {
+			t.Errorf("CPUManagerPolicy = %q, want static", cfg.Settings.Kubernetes.CPUManagerPolicy)
+		}
+	})
+
+	t.Run("static with options", func(t *testing.T) {
+		o := *base
+		o.CPUManagerPolicy = "static"
+		o.CPUManagerPolicyOptions = []string{"full-pcpus-only", "align-by-socket"}
+		cfg := s.buildConfig(&o)
+		if got := cfg.Settings.Kubernetes.CPUManagerPolicyOptions; len(got) != 2 {
+			t.Errorf("CPUManagerPolicyOptions = %v, want 2 entries", got)
+		}
+	})
+
+	t.Run("options dropped when policy is none", func(t *testing.T) {
+		o := *base
+		o.CPUManagerPolicy = "none"
+		o.CPUManagerPolicyOptions = []string{"full-pcpus-only"}
+		cfg := s.buildConfig(&o)
+		if cfg.Settings.Kubernetes.CPUManagerPolicyOptions != nil {
+			t.Errorf("CPUManagerPolicyOptions should be nil when policy=none, got %v",
+				cfg.Settings.Kubernetes.CPUManagerPolicyOptions)
+		}
+	})
+
+	t.Run("options dropped when policy is empty", func(t *testing.T) {
+		o := *base
+		o.CPUManagerPolicyOptions = []string{"full-pcpus-only"}
+		cfg := s.buildConfig(&o)
+		if cfg.Settings.Kubernetes.CPUManagerPolicyOptions != nil {
+			t.Errorf("CPUManagerPolicyOptions should be nil when policy is empty, got %v",
+				cfg.Settings.Kubernetes.CPUManagerPolicyOptions)
+		}
+	})
+
+	t.Run("reconcile period", func(t *testing.T) {
+		o := *base
+		o.CPUManagerReconcilePeriod = "5s"
+		cfg := s.buildConfig(&o)
+		if cfg.Settings.Kubernetes.CPUManagerReconcilePeriod != "5s" {
+			t.Errorf("CPUManagerReconcilePeriod = %q, want 5s", cfg.Settings.Kubernetes.CPUManagerReconcilePeriod)
+		}
+	})
+}
+
+func TestGenerateCPUManagerTOMLEmission(t *testing.T) {
+	s := New()
+	options := &Options{
+		ClusterEndpoint:           "https://api.example.com",
+		BootstrapToken:            "token123",
+		CABundle:                  []byte("test-ca-bundle"),
+		CPUManagerPolicy:          "static",
+		CPUManagerPolicyOptions:   []string{"full-pcpus-only"},
+		CPUManagerReconcilePeriod: "5s",
+	}
+
+	encoded, err := s.Generate(options)
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	result := decodeUserData(t, encoded)
+	settings := result["settings"].(map[string]interface{})
+	k8s := settings["kubernetes"].(map[string]interface{})
+
+	if k8s["cpu-manager-policy"] != "static" {
+		t.Errorf("cpu-manager-policy = %v, want static", k8s["cpu-manager-policy"])
+	}
+	opts, ok := k8s["cpu-manager-policy-options"].([]interface{})
+	if !ok || len(opts) != 1 || opts[0] != "full-pcpus-only" {
+		t.Errorf("cpu-manager-policy-options = %v, want [full-pcpus-only]", k8s["cpu-manager-policy-options"])
+	}
+	if k8s["cpu-manager-reconcile-period"] != "5s" {
+		t.Errorf("cpu-manager-reconcile-period = %v, want 5s", k8s["cpu-manager-reconcile-period"])
+	}
+}
+
+func TestGenerateCPUManagerTOMLAbsentWhenEmpty(t *testing.T) {
+	s := New()
+	options := &Options{
+		ClusterEndpoint: "https://api.example.com",
+		BootstrapToken:  "token123",
+		CABundle:        []byte("test-ca-bundle"),
+	}
+
+	encoded, err := s.Generate(options)
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	result := decodeUserData(t, encoded)
+	settings := result["settings"].(map[string]interface{})
+	k8s := settings["kubernetes"].(map[string]interface{})
+
+	for _, key := range []string{"cpu-manager-policy", "cpu-manager-policy-options", "cpu-manager-reconcile-period"} {
+		if v, ok := k8s[key]; ok {
+			t.Errorf("%s = %v, want absent", key, v)
+		}
+	}
+}

@@ -297,6 +297,35 @@ spec:
                     items:
                       type: string
                     type: array
+                  cpuManagerPolicy:
+                    description: |-
+                      CPUManagerPolicy selects the CPU management policy for the kubelet.
+                      "static" requires a non-zero cpu value in kube-reserved or system-reserved.
+                    enum:
+                    - none
+                    - static
+                    type: string
+                  cpuManagerPolicyOptions:
+                    description: |-
+                      CPUManagerPolicyOptions fine-tunes the static CPU manager policy.
+                      Ignored unless CPUManagerPolicy == "static".
+                    items:
+                      enum:
+                      - full-pcpus-only
+                      - distribute-cpus-across-numa
+                      - prefer-align-cpus-by-uncorecache
+                      - strict-cpu-reservation
+                      - align-by-socket
+                      - distribute-cpus-across-cores
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  cpuManagerReconcilePeriod:
+                    default: 10s
+                    description: CPUManagerReconcilePeriod is how often the kubelet
+                      reconciles CPU assignments.
+                    pattern: ^[0-9]+(ns|us|ms|s|m|h)$
+                    type: string
                   featureGates:
                     additionalProperties:
                       type: boolean
@@ -346,6 +375,11 @@ spec:
                         pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: cpuManagerPolicyOptions requires cpuManagerPolicy to
+                        be 'static'
+                      rule: '!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy
+                        == ''static'''
                   systemReserved:
                     description: SystemReserved is resources reserved for OS system
                       components
@@ -450,6 +484,13 @@ spec:
             - message: userData and containerRegistry are mutually exclusive; configure
                 container registry via the structured containerRegistry field only
               rule: '!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))'
+            - message: cpuManagerPolicy 'static' requires a non-zero cpu reservation
+                in kube-reserved or system-reserved
+              rule: '!has(self.kubelet) || self.kubelet.cpuManagerPolicy != ''static''
+                || ((has(self.kubelet.kubeReserved) && has(self.kubelet.kubeReserved.cpu)
+                && self.kubelet.kubeReserved.cpu != ''0'') || (has(self.kubelet.systemReserved)
+                && has(self.kubelet.systemReserved.cpu) && self.kubelet.systemReserved.cpu
+                != ''0''))'
           status:
             description: ExoscaleNodeClassStatus defines the observed state of ExoscaleNodeClass
             properties:
@@ -520,6 +561,11 @@ spec:
                   ContainerRegistryHash is a SHA256 of the resolved container registry
                   configuration (including referenced Secret contents). It is used for
                   drift detection when a referenced Secret is rotated.
+                type: string
+              cpuManagerHash:
+                description: |-
+                  CPUManagerHash is a SHA256 of the kubelet CPU manager configuration.
+                  Empty when all CPU manager fields are at their defaults.
                 type: string
               elasticIPs:
                 description: Computed ElasticIP IDs after applying selectors

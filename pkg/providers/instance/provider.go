@@ -200,8 +200,11 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	return instance, nil
 }
 
-// patchNodeClaimAnnotations records the resolved container-registry hash on
-// the NodeClaim so IsDrifted can detect when a referenced Secret rotates.
+// patchNodeClaimAnnotations records the resolved container-registry hash and
+// the kubelet CPU manager hash on the NodeClaim so IsDrifted can detect
+// changes to either of them. The CPU manager annotation is written
+// unconditionally (including when empty) so removing all CPU manager config
+// still triggers drift.
 func (p *Provider) patchNodeClaimAnnotations(ctx context.Context, nodeClaim *karpenterv1.NodeClaim, nodeClass *apiv1.ExoscaleNodeClass) error {
 	if p.kubeClient == nil || nodeClass.Status.ContainerRegistryHash == "" {
 		return nil
@@ -218,6 +221,7 @@ func (p *Provider) patchNodeClaimAnnotations(ctx context.Context, nodeClaim *kar
 	}
 	patch := client.MergeFrom(stored.DeepCopy())
 	stored.Annotations[constants.AnnotationContainerRegistryHash] = nodeClass.Status.ContainerRegistryHash
+	stored.Annotations[constants.AnnotationCPUManagerHash] = nodeClass.Status.CPUManagerHash
 	return p.kubeClient.Patch(ctx, stored, patch)
 }
 

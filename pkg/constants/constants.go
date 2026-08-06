@@ -20,6 +20,12 @@ const (
 	// drift when a referenced Secret is rotated.
 	AnnotationContainerRegistryHash = "karpenter.exoscale.com/container-registry-hash"
 
+	// AnnotationCPUManagerHash records the SHA256 hash of the kubelet
+	// CPU manager configuration on a NodeClaim, so the cloudprovider can
+	// detect drift when the kubelet CPU manager policy or options change.
+	// Empty when all CPU manager fields are at their defaults.
+	AnnotationCPUManagerHash = "karpenter.exoscale.com/cpu-manager-hash"
+
 	LabelInstanceFamily = "exoscale.com/instance-family"
 	LabelInstanceSize   = "exoscale.com/instance-size"
 

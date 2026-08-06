@@ -22,6 +22,9 @@ type Options struct {
 	FeatureGates                map[string]bool
 	UserData                    *string
 	ContainerRegistry           *apiv1.ContainerRegistrySpec
+	CPUManagerPolicy            string
+	CPUManagerPolicyOptions     []string
+	CPUManagerReconcilePeriod   string
 }
 
 func NewOptions(
@@ -40,5 +43,8 @@ func NewOptions(
 		FeatureGates:                nodeClass.Spec.Kubelet.FeatureGates,
 		UserData:                    nodeClass.Spec.UserData,
 		ContainerRegistry:           nodeClass.Spec.ContainerRegistry,
+		CPUManagerPolicy:            nodeClass.Spec.Kubelet.CPUManagerPolicy,
+		CPUManagerPolicyOptions:     nodeClass.Spec.Kubelet.CPUManagerPolicyOptions,
+		CPUManagerReconcilePeriod:   nodeClass.Spec.Kubelet.CPUManagerReconcilePeriod,
 	}
 }

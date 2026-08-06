@@ -6,12 +6,33 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// hashEntry is a key/value pair fed into the SHA256 hash used for drift
+// detection. Kept unexported so the hashing convention stays an internal
+// detail of this package.
+type hashEntry struct {
+	key   string
+	value []byte
+}
+
+func hashEntries(entries []hashEntry) string {
+	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+	h := sha256.New()
+	for _, e := range entries {
+		_, _ = h.Write([]byte(e.key))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write(e.value)
+		_, _ = h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
 
 func (r *ExoscaleNodeClassReconciler) reconcileTemplate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
@@ -214,11 +235,7 @@ func (r *ExoscaleNodeClassReconciler) reconcileContainerRegistrySecrets(ctx cont
 		return err
 	}
 
-	type entry struct {
-		key   string
-		value []byte
-	}
-	var entries []entry
+	var entries []hashEntry
 
 	for _, mirror := range resolved.Mirrors {
 		for _, ep := range mirror.Endpoints {
@@ -226,17 +243,17 @@ func (r *ExoscaleNodeClassReconciler) reconcileContainerRegistrySecrets(ctx cont
 				continue
 			}
 			if len(ep.TLS.CA) > 0 {
-				entries = append(entries, entry{
+				entries = append(entries, hashEntry{
 					key:   fmt.Sprintf("mirror/%s/tls/%s/ca.crt", mirror.Registry, ep.URL),
 					value: ep.TLS.CADec,
 				})
 			}
 			if len(ep.TLS.Cert) > 0 {
-				entries = append(entries, entry{
+				entries = append(entries, hashEntry{
 					key:   fmt.Sprintf("mirror/%s/tls/%s/tls.crt", mirror.Registry, ep.URL),
 					value: ep.TLS.CertDec,
 				})
-				entries = append(entries, entry{
+				entries = append(entries, hashEntry{
 					key:   fmt.Sprintf("mirror/%s/tls/%s/tls.key", mirror.Registry, ep.URL),
 					value: ep.TLS.KeyDec,
 				})
@@ -245,21 +262,44 @@ func (r *ExoscaleNodeClassReconciler) reconcileContainerRegistrySecrets(ctx cont
 	}
 
 	for _, credential := range resolved.Credentials {
-		entries = append(entries, entry{
+		entries = append(entries, hashEntry{
 			key:   fmt.Sprintf("credential/%s/%s", credential.Registry, credential.Kind),
 			value: []byte(credential.Kind),
 		})
 	}
 
-	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+	nodeClass.Status.ContainerRegistryHash = hashEntries(entries)
+	return nil
+}
 
-	h := sha256.New()
-	for _, e := range entries {
-		_, _ = h.Write([]byte(e.key))
-		_, _ = h.Write([]byte{0})
-		_, _ = h.Write(e.value)
-		_, _ = h.Write([]byte{0})
+// reconcileCPUManagerHash computes a sparse SHA256 over the kubelet CPU
+// manager configuration so that policy changes force node recreation. Only
+// non-default fields participate in the hash; an entirely default config
+// produces an empty hash, which is the trigger for drift when the user
+// later removes their override.
+func (r *ExoscaleNodeClassReconciler) reconcileCPUManagerHash(_ context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	kubelet := nodeClass.Spec.Kubelet
+	var entries []hashEntry
+
+	if pol := kubelet.CPUManagerPolicy; pol != "" && pol != "none" {
+		entries = append(entries, hashEntry{key: "policy", value: []byte(pol)})
 	}
-	nodeClass.Status.ContainerRegistryHash = hex.EncodeToString(h.Sum(nil))
+
+	if len(kubelet.CPUManagerPolicyOptions) > 0 && kubelet.CPUManagerPolicy == "static" {
+		opts := append([]string(nil), kubelet.CPUManagerPolicyOptions...)
+		sort.Strings(opts)
+		entries = append(entries, hashEntry{key: "options", value: []byte(strings.Join(opts, ","))})
+	}
+
+	if p := kubelet.CPUManagerReconcilePeriod; p != "" && p != "10s" {
+		entries = append(entries, hashEntry{key: "reconcilePeriod", value: []byte(p)})
+	}
+
+	if len(entries) == 0 {
+		nodeClass.Status.CPUManagerHash = ""
+		return nil
+	}
+
+	nodeClass.Status.CPUManagerHash = hashEntries(entries)
 	return nil
 }

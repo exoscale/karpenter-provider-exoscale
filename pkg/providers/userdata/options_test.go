@@ -68,4 +68,19 @@ func TestNewOptions(t *testing.T) {
 	if opts.SystemReserved.Memory != "512Mi" {
 		t.Errorf("NewOptions() SystemReserved.Memory = %v, want 512Mi", opts.SystemReserved.Memory)
 	}
+
+	// CPU manager fields propagation
+	nodeClass.Spec.Kubelet.CPUManagerPolicy = "static"
+	nodeClass.Spec.Kubelet.CPUManagerPolicyOptions = []string{"full-pcpus-only", "align-by-socket"}
+	nodeClass.Spec.Kubelet.CPUManagerReconcilePeriod = "5s"
+	opts = NewOptions(nodeClass, nodeClaim)
+	if opts.CPUManagerPolicy != "static" {
+		t.Errorf("NewOptions() CPUManagerPolicy = %v, want static", opts.CPUManagerPolicy)
+	}
+	if len(opts.CPUManagerPolicyOptions) != 2 {
+		t.Errorf("NewOptions() CPUManagerPolicyOptions = %v, want 2 entries", opts.CPUManagerPolicyOptions)
+	}
+	if opts.CPUManagerReconcilePeriod != "5s" {
+		t.Errorf("NewOptions() CPUManagerReconcilePeriod = %v, want 5s", opts.CPUManagerReconcilePeriod)
+	}
 }

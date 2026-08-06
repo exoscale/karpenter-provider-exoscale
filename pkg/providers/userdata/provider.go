@@ -77,6 +77,9 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		FeatureGates:                options.FeatureGates,
 		UserData:                    options.UserData,
 		ContainerRegistry:           registry.ToBootstrap(),
+		CPUManagerPolicy:            options.CPUManagerPolicy,
+		CPUManagerPolicyOptions:     options.CPUManagerPolicyOptions,
+		CPUManagerReconcilePeriod:   options.CPUManagerReconcilePeriod,
 	}
 
 	if bootstrapOptions.Labels == nil {
