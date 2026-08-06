@@ -275,7 +275,10 @@ func (s *SKSBootstrap) buildConfig(options *Options) *Config {
 	if options.CPUManagerPolicy == "static" && len(options.CPUManagerPolicyOptions) > 0 {
 		config.Settings.Kubernetes.CPUManagerPolicyOptions = options.CPUManagerPolicyOptions
 	}
-	if options.CPUManagerReconcilePeriod != "" {
+	// Skip emission when the value equals the kubelet default; the apiserver
+	// injects the default server-side on admission, so an unset spec field
+	// would otherwise be redundantly written into user-data.
+	if options.CPUManagerReconcilePeriod != "" && options.CPUManagerReconcilePeriod != apiv1.DefaultCPUManagerReconcilePeriod {
 		config.Settings.Kubernetes.CPUManagerReconcilePeriod = options.CPUManagerReconcilePeriod
 	}
 

@@ -248,6 +248,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:default="10s"
 	// +kubebuilder:validation:Pattern="^[0-9]+(ns|us|ms|s|m|h)$"
 	// +optional
+	// The default value above must stay in sync with DefaultCPUManagerReconcilePeriod.
 	CPUManagerReconcilePeriod string `json:"cpuManagerReconcilePeriod,omitempty"`
 }
 
@@ -351,3 +352,12 @@ type ExoscaleNodeClassList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ExoscaleNodeClass `json:"items"`
 }
+
+// DefaultCPUManagerReconcilePeriod is the kubelet default for
+// --cpu-manager-reconcile-period. It is mirrored by the
+// +kubebuilder:default marker on KubeletConfiguration.CPUManagerReconcilePeriod
+// and must be kept in sync with it. The reconciler and the bootstrap TOML
+// emitter both consult this constant to decide whether a non-empty value is
+// user-supplied or just the apiserver-injected default; matching the kubelet
+// default keeps the resulting user-data and the drift hash sparse.
+const DefaultCPUManagerReconcilePeriod = "10s"

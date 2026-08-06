@@ -292,7 +292,7 @@ func (r *ExoscaleNodeClassReconciler) reconcileCPUManagerHash(_ context.Context,
 		entries = append(entries, hashEntry{key: "options", value: []byte(strings.Join(opts, ","))})
 	}
 
-	if p := kubelet.CPUManagerReconcilePeriod; p != "" && p != "10s" {
+	if p := kubelet.CPUManagerReconcilePeriod; p != "" && p != apiv1.DefaultCPUManagerReconcilePeriod {
 		entries = append(entries, hashEntry{key: "reconcilePeriod", value: []byte(p)})
 	}
 

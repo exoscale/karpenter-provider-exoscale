@@ -494,6 +494,15 @@ func TestBuildConfigCPUManager(t *testing.T) {
 			t.Errorf("CPUManagerReconcilePeriod = %q, want 5s", cfg.Settings.Kubernetes.CPUManagerReconcilePeriod)
 		}
 	})
+
+	t.Run("default period (10s) omitted", func(t *testing.T) {
+		o := *base
+		o.CPUManagerReconcilePeriod = "10s"
+		cfg := s.buildConfig(&o)
+		if cfg.Settings.Kubernetes.CPUManagerReconcilePeriod != "" {
+			t.Errorf("CPUManagerReconcilePeriod = %q, want empty (kubelet default 10s must not be emitted)", cfg.Settings.Kubernetes.CPUManagerReconcilePeriod)
+		}
+	})
 }
 
 func TestGenerateCPUManagerTOMLEmission(t *testing.T) {
@@ -524,6 +533,32 @@ func TestGenerateCPUManagerTOMLEmission(t *testing.T) {
 	}
 	if k8s["cpu-manager-reconcile-period"] != "5s" {
 		t.Errorf("cpu-manager-reconcile-period = %v, want 5s", k8s["cpu-manager-reconcile-period"])
+	}
+}
+
+func TestGenerateCPUManagerTOMLDefaultPeriodOmitted(t *testing.T) {
+	// Simulates what the apiserver hands us after server-side default
+	// injection: period is "10s" even though the user never set it.
+	s := New()
+	options := &Options{
+		ClusterEndpoint:           "https://api.example.com",
+		BootstrapToken:            "token123",
+		CABundle:                  []byte("test-ca-bundle"),
+		CPUManagerPolicy:          "static",
+		CPUManagerPolicyOptions:   []string{"full-pcpus-only"},
+		CPUManagerReconcilePeriod: "10s",
+	}
+
+	encoded, err := s.Generate(options)
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	result := decodeUserData(t, encoded)
+	settings := result["settings"].(map[string]interface{})
+	k8s := settings["kubernetes"].(map[string]interface{})
+
+	if _, ok := k8s["cpu-manager-reconcile-period"]; ok {
+		t.Errorf("cpu-manager-reconcile-period must be absent when value equals kubelet default 10s, got %v", k8s["cpu-manager-reconcile-period"])
 	}
 }
 
