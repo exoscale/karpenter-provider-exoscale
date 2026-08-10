@@ -1,6 +1,9 @@
 Changelog
 =========
 
+1.36.2
+------------------
+
 - fix(rbac): allow pod deletion (after an eviction was attempted and failed)
 - feat: add support for EIP attachment to instances
 - fix(deps): update module github.com/exoscale/egoscale/v3 to v3.1.43 (#135)
