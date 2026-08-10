@@ -9,6 +9,7 @@ import (
 
 	"github.com/awslabs/operatorpkg/status"
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instancetype"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
@@ -31,6 +32,7 @@ const (
 	DriftReasonPrivateNetworks    cloudprovider.DriftReason = "PrivateNetworks"
 	DriftReasonElasticIPs         cloudprovider.DriftReason = "ElasticIPs"
 	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
+	DriftReasonUserDataChanged    cloudprovider.DriftReason = "UserDataChanged"
 )
 
 type CloudProvider struct {
@@ -236,10 +238,12 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return "", nil
 	}
 
-	if nodeClaim.Status.ImageID != inst.Template.ID {
+	if nodeClass.Status.ImageID == "" {
+		log.FromContext(ctx).V(2).Info("nodeClass has no resolved ImageID yet, skipping template drift check")
+	} else if nodeClaim.Status.ImageID != nodeClass.Status.ImageID {
 		log.FromContext(ctx).Info("detected template drift", "reason", DriftReasonImageID)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
-			fmt.Sprintf("Instance template ID drift detected: nodeClaim ImageID %s != instance Template ID %s", nodeClaim.Status.ImageID, inst.Template.ID))
+			fmt.Sprintf("Instance template ID drift detected: nodeClaim ImageID %s != nodeClass desired ImageID %s (instance currently reports %s)", nodeClaim.Status.ImageID, nodeClass.Status.ImageID, inst.Template.ID))
 		return DriftReasonImageID, nil
 	}
 
@@ -286,6 +290,30 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
 			fmt.Sprintf("Instance elastic IPs drift detected: nodeClass ElasticIPs %v != instance ElasticIPs %v", nodeClass.Status.ElasticIPs, inst.ElasticIPs))
 		return DriftReasonElasticIPs, nil
+	}
+
+	expected := nodeClass.Status.ContainerRegistryHash
+	got := ""
+	if nodeClaim.Annotations != nil {
+		got = nodeClaim.Annotations[constants.AnnotationContainerRegistryHash]
+	}
+	if got != expected {
+		log.FromContext(ctx).Info("detected user-data drift", "reason", DriftReasonUserDataChanged)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("User data drift detected: nodeClaim hash %q != nodeClass hash %q", got, expected))
+		return DriftReasonUserDataChanged, nil
+	}
+
+	expectedCPU := nodeClass.Status.CPUManagerHash
+	gotCPU := ""
+	if nodeClaim.Annotations != nil {
+		gotCPU = nodeClaim.Annotations[constants.AnnotationCPUManagerHash]
+	}
+	if gotCPU != expectedCPU {
+		log.FromContext(ctx).Info("detected kubelet CPU manager drift", "reason", DriftReasonUserDataChanged)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("User data drift detected: nodeClaim cpu-manager hash %q != nodeClass cpu-manager hash %q", gotCPU, expectedCPU))
+		return DriftReasonUserDataChanged, nil
 	}
 
 	expectedInstanceLabels := c.instanceProvider.GenerateInstanceLabels(nodeClaim)

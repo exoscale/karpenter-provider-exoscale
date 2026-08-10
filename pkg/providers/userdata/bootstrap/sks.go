@@ -27,6 +27,34 @@ type Options struct {
 	SystemReserved              apiv1.SystemResourceReservation
 	FeatureGates                map[string]bool
 	UserData                    *string
+	ContainerRegistry           *ContainerRegistrySettings
+	CPUManagerPolicy            string
+	CPUManagerPolicyOptions     []string
+	CPUManagerReconcilePeriod   string
+}
+
+type ContainerRegistrySettings struct {
+	Mirrors     []ContainerRegistryMirror             `toml:"mirrors,omitempty"`
+	TLS         map[string]ContainerRegistryTLSConfig `toml:"tls,omitempty"`
+	Credentials []ContainerRegistryCredentialConfig   `toml:"credentials,omitempty"`
+}
+type ContainerRegistryMirror struct {
+	Registry string   `toml:"registry"`
+	Endpoint []string `toml:"endpoint"`
+}
+type ContainerRegistryTLSConfig struct {
+	CA           string `toml:"ca,omitempty"`
+	Cert         string `toml:"cert,omitempty"`
+	Key          string `toml:"key,omitempty"`
+	OverridePath bool   `toml:"override_path,omitempty"`
+	SkipVerify   bool   `toml:"skip_verify,omitempty"`
+}
+type ContainerRegistryCredentialConfig struct {
+	Registry      string `toml:"registry"`
+	Username      string `toml:"username,omitempty"`
+	Password      string `toml:"password,omitempty"`
+	Auth          string `toml:"auth,omitempty"`
+	IdentityToken string `toml:"identitytoken,omitempty"`
 }
 
 type KubernetesSettings struct {
@@ -44,8 +72,10 @@ type KubernetesSettings struct {
 	NodeTaints                  map[string][]string  `toml:"node-taints,omitempty"`
 	NodeLabels                  map[string]string    `toml:"node-labels,omitempty"`
 	FeatureGates                map[string]bool      `toml:"feature-gates,omitempty"`
+	CPUManagerPolicy            string               `toml:"cpu-manager-policy,omitempty"`
+	CPUManagerPolicyOptions     []string             `toml:"cpu-manager-policy-options,omitempty"`
+	CPUManagerReconcilePeriod   string               `toml:"cpu-manager-reconcile-period,omitempty"`
 }
-
 type ResourceReservation struct {
 	CPU              string `toml:"cpu,omitempty"`
 	Memory           string `toml:"memory,omitempty"`
@@ -53,7 +83,8 @@ type ResourceReservation struct {
 }
 
 type Settings struct {
-	Kubernetes KubernetesSettings `toml:"kubernetes"`
+	Kubernetes        KubernetesSettings         `toml:"kubernetes"`
+	ContainerRegistry *ContainerRegistrySettings `toml:"container-registry,omitempty"`
 }
 
 type Config struct {
@@ -164,6 +195,7 @@ func (s *SKSBootstrap) buildConfig(options *Options) *Config {
 				CloudProvider:      "external",
 				ClusterCertificate: base64.StdEncoding.EncodeToString(options.CABundle),
 			},
+			ContainerRegistry: options.ContainerRegistry,
 		},
 	}
 
@@ -235,6 +267,19 @@ func (s *SKSBootstrap) buildConfig(options *Options) *Config {
 
 	if len(options.FeatureGates) > 0 {
 		config.Settings.Kubernetes.FeatureGates = options.FeatureGates
+	}
+
+	if options.CPUManagerPolicy != "" {
+		config.Settings.Kubernetes.CPUManagerPolicy = options.CPUManagerPolicy
+	}
+	if options.CPUManagerPolicy == "static" && len(options.CPUManagerPolicyOptions) > 0 {
+		config.Settings.Kubernetes.CPUManagerPolicyOptions = options.CPUManagerPolicyOptions
+	}
+	// Skip emission when the value equals the kubelet default; the apiserver
+	// injects the default server-side on admission, so an unset spec field
+	// would otherwise be redundantly written into user-data.
+	if options.CPUManagerReconcilePeriod != "" && options.CPUManagerReconcilePeriod != apiv1.DefaultCPUManagerReconcilePeriod {
+		config.Settings.Kubernetes.CPUManagerReconcilePeriod = options.CPUManagerReconcilePeriod
 	}
 
 	return config

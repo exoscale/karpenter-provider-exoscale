@@ -21,6 +21,10 @@ type Options struct {
 	ImageMinimumGCAge           string
 	FeatureGates                map[string]bool
 	UserData                    *string
+	ContainerRegistry           *apiv1.ContainerRegistrySpec
+	CPUManagerPolicy            string
+	CPUManagerPolicyOptions     []string
+	CPUManagerReconcilePeriod   string
 }
 
 func NewOptions(
@@ -38,5 +42,9 @@ func NewOptions(
 		ImageMinimumGCAge:           nodeClass.Spec.Kubelet.ImageMinimumGCAge,
 		FeatureGates:                nodeClass.Spec.Kubelet.FeatureGates,
 		UserData:                    nodeClass.Spec.UserData,
+		ContainerRegistry:           nodeClass.Spec.ContainerRegistry,
+		CPUManagerPolicy:            nodeClass.Spec.Kubelet.CPUManagerPolicy,
+		CPUManagerPolicyOptions:     nodeClass.Spec.Kubelet.CPUManagerPolicyOptions,
+		CPUManagerReconcilePeriod:   nodeClass.Spec.Kubelet.CPUManagerReconcilePeriod,
 	}
 }

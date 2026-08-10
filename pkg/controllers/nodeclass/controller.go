@@ -13,14 +13,17 @@ import (
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/template"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
 	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -34,6 +37,7 @@ const (
 	ConditionAntiAffinityGroupsResolved = "AntiAffinityGroupsResolved"
 	ConditionPrivateNetworksResolved    = "PrivateNetworksResolved"
 	ConditionElasticIPsResolved         = "ElasticIPsResolved"
+	ConditionContainerRegistryResolved  = "ContainerRegistrySecretsResolved"
 )
 
 // ExoscaleClient is an interface for interacting with the Exoscale API
@@ -71,6 +75,7 @@ type ExoscaleNodeClassReconciler struct {
 // +kubebuilder:rbac:groups=karpenter.exoscale.com,resources=exoscalenodeclasses/finalizers,verbs=update
 // +kubebuilder:rbac:groups=karpenter.sh,resources=nodeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", req.NamespacedName))
@@ -162,6 +167,18 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 			errorMessage: "Private network resolution failed",
 			condition:    ConditionPrivateNetworksResolved,
 		},
+		{
+			reconcileFn:  r.reconcileContainerRegistrySecrets,
+			reason:       "ContainerRegistryResolutionFailed",
+			errorMessage: "Container registry secret resolution failed",
+			condition:    ConditionContainerRegistryResolved,
+		},
+		{
+			reconcileFn:  r.reconcileCPUManagerHash,
+			reason:       "CPUManagerHashComputeFailed",
+			errorMessage: "CPU manager hash compute failed",
+			condition:    ConditionContainerRegistryResolved,
+		},
 	}
 
 	nodeClass.StatusConditions().SetFalse(status.ConditionReady, "Reconciling", "Reconciling node class resources")
@@ -181,7 +198,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	}
 
 	if nodeClass.StatusConditions().IsTrue(ConditionTemplateResolved, ConditionSecurityGroupsResolved, ConditionAntiAffinityGroupsResolved,
-		ConditionPrivateNetworksResolved, ConditionElasticIPsResolved) {
+		ConditionPrivateNetworksResolved, ConditionElasticIPsResolved, ConditionContainerRegistryResolved) {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 		r.Recorder.Eventf(nodeClass, nil, "Normal", "Ready", "Ready", "NodeClass is ready for use")
 	}
@@ -354,11 +371,69 @@ func (r *ExoscaleNodeClassReconciler) orphanedNodeClaimName(inst egov3.ListInsta
 func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&apiv1.ExoscaleNodeClass{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.secretToNodeClasses),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				return obj.GetNamespace() == "kube-system"
+			})),
+		).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 5,
 		}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
+}
+
+// secretToNodeClasses lists all ExoscaleNodeClass objects and returns a
+// reconcile request for each one whose spec.containerRegistry references the
+// changed Secret (by name in kube-system).
+func (r *ExoscaleNodeClassReconciler) secretToNodeClasses(ctx context.Context, obj client.Object) []reconcile.Request {
+	secret, ok := obj.(*corev1.Secret)
+	if !ok || secret.Namespace != "kube-system" {
+		return nil
+	}
+	var list apiv1.ExoscaleNodeClassList
+	if err := r.List(ctx, &list); err != nil {
+		return nil
+	}
+	var out []reconcile.Request
+	for i := range list.Items {
+		nc := &list.Items[i]
+		if nc.Spec.ContainerRegistry == nil {
+			continue
+		}
+		if referencesSecret(nc.Spec.ContainerRegistry, secret.Name) {
+			out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nc)})
+		}
+	}
+	return out
+}
+
+// referencesSecret reports whether the given kube-system Secret is named by
+// any mirror TLS ref or credential ref inside the ContainerRegistry spec.
+func referencesSecret(spec *apiv1.ContainerRegistrySpec, secretName string) bool {
+	for _, mirror := range spec.Mirrors {
+		for _, ep := range mirror.Endpoints {
+			if ep.TLSSecretRef != nil && ep.TLSSecretRef.Name == secretName {
+				return true
+			}
+		}
+	}
+	for _, cred := range spec.Credentials {
+		if cred.Basic != nil {
+			if cred.Basic.UsernameSecretRef.Name == secretName || cred.Basic.PasswordSecretRef.Name == secretName {
+				return true
+			}
+		}
+		if cred.Auth != nil && cred.Auth.AuthSecretRef.Name == secretName {
+			return true
+		}
+		if cred.IdentityToken != nil && cred.IdentityToken.IdentityTokenSecretRef.Name == secretName {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *ExoscaleNodeClassReconciler) validateSpec(nodeClass *apiv1.ExoscaleNodeClass) error {

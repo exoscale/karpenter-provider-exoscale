@@ -72,6 +72,179 @@ spec:
                 items:
                   type: string
                 type: array
+              containerRegistry:
+                description: |-
+                  ContainerRegistry configures per-registry containerd mirrors and
+                  pull credentials. All credentials and TLS material must be sourced
+                  from Kubernetes Secrets in the `kube-system` namespace.
+                properties:
+                  credentials:
+                    items:
+                      properties:
+                        auth:
+                          properties:
+                            authSecretRef:
+                              description: SecretKeySelector selects a key of a Secret.
+                              properties:
+                                key:
+                                  description: The key of the secret to select from.  Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret or its key
+                                    must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                          required:
+                          - authSecretRef
+                          type: object
+                        basic:
+                          properties:
+                            passwordSecretRef:
+                              description: SecretKeySelector selects a key of a Secret.
+                              properties:
+                                key:
+                                  description: The key of the secret to select from.  Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret or its key
+                                    must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            usernameSecretRef:
+                              description: SecretKeySelector selects a key of a Secret.
+                              properties:
+                                key:
+                                  description: The key of the secret to select from.  Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret or its key
+                                    must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                          required:
+                          - passwordSecretRef
+                          - usernameSecretRef
+                          type: object
+                        identityToken:
+                          properties:
+                            identityTokenSecretRef:
+                              description: SecretKeySelector selects a key of a Secret.
+                              properties:
+                                key:
+                                  description: The key of the secret to select from.  Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret or its key
+                                    must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                          required:
+                          - identityTokenSecretRef
+                          type: object
+                        registry:
+                          pattern: ^[a-zA-Z0-9._-]+$
+                          type: string
+                      required:
+                      - registry
+                      type: object
+                    maxItems: 50
+                    type: array
+                  mirrors:
+                    items:
+                      properties:
+                        endpoints:
+                          items:
+                            properties:
+                              overridePath:
+                                type: boolean
+                              skipVerify:
+                                type: boolean
+                              tlsSecretRef:
+                                description: |-
+                                  SecretReference represents a Secret Reference. It has enough information to retrieve secret
+                                  in any namespace
+                                properties:
+                                  name:
+                                    description: name is unique within a namespace
+                                      to reference a secret resource.
+                                    type: string
+                                  namespace:
+                                    description: namespace defines the space within
+                                      which the secret name must be unique.
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              url:
+                                pattern: ^https?://.+
+                                type: string
+                            required:
+                            - url
+                            type: object
+                          maxItems: 10
+                          minItems: 1
+                          type: array
+                        registry:
+                          pattern: ^[a-zA-Z0-9._-]+$
+                          type: string
+                      required:
+                      - endpoints
+                      - registry
+                      type: object
+                    maxItems: 50
+                    type: array
+                type: object
               diskSize:
                 default: 50
                 description: DiskSize is the size of the root disk in GB
@@ -124,6 +297,35 @@ spec:
                     items:
                       type: string
                     type: array
+                  cpuManagerPolicy:
+                    description: |-
+                      CPUManagerPolicy selects the CPU management policy for the kubelet.
+                      "static" requires a non-zero cpu value in kube-reserved or system-reserved.
+                    enum:
+                    - none
+                    - static
+                    type: string
+                  cpuManagerPolicyOptions:
+                    description: |-
+                      CPUManagerPolicyOptions fine-tunes the static CPU manager policy.
+                      Ignored unless CPUManagerPolicy == "static".
+                    items:
+                      enum:
+                      - full-pcpus-only
+                      - distribute-cpus-across-numa
+                      - prefer-align-cpus-by-uncorecache
+                      - strict-cpu-reservation
+                      - align-by-socket
+                      - distribute-cpus-across-cores
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  cpuManagerReconcilePeriod:
+                    default: 10s
+                    description: CPUManagerReconcilePeriod is how often the kubelet
+                      reconciles CPU assignments.
+                    pattern: ^[0-9]+(ns|us|ms|s|m|h)$
+                    type: string
                   featureGates:
                     additionalProperties:
                       type: boolean
@@ -194,6 +396,11 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: cpuManagerPolicyOptions requires cpuManagerPolicy to be
+                    'static'
+                  rule: '!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy
+                    == ''static'''
               privateNetworkSelectorTerms:
                 description: PrivateNetworkSelectorTerms is a list of selector terms
                   to select private networks
@@ -266,6 +473,24 @@ spec:
                 specified
               rule: (has(self.templateID) && !has(self.imageTemplateSelector)) ||
                 (!has(self.templateID) && has(self.imageTemplateSelector))
+            - message: containerRegistry.mirrors[*].endpoints[*].tlsSecretRef.name
+                must be non-empty when set, and each credentials entry must declare
+                exactly one of basic/auth/identityToken
+              rule: '!has(self.containerRegistry) || (self.containerRegistry.mirrors.all(m,
+                m.endpoints.all(e, !has(e.tlsSecretRef) || size(e.tlsSecretRef.name)
+                > 0)) && (!has(self.containerRegistry.credentials) || self.containerRegistry.credentials.all(c,
+                [has(c.basic), has(c.auth), has(c.identityToken)].filter(x, x).size()
+                == 1)))'
+            - message: userData and containerRegistry are mutually exclusive; configure
+                container registry via the structured containerRegistry field only
+              rule: '!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))'
+            - message: cpuManagerPolicy 'static' requires a non-zero cpu reservation
+                in kube-reserved or system-reserved
+              rule: '!has(self.kubelet) || self.kubelet.cpuManagerPolicy != ''static''
+                || ((has(self.kubelet.kubeReserved) && has(self.kubelet.kubeReserved.cpu)
+                && self.kubelet.kubeReserved.cpu != ''0'') || (has(self.kubelet.systemReserved)
+                && has(self.kubelet.systemReserved.cpu) && self.kubelet.systemReserved.cpu
+                != ''0''))'
           status:
             description: ExoscaleNodeClassStatus defines the observed state of ExoscaleNodeClass
             properties:
@@ -331,12 +556,30 @@ spec:
                   - type
                   type: object
                 type: array
+              containerRegistryHash:
+                description: |-
+                  ContainerRegistryHash is a SHA256 of the resolved container registry
+                  configuration (including referenced Secret contents). It is used for
+                  drift detection when a referenced Secret is rotated.
+                type: string
+              cpuManagerHash:
+                description: |-
+                  CPUManagerHash is a SHA256 of the kubelet CPU manager configuration.
+                  Empty when all CPU manager fields are at their defaults.
+                type: string
               elasticIPs:
                 description: Computed ElasticIP IDs after applying selectors
                 items:
                   pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
                   type: string
                 type: array
+              imageID:
+                description: |-
+                  ImageID is the resolved Exoscale instance template ID currently
+                  desired by this NodeClass (after applying spec.templateID or
+                  spec.imageTemplateSelector). Used by IsDrifted to compare against the
+                  image ID stored on each NodeClaim's status.
+                type: string
               privateNetworks:
                 description: Computed PrivateNetwork IDs after applying selectors
                 items:

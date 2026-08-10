@@ -15,6 +15,8 @@ import (
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata"
 	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -23,6 +25,7 @@ import (
 
 type Provider struct {
 	exoClient            *egov3.Client
+	kubeClient           client.Client
 	instanceTypeProvider *instancetype.Provider
 	templateProvider     *template.Provider
 	userdataProvider     *userdata.Provider
@@ -31,6 +34,7 @@ type Provider struct {
 
 func NewProvider(
 	exoClient *egov3.Client,
+	kubeClient client.Client,
 	instanceTypeProvider *instancetype.Provider,
 	templateProvider *template.Provider,
 	userdataProvider *userdata.Provider,
@@ -38,6 +42,7 @@ func NewProvider(
 ) *Provider {
 	return &Provider{
 		exoClient:            exoClient,
+		kubeClient:           kubeClient,
 		instanceTypeProvider: instanceTypeProvider,
 		templateProvider:     templateProvider,
 		userdataProvider:     userdataProvider,
@@ -188,7 +193,36 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	instance := FromExoscaleInstance(createdInstance, instanceType, p.options.Zone)
 	log.FromContext(ctx).Info("instance created successfully", "instanceID", instance.ID, "duration", time.Since(start))
 
+	if err := p.patchNodeClaimAnnotations(ctx, nodeClaim, nodeClass); err != nil {
+		log.FromContext(ctx).Error(err, "failed to patch NodeClaim annotations", "nodeClaim", nodeClaim.Name)
+	}
+
 	return instance, nil
+}
+
+// patchNodeClaimAnnotations records the resolved container-registry hash and
+// the kubelet CPU manager hash on the NodeClaim so IsDrifted can detect
+// changes to either of them. The CPU manager annotation is written
+// unconditionally (including when empty) so removing all CPU manager config
+// still triggers drift.
+func (p *Provider) patchNodeClaimAnnotations(ctx context.Context, nodeClaim *karpenterv1.NodeClaim, nodeClass *apiv1.ExoscaleNodeClass) error {
+	if p.kubeClient == nil || nodeClass.Status.ContainerRegistryHash == "" {
+		return nil
+	}
+	stored := &karpenterv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: nodeClaim.Name}}
+	if err := p.kubeClient.Get(ctx, client.ObjectKey{Name: nodeClaim.Name}, stored); err != nil {
+		return fmt.Errorf("getting NodeClaim %s: %w", nodeClaim.Name, err)
+	}
+	if stored.Annotations == nil {
+		stored.Annotations = map[string]string{}
+	}
+	if stored.Annotations[constants.AnnotationContainerRegistryHash] == nodeClass.Status.ContainerRegistryHash {
+		return nil
+	}
+	patch := client.MergeFrom(stored.DeepCopy())
+	stored.Annotations[constants.AnnotationContainerRegistryHash] = nodeClass.Status.ContainerRegistryHash
+	stored.Annotations[constants.AnnotationCPUManagerHash] = nodeClass.Status.CPUManagerHash
+	return p.kubeClient.Patch(ctx, stored, patch)
 }
 
 func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {

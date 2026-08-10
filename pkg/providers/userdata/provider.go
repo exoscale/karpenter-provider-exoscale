@@ -28,6 +28,13 @@ func NewProvider(kubeClient client.Client) *Provider {
 	}
 }
 
+// RegistryResolver exposes the shared Secret-loading code path used by both
+// the NodeClass reconciler (validation + hash) and the userdata provider
+// (TOML rendering).
+func (p *Provider) RegistryResolver() *RegistryResolver {
+	return NewRegistryResolver(p.kubeClient)
+}
+
 func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, options *Options) (string, error) {
 	if nodeClass == nil {
 		return "", fmt.Errorf("nodeClass cannot be nil")
@@ -50,6 +57,10 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		options.CABundle = caBundle
 	}
 
+	registry, err := NewRegistryResolver(p.kubeClient).Resolve(ctx, options.ContainerRegistry)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve container registry: %w", err)
+	}
 	bootstrapOptions := &bootstrap.Options{
 		ClusterEndpoint:             options.ClusterEndpoint,
 		ClusterDNS:                  options.ClusterDNS,
@@ -65,6 +76,10 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		SystemReserved:              options.SystemReserved,
 		FeatureGates:                options.FeatureGates,
 		UserData:                    options.UserData,
+		ContainerRegistry:           registry.ToBootstrap(),
+		CPUManagerPolicy:            options.CPUManagerPolicy,
+		CPUManagerPolicyOptions:     options.CPUManagerPolicyOptions,
+		CPUManagerReconcilePeriod:   options.CPUManagerReconcilePeriod,
 	}
 
 	if bootstrapOptions.Labels == nil {

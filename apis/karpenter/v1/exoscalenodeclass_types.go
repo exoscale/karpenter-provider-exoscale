@@ -3,6 +3,7 @@ package v1
 
 import (
 	"github.com/awslabs/operatorpkg/status"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 )
@@ -53,6 +54,9 @@ type SelectorTerms struct {
 // ExoscaleNodeClassSpec defines the desired state of ExoscaleNodeClass
 // +kubebuilder:validation:XValidation:rule="!has(self.kubelet) || !has(self.kubelet.imageGCHighThresholdPercent) || !has(self.kubelet.imageGCLowThresholdPercent) || self.kubelet.imageGCLowThresholdPercent < self.kubelet.imageGCHighThresholdPercent",message="imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent"
 // +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
+// +kubebuilder:validation:XValidation:rule="!has(self.containerRegistry) || (self.containerRegistry.mirrors.all(m, m.endpoints.all(e, !has(e.tlsSecretRef) || size(e.tlsSecretRef.name) > 0)) && (!has(self.containerRegistry.credentials) || self.containerRegistry.credentials.all(c, [has(c.basic), has(c.auth), has(c.identityToken)].filter(x, x).size() == 1)))",message="containerRegistry.mirrors[*].endpoints[*].tlsSecretRef.name must be non-empty when set, and each credentials entry must declare exactly one of basic/auth/identityToken"
+// +kubebuilder:validation:XValidation:rule="!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))",message="userData and containerRegistry are mutually exclusive; configure container registry via the structured containerRegistry field only"
+// +kubebuilder:validation:XValidation:rule="!has(self.kubelet) || self.kubelet.cpuManagerPolicy != 'static' || ((has(self.kubelet.kubeReserved) && has(self.kubelet.kubeReserved.cpu) && self.kubelet.kubeReserved.cpu != '0') || (has(self.kubelet.systemReserved) && has(self.kubelet.systemReserved.cpu) && self.kubelet.systemReserved.cpu != '0'))",message="cpuManagerPolicy 'static' requires a non-zero cpu reservation in kube-reserved or system-reserved"
 type ExoscaleNodeClassSpec struct {
 	// +optional
 	// +kubebuilder:validation:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -122,8 +126,72 @@ type ExoscaleNodeClassSpec struct {
 	// cluster-certificate) will always take precedence over user-provided values.
 	// +optional
 	UserData *string `json:"userData,omitempty"`
+
+	// ContainerRegistry configures per-registry containerd mirrors and
+	// pull credentials. All credentials and TLS material must be sourced
+	// from Kubernetes Secrets in the `kube-system` namespace.
+	// +optional
+	ContainerRegistry *ContainerRegistrySpec `json:"containerRegistry,omitempty"`
 }
 
+type ContainerRegistrySpec struct {
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	Mirrors []ContainerRegistryMirror `json:"mirrors,omitempty"`
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
+}
+
+type ContainerRegistryMirror struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9._-]+$"
+	Registry string `json:"registry"`
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	Endpoints []ContainerRegistryMirrorEndpoint `json:"endpoints"`
+}
+
+type ContainerRegistryMirrorEndpoint struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern="^https?://.+"
+	URL string `json:"url"`
+	// +optional
+	TLSSecretRef *v1.SecretReference `json:"tlsSecretRef,omitempty"`
+	// +optional
+	OverridePath bool `json:"overridePath,omitempty"`
+	// +optional
+	SkipVerify bool `json:"skipVerify,omitempty"`
+}
+
+type ContainerRegistryCredential struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern="^[a-zA-Z0-9._-]+$"
+	Registry string `json:"registry"`
+	// +optional
+	Basic *ContainerRegistryBasicAuth `json:"basic,omitempty"`
+	// +optional
+	Auth *ContainerRegistryAuth `json:"auth,omitempty"`
+	// +optional
+	IdentityToken *ContainerRegistryIdentityToken `json:"identityToken,omitempty"`
+}
+
+type ContainerRegistryBasicAuth struct {
+	// +kubebuilder:validation:Required
+	UsernameSecretRef v1.SecretKeySelector `json:"usernameSecretRef"`
+	// +kubebuilder:validation:Required
+	PasswordSecretRef v1.SecretKeySelector `json:"passwordSecretRef"`
+}
+
+type ContainerRegistryAuth struct {
+	AuthSecretRef v1.SecretKeySelector `json:"authSecretRef"`
+}
+type ContainerRegistryIdentityToken struct {
+	IdentityTokenSecretRef v1.SecretKeySelector `json:"identityTokenSecretRef"`
+}
+
+// KubeletConfiguration holds kubelet settings applied at node bootstrap.
+// +kubebuilder:validation:XValidation:rule="!has(self.cpuManagerPolicyOptions) || self.cpuManagerPolicy == 'static'",message="cpuManagerPolicyOptions requires cpuManagerPolicy to be 'static'"
 type KubeletConfiguration struct {
 	// ClusterDNS is a list of IP addresses for the cluster DNS server
 	// +kubebuilder:default={"10.96.0.10"}
@@ -162,6 +230,26 @@ type KubeletConfiguration struct {
 	// FeatureGates is a map of feature gates to enable/disable for the kubelet
 	// +optional
 	FeatureGates map[string]bool `json:"featureGates,omitempty"`
+
+	// CPUManagerPolicy selects the CPU management policy for the kubelet.
+	// "static" requires a non-zero cpu value in kube-reserved or system-reserved.
+	// +kubebuilder:validation:Enum=none;static
+	// +optional
+	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+
+	// CPUManagerPolicyOptions fine-tunes the static CPU manager policy.
+	// Ignored unless CPUManagerPolicy == "static".
+	// +kubebuilder:validation:items:Enum=full-pcpus-only;distribute-cpus-across-numa;prefer-align-cpus-by-uncorecache;strict-cpu-reservation;align-by-socket;distribute-cpus-across-cores
+	// +optional
+	// +listType=atomic
+	CPUManagerPolicyOptions []string `json:"cpuManagerPolicyOptions,omitempty"`
+
+	// CPUManagerReconcilePeriod is how often the kubelet reconciles CPU assignments.
+	// +kubebuilder:default="10s"
+	// +kubebuilder:validation:Pattern="^[0-9]+(ns|us|ms|s|m|h)$"
+	// +optional
+	// The default value above must stay in sync with DefaultCPUManagerReconcilePeriod.
+	CPUManagerReconcilePeriod string `json:"cpuManagerReconcilePeriod,omitempty"`
 }
 
 type KubeResourceReservation struct {
@@ -237,6 +325,24 @@ type ExoscaleNodeClassStatus struct {
 	// +optional
 	// +kubebuilder:validation:items:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 	ElasticIPs []string `json:"elasticIPs,omitempty"`
+
+	// ContainerRegistryHash is a SHA256 of the resolved container registry
+	// configuration (including referenced Secret contents). It is used for
+	// drift detection when a referenced Secret is rotated.
+	// +optional
+	ContainerRegistryHash string `json:"containerRegistryHash,omitempty"`
+
+	// CPUManagerHash is a SHA256 of the kubelet CPU manager configuration.
+	// Empty when all CPU manager fields are at their defaults.
+	// +optional
+	CPUManagerHash string `json:"cpuManagerHash,omitempty"`
+
+	// ImageID is the resolved Exoscale instance template ID currently
+	// desired by this NodeClass (after applying spec.templateID or
+	// spec.imageTemplateSelector). Used by IsDrifted to compare against the
+	// image ID stored on each NodeClaim's status.
+	// +optional
+	ImageID string `json:"imageID,omitempty"`
 }
 
 // ExoscaleNodeClassList contains a list of ExoscaleNodeClass
@@ -246,3 +352,12 @@ type ExoscaleNodeClassList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ExoscaleNodeClass `json:"items"`
 }
+
+// DefaultCPUManagerReconcilePeriod is the kubelet default for
+// --cpu-manager-reconcile-period. It is mirrored by the
+// +kubebuilder:default marker on KubeletConfiguration.CPUManagerReconcilePeriod
+// and must be kept in sync with it. The reconciler and the bootstrap TOML
+// emitter both consult this constant to decide whether a non-empty value is
+// user-supplied or just the apiserver-injected default; matching the kubelet
+// default keeps the resulting user-data and the drift hash sparse.
+const DefaultCPUManagerReconcilePeriod = "10s"

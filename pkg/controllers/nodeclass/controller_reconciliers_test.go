@@ -29,6 +29,7 @@ func TestReconcileTemplate(t *testing.T) {
 		exoscaleClientGetTplFunc func(ctx context.Context, id egov3.UUID) (*egov3.Template, error)
 		wantErr                  bool
 		errContains              string
+		expectedImageID          string
 	}{
 		{
 			name: "successfully resolves template by ID",
@@ -53,7 +54,8 @@ func TestReconcileTemplate(t *testing.T) {
 					ID: egov3.UUID("550e8400-e29b-41d4-a716-446655440000"),
 				}, nil
 			},
-			wantErr: false,
+			wantErr:         false,
+			expectedImageID: "550e8400-e29b-41d4-a716-446655440000",
 		},
 		{
 			name: "successfully resolves template with image selector",
@@ -81,7 +83,8 @@ func TestReconcileTemplate(t *testing.T) {
 					ID: egov3.UUID("660e8400-e29b-41d4-a716-446655440001"),
 				}, nil
 			},
-			wantErr: false,
+			wantErr:         false,
+			expectedImageID: "660e8400-e29b-41d4-a716-446655440001",
 		},
 		{
 			name: "fails when template resolver returns error",
@@ -102,8 +105,9 @@ func TestReconcileTemplate(t *testing.T) {
 				t.Error("GetTemplate should not be called when resolver fails")
 				return nil, nil
 			},
-			wantErr:     true,
-			errContains: "failed to resolve template ID",
+			wantErr:         true,
+			errContains:     "failed to resolve template ID",
+			expectedImageID: "",
 		},
 		{
 			name: "fails when template not found in exoscale",
@@ -126,8 +130,9 @@ func TestReconcileTemplate(t *testing.T) {
 			exoscaleClientGetTplFunc: func(ctx context.Context, id egov3.UUID) (*egov3.Template, error) {
 				return nil, errors.New("template not found")
 			},
-			wantErr:     true,
-			errContains: "not found or not accessible",
+			wantErr:         true,
+			errContains:     "not found or not accessible",
+			expectedImageID: "",
 		},
 		{
 			name: "fails when exoscale client returns access error",
@@ -150,8 +155,9 @@ func TestReconcileTemplate(t *testing.T) {
 			exoscaleClientGetTplFunc: func(ctx context.Context, id egov3.UUID) (*egov3.Template, error) {
 				return nil, errors.New("access denied")
 			},
-			wantErr:     true,
-			errContains: "not found or not accessible",
+			wantErr:         true,
+			errContains:     "not found or not accessible",
+			expectedImageID: "",
 		},
 	}
 
@@ -198,6 +204,10 @@ func TestReconcileTemplate(t *testing.T) {
 				if err != nil {
 					t.Errorf("reconcileTemplate() unexpected error = %v", err)
 				}
+			}
+
+			if got := tt.nodeClass.Status.ImageID; got != tt.expectedImageID {
+				t.Errorf("reconcileTemplate() Status.ImageID = %q, want %q", got, tt.expectedImageID)
 			}
 		})
 	}
