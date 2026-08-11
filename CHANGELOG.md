@@ -1,6 +1,11 @@
 Changelog
 =========
 
+UNRELEASED
+------------------
+
+- fix(rbac): add missing events.k8s.io/events permission
+
 1.36.2
 ------------------
 

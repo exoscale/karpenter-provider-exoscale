@@ -322,8 +322,9 @@ spec:
                     x-kubernetes-list-type: atomic
                   cpuManagerReconcilePeriod:
                     default: 10s
-                    description: CPUManagerReconcilePeriod is how often the kubelet
-                      reconciles CPU assignments.
+                    description: |-
+                      CPUManagerReconcilePeriod is how often the kubelet reconciles CPU assignments.
+                      The default value above must stay in sync with DefaultCPUManagerReconcilePeriod.
                     pattern: ^[0-9]+(ns|us|ms|s|m|h)$
                     type: string
                   featureGates:
