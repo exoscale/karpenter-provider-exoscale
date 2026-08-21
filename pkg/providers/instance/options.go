@@ -15,14 +15,14 @@ const (
 )
 
 type Options struct {
-	Zone                      string
-	ClusterID                 string
-	InstancePrefix            string
-	APIKey                    string
-	APISecret                 string
-	ClusterDomain             string
-	ClusterEndpoint           string
-	additionalSecurityGroupID string
+	Zone                         string
+	ClusterID                    string
+	InstancePrefix               string
+	APIKey                       string
+	APISecret                    string
+	ClusterDomain                string
+	ClusterEndpoint              string
+	ApplySKSDefaultSecurityGroup bool
 }
 
 func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error) {
@@ -62,22 +62,20 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 		clusterEndpoint = fallbackClusterEndpoint
 	}
 
-	additionalSecurityGroupID := os.Getenv("SECURITY_GROUP_ID")
-	if additionalSecurityGroupID != "" {
-		if _, err := uuid.Parse(additionalSecurityGroupID); err != nil {
-			return nil, fmt.Errorf("SECURITY_GROUP_ID environment variable is not a valid UUID")
-		}
+	ApplySKSDefaultSecurityGroup := false
+	if os.Getenv("APPLY_SKS_DEFAULT_SECURITY_GROUP") == "true" {
+		ApplySKSDefaultSecurityGroup = true
 	}
 
 	return &Options{
-		Zone:                      zone,
-		ClusterID:                 clusterID,
-		InstancePrefix:            instancePrefix,
-		APIKey:                    APIKey,
-		APISecret:                 APISecret,
-		ClusterDomain:             clusterDomain,
-		ClusterEndpoint:           clusterEndpoint,
-		additionalSecurityGroupID: additionalSecurityGroupID,
+		Zone:                         zone,
+		ClusterID:                    clusterID,
+		InstancePrefix:               instancePrefix,
+		APIKey:                       APIKey,
+		APISecret:                    APISecret,
+		ClusterDomain:                clusterDomain,
+		ClusterEndpoint:              clusterEndpoint,
+		ApplySKSDefaultSecurityGroup: ApplySKSDefaultSecurityGroup,
 	}, nil
 }
 

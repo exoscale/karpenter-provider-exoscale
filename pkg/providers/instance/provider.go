@@ -106,6 +106,16 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		return nil, fmt.Errorf("failed to resolve template ID: %w", err)
 	}
 
+	securityGroups := p.convertSecurityGroups(nodeClass.Status.SecurityGroups)
+
+	if p.options.ApplySKSDefaultSecurityGroup {
+		cluster, err := p.exoClient.GetSKSCluster(ctx, egov3.UUID(p.options.ClusterID))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get parent cluster %s: %w", p.options.ClusterID, err)
+		}
+		securityGroups = append(securityGroups, egov3.SecurityGroup{ID: *cluster.DefaultSecurityGroupID})
+	}
+
 	createRequest := egov3.CreateInstanceRequest{
 		Name:               instanceName,
 		InstanceType:       &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
@@ -113,7 +123,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		DiskSize:           nodeClass.Spec.DiskSize,
 		UserData:           userData,
 		Labels:             p.GenerateInstanceLabels(nodeClaim),
-		SecurityGroups:     p.convertSecurityGroups(nodeClass.Status.SecurityGroups),
+		SecurityGroups:     securityGroups,
 		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Status.AntiAffinityGroups),
 		Ipv6Enabled:        &nodeClass.Spec.EnableIPv6,
 	}
@@ -506,9 +516,6 @@ func (p *Provider) convertSecurityGroups(ids []string) []egov3.SecurityGroup {
 	result := make([]egov3.SecurityGroup, len(ids))
 	for i, id := range ids {
 		result[i] = egov3.SecurityGroup{ID: egov3.UUID(id)}
-	}
-	if p.options.additionalSecurityGroupID != "" {
-		result = append(result, egov3.SecurityGroup{ID: egov3.UUID(p.options.additionalSecurityGroupID)})
 	}
 	return result
 }
