@@ -92,21 +92,6 @@ func (r *ExoscaleNodeClassReconciler) reconcileSecurityGroups(ctx context.Contex
 		sgIDs = append(sgIDs, sg.ID.String())
 	}
 
-	// no SecurityGroupSelectorTerms or SecurityGroups were provided, fallback to default
-	if len(nodeClass.Spec.SecurityGroupSelectorTerms)+len(nodeClass.Spec.SecurityGroups) == 0 {
-		sg, err := r.getCachedSecurityGroupByName(ctx, "default")
-		if err != nil {
-			log.FromContext(ctx).Error(err, "failed to get default security group")
-			return fmt.Errorf("failed to get default security ground: %w", err)
-		}
-
-		if sg == nil {
-			log.FromContext(ctx).Error(err, "default security group was not found")
-			return fmt.Errorf("default security was not found: %w", err)
-		}
-		sgIDs = []string{sg.ID.String()}
-	}
-
 	nodeClass.Status.SecurityGroups = sgIDs
 	return nil
 }

@@ -15,13 +15,14 @@ const (
 )
 
 type Options struct {
-	Zone            string
-	ClusterID       string
-	InstancePrefix  string
-	APIKey          string
-	APISecret       string
-	ClusterDomain   string
-	ClusterEndpoint string
+	Zone                      string
+	ClusterID                 string
+	InstancePrefix            string
+	APIKey                    string
+	APISecret                 string
+	ClusterDomain             string
+	ClusterEndpoint           string
+	additionalSecurityGroupID string
 }
 
 func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error) {
@@ -61,14 +62,22 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 		clusterEndpoint = fallbackClusterEndpoint
 	}
 
+	additionalSecurityGroupID := os.Getenv("SECURITY_GROUP_ID")
+	if additionalSecurityGroupID != "" {
+		if _, err := uuid.Parse(additionalSecurityGroupID); err != nil {
+			return nil, fmt.Errorf("SECURITY_GROUP_ID environment variable is not a valid UUID")
+		}
+	}
+
 	return &Options{
-		Zone:            zone,
-		ClusterID:       clusterID,
-		InstancePrefix:  instancePrefix,
-		APIKey:          APIKey,
-		APISecret:       APISecret,
-		ClusterDomain:   clusterDomain,
-		ClusterEndpoint: clusterEndpoint,
+		Zone:                      zone,
+		ClusterID:                 clusterID,
+		InstancePrefix:            instancePrefix,
+		APIKey:                    APIKey,
+		APISecret:                 APISecret,
+		ClusterDomain:             clusterDomain,
+		ClusterEndpoint:           clusterEndpoint,
+		additionalSecurityGroupID: additionalSecurityGroupID,
 	}, nil
 }
 

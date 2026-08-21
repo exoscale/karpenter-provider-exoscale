@@ -507,6 +507,9 @@ func (p *Provider) convertSecurityGroups(ids []string) []egov3.SecurityGroup {
 	for i, id := range ids {
 		result[i] = egov3.SecurityGroup{ID: egov3.UUID(id)}
 	}
+	if p.options.additionalSecurityGroupID != "" {
+		result = append(result, egov3.SecurityGroup{ID: egov3.UUID(p.options.additionalSecurityGroupID)})
+	}
 	return result
 }
 
