@@ -1,6 +1,13 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- feat(instance): automatically attach sks cluster default securitygroup (when env-var is set)
+- fix(deps): bump golang 1.26.6
+- fix: ExoscaleNodeClass `spec.kubelet` definition covering default values (!158)
+
 1.36.2
 ------------------
 
