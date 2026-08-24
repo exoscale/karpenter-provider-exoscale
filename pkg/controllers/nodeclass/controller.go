@@ -117,7 +117,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 
 		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 			if errors.IsConflict(err) {
-				return reconcile.Result{Requeue: true}, nil
+				return reconcile.Result{RequeueAfter: 0}, nil
 			}
 
 			return reconcile.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("failed to patch nodeclass status: %w", err)
@@ -207,7 +207,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
 		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 			if errors.IsConflict(err) {
-				return reconcile.Result{Requeue: true}, nil
+				return reconcile.Result{RequeueAfter: 0}, nil
 			}
 
 			return reconcile.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("failed to patch nodeclass status: %w", err)

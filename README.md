@@ -1,15 +1,21 @@
 # Karpenter Provider for Exoscale
 
-[Karpenter](https://karpenter.sh/) provider implementation for [Exoscale](https://www.exoscale.com/) cloud platform, enabling efficient Kubernetes node autoscaling.
+[Karpenter](https://karpenter.sh/) provider implementation for
+[Exoscale](https://www.exoscale.com/) cloud platform, enabling efficient
+Kubernetes node autoscaling.
 
 ## Overview
 
-This provider enables Karpenter to provision and manage Exoscale compute instances directly, supporting both SKS (Scalable Kubernetes Service) and self-managed Kubernetes clusters. It automatically selects the most cost-effective instance types based on workload requirements.
+This provider enables Karpenter to provision and manage Exoscale compute
+instances directly, supporting both SKS (Scalable Kubernetes Service) and
+self-managed Kubernetes clusters. It automatically selects the most
+cost-effective instance types based on workload requirements.
 
 ## Key Features
 
 - **Direct instance provisioning** with automatic cost optimization
-- **Drift detection** for templates, security groups, networks, anti-affinity groups, and elastic IPs  
+- **Drift detection** for templates, security groups, networks, anti-affinity
+groups, and elastic IPs  
 - **Self-healing** with node repair policies
 - **Secure bootstrapping** using temporary tokens with automatic cleanup
 - **Full Exoscale integration** including private networks and anti-affinity groups
@@ -26,17 +32,25 @@ This provider enables Karpenter to provision and manage Exoscale compute instanc
 Karpenter Exoscale implementation requires some configuration to work properly.
 
 Here are the required environment variables:
-* `EXOSCALE_SKS_CLUSTER_ID`: unique identifier (UUID) of your Kubernetes cluster. It will be used to filter nodes in Exoscale APIs.
+* `EXOSCALE_SKS_CLUSTER_ID`: unique identifier (UUID) of your Kubernetes
+  cluster. It will be used to filter nodes in Exoscale APIs.
 * `EXOSCALE_API_KEY`: Your Exoscale API key
 * `EXOSCALE_API_SECRET`: Your Exoscale API secret
 * `EXOSCALE_ZONE`: Exoscale zone hosting your cluster
 
 Optional environment variables:
-* `EXOSCALE_COMPUTE_INSTANCE_PREFIX`: prefix used to name instances created by Karpenter. Defaults to `karpenter`.
-* `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be set in Kubelet configuration. Defaults to `cluster.local`.
-* `CLUSTER_ENDPOINT`: Kubernetes API server endpoint. If not set, it is auto-detected from the in-cluster configuration.
-* `EXOSCALE_API_ENDPOINT`: Custom Exoscale API endpoint URL. If not set, the endpoint is auto-detected from the zone.
-* `EXOSCALE_API_ENVIRONMENT`: Exoscale API environment (e.g., `ppapi` for pre-production). If not set, the production environment is used.
+* `EXOSCALE_COMPUTE_INSTANCE_PREFIX`: prefix used to name instances created by
+Karpenter. Defaults to `karpenter`.
+* `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be set in
+Kubelet configuration. Defaults to `cluster.local`.
+* `CLUSTER_ENDPOINT`: Kubernetes API server endpoint. If not set, it is
+auto-detected from the in-cluster configuration.
+* `EXOSCALE_API_ENDPOINT`: Custom Exoscale API endpoint URL. If not set, the
+endpoint is auto-detected from the zone.
+* `EXOSCALE_API_ENVIRONMENT`: Exoscale API environment (e.g., `ppapi` for
+pre-production). If not set, the production environment is used.
+* `USE_SKS_DEFAULT_SECURITY_GROUP`: Attach node to parent cluster default
+security group. Defaults to `'false'` when not set or different from `'true'`.
 
 > [!IMPORTANT]
 > The IAM role bound to `EXOSCALE_API_KEY` must allow every API operation the
@@ -62,10 +76,15 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/ref
 
 Karpenter uses NodeClasses and NodeClaims to define and manage the desired state of nodes in the cluster.
 
-- **NodeClass**: A NodeClass defines a set of requirements for a group of nodes, such as instance type, disk size, and network configuration. It acts as a template for creating nodes.
-- **NodeClaim**: A NodeClaim represents a request for a specific node to be created. It references a NodeClass and includes additional information such as workload requirements and user data.
+- **NodeClass**: A NodeClass defines a set of requirements for a group of nodes,
+such as instance type, disk size, and network configuration. It acts as a
+template for creating nodes.
+- **NodeClaim**: A NodeClaim represents a request for a specific node to be
+created. It references a NodeClass and includes additional information such as
+workload requirements and user data.
 
-> **📁 See [examples/](examples/) for complete sample configurations including GPU setups and imageTemplateSelector usage.**
+> **📁 See [examples/](examples/) for complete sample configurations including
+> GPU setups and imageTemplateSelector usage.**
 
 Here is an example NodeClass for regular compute:
 
@@ -169,17 +188,23 @@ spec:
       effect: "NoSchedule"
 ```
 
-Instead of specifying a concrete `templateID`, you can use `imageTemplateSelector` to select an OS image template
-based on the Kubernetes cluster version and optional `variant` (for example `nvidia` for GPU optimized images).
+Instead of specifying a concrete `templateID`, you can use
+`imageTemplateSelector` to select an OS image template based on the Kubernetes
+cluster version and optional `variant` (for example `nvidia` for GPU optimized
+images).
 
 Fields:
 
-- `version` (optional) — a semver string like `1.34.1` (`major.minor.patch`). If omitted (or if you set `imageTemplateSelector: {}`), 
-  Karpenter will automatically detect the control plane Kubernetes version at runtime when resolving the template.
-- `variant` (optional) — a string such as `standard` or `nvidia`. Defaults to `standard` when not set.
+- `version` (optional) — a semver string like `1.34.1` (`major.minor.patch`). If
+omitted (or if you set `imageTemplateSelector: {}`), Karpenter will
+automatically detect the control plane Kubernetes version at runtime when
+resolving the template.
+- `variant` (optional) — a string such as `standard` or `nvidia`. Defaults to
+`standard` when not set.
 
-Validation: the CRD enforces that exactly one of `templateID` or `imageTemplateSelector` must be set on an
-`ExoscaleNodeClass` (see `apis/karpenter/v1/exoscalenodeclass_types.go`).
+Validation: the CRD enforces that exactly one of `templateID` or
+`imageTemplateSelector` must be set on an `ExoscaleNodeClass` (see
+`apis/karpenter/v1/exoscalenodeclass_types.go`).
 
 Example using `imageTemplateSelector` with explicit version:
 
@@ -212,8 +237,9 @@ spec:
   privateNetworkSelectorTerms: []
 ```
 
-When `imageTemplateSelector` is used the provider will resolve the optimal template ID for the given `version`
-and `variant` at provisioning time (see `pkg/providers/template/resolver.go`).
+When `imageTemplateSelector` is used the provider will resolve the optimal
+template ID for the given `version` and `variant` at provisioning time (see
+`pkg/providers/template/resolver.go`).
 
 When ExoscaleNodeClasses are defined you can now create NodeClaims that reference them:
 
