@@ -114,11 +114,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		if err != nil {
 			return nil, fmt.Errorf("failed to get parent cluster %s: %w", p.options.ClusterID, err)
 		}
-		if cluster.DefaultSecurityGroupID == nil {
-			log.FromContext(ctx).Info("default security-group was disabled on parent cluster %s", p.options.ClusterID)
-		} else if slices.Contains(nodeClass.Status.SecurityGroups, cluster.DefaultSecurityGroupID.String()) {
-			log.FromContext(ctx).Info("default security-group is already attached to the node-class")
-		} else {
+		if cluster.DefaultSecurityGroupID != nil && !slices.Contains(nodeClass.Status.SecurityGroups, cluster.DefaultSecurityGroupID.String()) {
 			securityGroups = append(securityGroups, egov3.SecurityGroup{ID: *cluster.DefaultSecurityGroupID})
 		}
 	}
