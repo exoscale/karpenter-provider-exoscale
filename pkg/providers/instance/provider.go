@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -108,12 +109,14 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 
 	securityGroups := p.convertSecurityGroups(nodeClass.Status.SecurityGroups)
 
-	if p.options.ApplySKSDefaultSecurityGroup {
+	if p.options.UseSKSDefaultSecurityGroup {
 		cluster, err := p.exoClient.GetSKSCluster(ctx, egov3.UUID(p.options.ClusterID))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get parent cluster %s: %w", p.options.ClusterID, err)
 		}
-		securityGroups = append(securityGroups, egov3.SecurityGroup{ID: *cluster.DefaultSecurityGroupID})
+		if !slices.Contains(nodeClass.Status.SecurityGroups, cluster.DefaultSecurityGroupID.String()) {
+			securityGroups = append(securityGroups, egov3.SecurityGroup{ID: *cluster.DefaultSecurityGroupID})
+		}
 	}
 
 	createRequest := egov3.CreateInstanceRequest{

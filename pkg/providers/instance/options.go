@@ -15,14 +15,14 @@ const (
 )
 
 type Options struct {
-	Zone                         string
-	ClusterID                    string
-	InstancePrefix               string
-	APIKey                       string
-	APISecret                    string
-	ClusterDomain                string
-	ClusterEndpoint              string
-	ApplySKSDefaultSecurityGroup bool
+	Zone                       string
+	ClusterID                  string
+	InstancePrefix             string
+	APIKey                     string
+	APISecret                  string
+	ClusterDomain              string
+	ClusterEndpoint            string
+	UseSKSDefaultSecurityGroup bool
 }
 
 func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error) {
@@ -62,20 +62,20 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 		clusterEndpoint = fallbackClusterEndpoint
 	}
 
-	ApplySKSDefaultSecurityGroup := false
-	if os.Getenv("APPLY_SKS_DEFAULT_SECURITY_GROUP") == "true" {
-		ApplySKSDefaultSecurityGroup = true
+	UseSKSDefaultSecurityGroup := false
+	if os.Getenv("USE_SKS_DEFAULT_SECURITY_GROUP") == "true" {
+		UseSKSDefaultSecurityGroup = true
 	}
 
 	return &Options{
-		Zone:                         zone,
-		ClusterID:                    clusterID,
-		InstancePrefix:               instancePrefix,
-		APIKey:                       APIKey,
-		APISecret:                    APISecret,
-		ClusterDomain:                clusterDomain,
-		ClusterEndpoint:              clusterEndpoint,
-		ApplySKSDefaultSecurityGroup: ApplySKSDefaultSecurityGroup,
+		Zone:                       zone,
+		ClusterID:                  clusterID,
+		InstancePrefix:             instancePrefix,
+		APIKey:                     APIKey,
+		APISecret:                  APISecret,
+		ClusterDomain:              clusterDomain,
+		ClusterEndpoint:            clusterEndpoint,
+		UseSKSDefaultSecurityGroup: UseSKSDefaultSecurityGroup,
 	}, nil
 }
 
