@@ -1,12 +1,17 @@
 Changelog
 =========
 
-Unreleased
+1.36.3
 ----------
 
 - feat(instance): automatically attach sks cluster default securitygroup (when env-var is set)
 - fix(deps): bump golang 1.26.6
 - fix: ExoscaleNodeClass `spec.kubelet` definition covering default values (!158)
+- fix(deps): Update kubernetes monorepo to v0.36.4 (#157) [GitHub]
+- fix(deps): Update github.com/awslabs/operatorpkg digest to 6d329ce (#153)
+- fix(deps): Update module github.com/stretchr/testify to v1.12.1 (#155)
+- fix(deps): Update module github.com/exoscale/egoscale/v3 to v3.1.46 (#156)
+- fix(deps): Update module sigs.k8s.io/karpenter to v1.14.1 (#160)
 
 1.36.2
 ------------------
