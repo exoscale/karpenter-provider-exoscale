@@ -322,8 +322,9 @@ spec:
                     x-kubernetes-list-type: atomic
                   cpuManagerReconcilePeriod:
                     default: 10s
-                    description: CPUManagerReconcilePeriod is how often the kubelet
-                      reconciles CPU assignments.
+                    description: |-
+                      CPUManagerReconcilePeriod is how often the kubelet reconciles CPU assignments.
+                      The default value above must stay in sync with DefaultCPUManagerReconcilePeriod.
                     pattern: ^[0-9]+(ns|us|ms|s|m|h)$
                     type: string
                   featureGates:
@@ -486,11 +487,11 @@ spec:
               rule: '!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))'
             - message: cpuManagerPolicy 'static' requires a non-zero cpu reservation
                 in kube-reserved or system-reserved
-              rule: '!has(self.kubelet) || self.kubelet.cpuManagerPolicy != ''static''
-                || ((has(self.kubelet.kubeReserved) && has(self.kubelet.kubeReserved.cpu)
-                && self.kubelet.kubeReserved.cpu != ''0'') || (has(self.kubelet.systemReserved)
-                && has(self.kubelet.systemReserved.cpu) && self.kubelet.systemReserved.cpu
-                != ''0''))'
+              rule: '!has(self.kubelet) || !has(self.kubelet.cpuManagerPolicy) ||
+                self.kubelet.cpuManagerPolicy != ''static'' || ((has(self.kubelet.kubeReserved)
+                && has(self.kubelet.kubeReserved.cpu) && self.kubelet.kubeReserved.cpu
+                != ''0'') || (has(self.kubelet.systemReserved) && has(self.kubelet.systemReserved.cpu)
+                && self.kubelet.systemReserved.cpu != ''0''))'
           status:
             description: ExoscaleNodeClassStatus defines the observed state of ExoscaleNodeClass
             properties:
