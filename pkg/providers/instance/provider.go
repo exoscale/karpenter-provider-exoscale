@@ -219,7 +219,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 // unconditionally (including when empty) so removing all CPU manager config
 // still triggers drift.
 func (p *Provider) patchNodeClaimAnnotations(ctx context.Context, nodeClaim *karpenterv1.NodeClaim, nodeClass *apiv1.ExoscaleNodeClass) error {
-	if p.kubeClient == nil || nodeClass.Status.ContainerRegistryHash == "" {
+	if p.kubeClient == nil || nodeClass.Status.ConfigurationHash == "" {
 		return nil
 	}
 	stored := &karpenterv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: nodeClaim.Name}}
@@ -229,12 +229,11 @@ func (p *Provider) patchNodeClaimAnnotations(ctx context.Context, nodeClaim *kar
 	if stored.Annotations == nil {
 		stored.Annotations = map[string]string{}
 	}
-	if stored.Annotations[constants.AnnotationContainerRegistryHash] == nodeClass.Status.ContainerRegistryHash {
+	if stored.Annotations[constants.AnnotationConfigurationHash] == nodeClass.Status.ConfigurationHash {
 		return nil
 	}
 	patch := client.MergeFrom(stored.DeepCopy())
-	stored.Annotations[constants.AnnotationContainerRegistryHash] = nodeClass.Status.ContainerRegistryHash
-	stored.Annotations[constants.AnnotationCPUManagerHash] = nodeClass.Status.CPUManagerHash
+	stored.Annotations[constants.AnnotationConfigurationHash] = nodeClass.Status.ConfigurationHash
 	return p.kubeClient.Patch(ctx, stored, patch)
 }
 

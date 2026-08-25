@@ -31,6 +31,7 @@ type Options struct {
 	CPUManagerPolicy            string
 	CPUManagerPolicyOptions     []string
 	CPUManagerReconcilePeriod   string
+	MaxPods                     *int32
 }
 
 type ContainerRegistrySettings struct {
@@ -75,6 +76,7 @@ type KubernetesSettings struct {
 	CPUManagerPolicy            string               `toml:"cpu-manager-policy,omitempty"`
 	CPUManagerPolicyOptions     []string             `toml:"cpu-manager-policy-options,omitempty"`
 	CPUManagerReconcilePeriod   string               `toml:"cpu-manager-reconcile-period,omitempty"`
+	MaxPods                     *int32               `toml:"max-pods,omitempty"`
 }
 type ResourceReservation struct {
 	CPU              string `toml:"cpu,omitempty"`
@@ -280,6 +282,13 @@ func (s *SKSBootstrap) buildConfig(options *Options) *Config {
 	// would otherwise be redundantly written into user-data.
 	if options.CPUManagerReconcilePeriod != "" && options.CPUManagerReconcilePeriod != apiv1.DefaultCPUManagerReconcilePeriod {
 		config.Settings.Kubernetes.CPUManagerReconcilePeriod = options.CPUManagerReconcilePeriod
+	}
+
+	// Only emit when the user has set a value; unset leaves the kubelet
+	// built-in default in place. sks-templates treats 0 the same way, so a
+	// nil pointer here keeps the resulting TOML sparse.
+	if options.MaxPods != nil {
+		config.Settings.Kubernetes.MaxPods = options.MaxPods
 	}
 
 	return config

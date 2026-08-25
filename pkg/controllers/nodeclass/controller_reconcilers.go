@@ -23,6 +23,9 @@ type hashEntry struct {
 }
 
 func hashEntries(entries []hashEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
 	h := sha256.New()
 	for _, e := range entries {
@@ -215,25 +218,62 @@ func (r *ExoscaleNodeClassReconciler) reconcilePrivateNetworks(ctx context.Conte
 	return nil
 }
 
-// reconcileContainerRegistrySecrets validates every Secret referenced from
-// spec.containerRegistry (always resolved in the kube-system namespace),
-// computes a deterministic hash over the resolved values and stores it in
-// nodeClass.Status.ContainerRegistryHash. Secret loading is delegated to the
-// shared userdata.RegistryResolver so the provider and the reconciler apply
-// identical validation rules.
-func (r *ExoscaleNodeClassReconciler) reconcileContainerRegistrySecrets(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+// reconcileConfigurationHash computes a single SHA256 hash over every
+// bootstrap-affecting field of the NodeClass (container registry Secret
+// contents, kubelet CPU manager, kubelet maxPods) and stores it in
+// nodeClass.Status.ConfigurationHash. The cloudprovider compares this value
+// against the karpenter.exoscale.com/configuration-hash annotation on each
+// NodeClaim to detect drift.
+//
+// Only fields the user has actually configured participate in the hash. When
+// nothing is configured, the resulting hash is empty, which is the trigger
+// for drift when the user later removes their override (the NodeClaim still
+// carries a non-empty stale hash).
+func (r *ExoscaleNodeClassReconciler) reconcileConfigurationHash(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
 
-	spec := nodeClass.Spec.ContainerRegistry
-	if spec == nil {
-		nodeClass.Status.ContainerRegistryHash = ""
-		return nil
+	var entries []hashEntry
+
+	if spec := nodeClass.Spec.ContainerRegistry; spec != nil {
+		registryEntries, err := r.containerRegistryHashEntries(ctx, spec)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, registryEntries...)
 	}
 
-	resolver := userdata.NewRegistryResolver(r.Client)
-	resolved, err := resolver.Resolve(ctx, spec)
+	kubelet := nodeClass.Spec.Kubelet
+	if pol := kubelet.CPUManagerPolicy; pol != "" && pol != "none" {
+		entries = append(entries, hashEntry{key: "cpumanager/policy", value: []byte(pol)})
+	}
+	if len(kubelet.CPUManagerPolicyOptions) > 0 && kubelet.CPUManagerPolicy == "static" {
+		opts := append([]string(nil), kubelet.CPUManagerPolicyOptions...)
+		sort.Strings(opts)
+		entries = append(entries, hashEntry{key: "cpumanager/options", value: []byte(strings.Join(opts, ","))})
+	}
+	if p := kubelet.CPUManagerReconcilePeriod; p != "" && p != apiv1.DefaultCPUManagerReconcilePeriod {
+		entries = append(entries, hashEntry{key: "cpumanager/reconcilePeriod", value: []byte(p)})
+	}
+	if kubelet.MaxPods != nil {
+		entries = append(entries, hashEntry{
+			key:   "maxpods/value",
+			value: fmt.Appendf([]byte{}, "%d", *kubelet.MaxPods),
+		})
+	}
+
+	nodeClass.Status.ConfigurationHash = hashEntries(entries)
+	return nil
+}
+
+// containerRegistryHashEntries validates every Secret referenced from
+// spec.containerRegistry (always resolved in the kube-system namespace) and
+// returns the hash entries that contribute to the bootstrap configuration
+// hash. Secret loading is delegated to the shared userdata.RegistryResolver
+// so the provider and the reconciler apply identical validation rules.
+func (r *ExoscaleNodeClassReconciler) containerRegistryHashEntries(ctx context.Context, spec *apiv1.ContainerRegistrySpec) ([]hashEntry, error) {
+	resolved, err := userdata.NewRegistryResolver(r.Client).Resolve(ctx, spec)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var entries []hashEntry
@@ -245,17 +285,17 @@ func (r *ExoscaleNodeClassReconciler) reconcileContainerRegistrySecrets(ctx cont
 			}
 			if len(ep.TLS.CA) > 0 {
 				entries = append(entries, hashEntry{
-					key:   fmt.Sprintf("mirror/%s/tls/%s/ca.crt", mirror.Registry, ep.URL),
+					key:   fmt.Sprintf("registry/mirror/%s/endpoint/%s/tls/ca.crt", mirror.Registry, ep.URL),
 					value: ep.TLS.CADec,
 				})
 			}
 			if len(ep.TLS.Cert) > 0 {
 				entries = append(entries, hashEntry{
-					key:   fmt.Sprintf("mirror/%s/tls/%s/tls.crt", mirror.Registry, ep.URL),
+					key:   fmt.Sprintf("registry/mirror/%s/endpoint/%s/tls/tls.crt", mirror.Registry, ep.URL),
 					value: ep.TLS.CertDec,
 				})
 				entries = append(entries, hashEntry{
-					key:   fmt.Sprintf("mirror/%s/tls/%s/tls.key", mirror.Registry, ep.URL),
+					key:   fmt.Sprintf("registry/mirror/%s/endpoint/%s/tls/tls.key", mirror.Registry, ep.URL),
 					value: ep.TLS.KeyDec,
 				})
 			}
@@ -263,44 +303,25 @@ func (r *ExoscaleNodeClassReconciler) reconcileContainerRegistrySecrets(ctx cont
 	}
 
 	for _, credential := range resolved.Credentials {
+		// Hash the resolved secret bytes, not just the Kind label. Without
+		// this, rotating a referenced Secret in the cluster would not
+		// change the configuration hash and would silently miss drift on
+		// the running NodeClaim.
+		var value []byte
+		switch credential.Kind {
+		case "basic":
+			value = append(append([]byte{}, credential.Username...), 0)
+			value = append(value, credential.Password...)
+		case "auth":
+			value = credential.Auth
+		case "identitytoken":
+			value = credential.IdentityToken
+		}
 		entries = append(entries, hashEntry{
-			key:   fmt.Sprintf("credential/%s/%s", credential.Registry, credential.Kind),
-			value: []byte(credential.Kind),
+			key:   fmt.Sprintf("registry/credential/%s/%s", credential.Registry, credential.Kind),
+			value: value,
 		})
 	}
 
-	nodeClass.Status.ContainerRegistryHash = hashEntries(entries)
-	return nil
-}
-
-// reconcileCPUManagerHash computes a sparse SHA256 over the kubelet CPU
-// manager configuration so that policy changes force node recreation. Only
-// non-default fields participate in the hash; an entirely default config
-// produces an empty hash, which is the trigger for drift when the user
-// later removes their override.
-func (r *ExoscaleNodeClassReconciler) reconcileCPUManagerHash(_ context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
-	kubelet := nodeClass.Spec.Kubelet
-	var entries []hashEntry
-
-	if pol := kubelet.CPUManagerPolicy; pol != "" && pol != "none" {
-		entries = append(entries, hashEntry{key: "policy", value: []byte(pol)})
-	}
-
-	if len(kubelet.CPUManagerPolicyOptions) > 0 && kubelet.CPUManagerPolicy == "static" {
-		opts := append([]string(nil), kubelet.CPUManagerPolicyOptions...)
-		sort.Strings(opts)
-		entries = append(entries, hashEntry{key: "options", value: []byte(strings.Join(opts, ","))})
-	}
-
-	if p := kubelet.CPUManagerReconcilePeriod; p != "" && p != apiv1.DefaultCPUManagerReconcilePeriod {
-		entries = append(entries, hashEntry{key: "reconcilePeriod", value: []byte(p)})
-	}
-
-	if len(entries) == 0 {
-		nodeClass.Status.CPUManagerHash = ""
-		return nil
-	}
-
-	nodeClass.Status.CPUManagerHash = hashEntries(entries)
-	return nil
+	return entries, nil
 }

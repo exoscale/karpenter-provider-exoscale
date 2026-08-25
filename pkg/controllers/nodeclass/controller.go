@@ -168,15 +168,9 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 			condition:    ConditionPrivateNetworksResolved,
 		},
 		{
-			reconcileFn:  r.reconcileContainerRegistrySecrets,
-			reason:       "ContainerRegistryResolutionFailed",
-			errorMessage: "Container registry secret resolution failed",
-			condition:    ConditionContainerRegistryResolved,
-		},
-		{
-			reconcileFn:  r.reconcileCPUManagerHash,
-			reason:       "CPUManagerHashComputeFailed",
-			errorMessage: "CPU manager hash compute failed",
+			reconcileFn:  r.reconcileConfigurationHash,
+			reason:       "ConfigurationHashComputeFailed",
+			errorMessage: "configuration hash compute failed",
 			condition:    ConditionContainerRegistryResolved,
 		},
 	}

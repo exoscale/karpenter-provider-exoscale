@@ -11,16 +11,24 @@
     - [`settings.kubernetes.cluster-certificate`](#settingskubernetescluster-certificate)
     - [`settings.kubernetes.cluster-dns-ip`](#settingskubernetescluster-dns-ip)
     - [`settings.kubernetes.cluster-domain`](#settingskubernetescluster-domain)
+    - [`settings.kubernetes.cpu-manager-policy`](#settingskubernetescpu-manager-policy)
+    - [`settings.kubernetes.cpu-manager-policy-options`](#settingskubernetescpu-manager-policy-options)
+    - [`settings.kubernetes.cpu-manager-reconcile-period`](#settingskubernetescpu-manager-reconcile-period)
     - [`settings.kubernetes.feature-gates`](#settingskubernetesfeature-gates)
     - [`settings.kubernetes.image-gc-high-threshold-percent`](#settingskubernetesimage-gc-high-threshold-percent)
     - [`settings.kubernetes.image-gc-low-threshold-percent`](#settingskubernetesimage-gc-low-threshold-percent)
     - [`settings.kubernetes.image-minimum-gc-age`](#settingskubernetesimage-minimum-gc-age)
     - [`settings.kubernetes.kube-reserved`](#settingskuberneteskube-reserved)
+    - [`settings.kubernetes.max-pods`](#settingskubernetesmax-pods)
     - [`settings.kubernetes.node-labels`](#settingskubernetesnode-labels)
     - [`settings.kubernetes.node-taints`](#settingskubernetesnode-taints)
     - [`settings.kubernetes.static-pods.<identifier>`](#settingskubernetesstatic-podsidentifier)
     - [`settings.kubernetes.standalone-mode`](#settingskubernetesstandalone-mode)
     - [`settings.kubernetes.system-reserved`](#settingskubernetessystem-reserved)
+  - [Container Registry Settings (`settings.container-registry.*`)](#container-registry-settings-settingscontainer-registry)
+    - [`settings.container-registry.mirrors`](#settingscontainer-registrymirrors)
+    - [`settings.container-registry.tls`](#settingscontainer-registrytls)
+    - [`settings.container-registry.credentials`](#settingscontainer-registrycredentials)
   - [Kubelet Device Plugins Settings (`settings.kubelet-device-plugins.*`)](#kubelet-device-plugins-settings-settingskubelet-device-plugins)
     - [`settings.kubelet-device-plugins.nvidia` (EXPERIMENTAL)](#settingskubelet-device-pluginsnvidia-experimental)
     - [`settings.kubelet-device-plugins.nvidia.time-slicing` (EXPERIMENTAL)](#settingskubelet-device-pluginsnvidiatime-slicing-experimental)
@@ -142,6 +150,51 @@ The DNS domain for the Kubernetes cluster.
   cluster-domain = "cluster.local"
   ```
 
+### `settings.kubernetes.cpu-manager-policy`
+
+**Type**: String
+
+Selects the [CPU management policy](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/) for the kubelet.
+Allowed values are `"none"` (default) and `"static"`.
+
+`"static"` requires a non-zero `cpu` reservation in `kube-reserved` or `system-reserved`.
+
+- **Example**:
+
+  ```toml
+  [settings.kubernetes]
+  cpu-manager-policy = "static"
+  ```
+
+### `settings.kubernetes.cpu-manager-policy-options`
+
+**Type**: Array of String
+
+Fine-tunes the static CPU manager policy. Ignored unless `cpu-manager-policy` is set to `"static"`.
+
+Each entry must be one of: `full-pcpus-only`, `distribute-cpus-across-numa`, `prefer-align-cpus-by-uncorecache`, `strict-cpu-reservation`, `align-by-socket`, `distribute-cpus-across-cores`.
+
+- **Example**:
+
+  ```toml
+  [settings.kubernetes]
+  cpu-manager-policy = "static"
+  cpu-manager-policy-options = ["full-pcpus-only", "align-by-socket"]
+  ```
+
+### `settings.kubernetes.cpu-manager-reconcile-period`
+
+**Type**: String (Duration)
+
+How often the kubelet reconciles CPU assignments under the static policy. The kubelet built-in default (`10s`) is used when unset.
+
+- **Example**:
+
+  ```toml
+  [settings.kubernetes]
+  cpu-manager-reconcile-period = "5s"
+  ```
+
 ### `settings.kubernetes.feature-gates`
 
 **Type**: Map of String/Boolean pairs
@@ -218,6 +271,21 @@ Resources reserved for node components.
   ephemeral-storage = "1Gi"
   ```
 
+### `settings.kubernetes.max-pods`
+
+**Type**: Integer (1-255)
+
+Sets the maximum number of pods that can run on this node.
+
+The kubelet built-in default is used when the setting is absent. Must be between `1` and `255` inclusive.
+
+- **Example**:
+
+  ```toml
+  [settings.kubernetes]
+  max-pods = 110
+  ```
+
 ### `settings.kubernetes.node-labels`
 
 **Type**: Map of Strings
@@ -289,6 +357,90 @@ Resources reserved for system components.
   cpu = "100m"
   memory = "100Mi"
   ephemeral-storage = "3Gi"
+  ```
+
+## Container Registry Settings (`settings.container-registry.*`)
+
+These settings configure [containerd registry](https://github.com/containerd/containerd/blob/main/docs/hosts.md) mirrors, TLS material and credentials so that kubelets can pull images through private registries or accelerated public mirrors.
+
+The agent hot-reloads `hosts.toml` changes (mirror re-resolution requires no node restart), but `config.toml` changes (credentials) trigger a `containerd` restart.
+
+> [!IMPORTANT]
+> Credentials and TLS material are sourced from Kubernetes Secrets referenced from `spec.containerRegistry` on the `ExoscaleNodeClass`. They are **never** stored inline in the generated user-data; the Secrets must live in the `kube-system` namespace. See `spec.containerRegistry` in `nodeclass.md` for the full schema.
+
+### `settings.container-registry.mirrors`
+
+**Type**: Array of Tables
+
+Each table defines a per-registry mirror. containerd rewrites image pulls whose hostname matches the configured `registry` and forwards them to one or more endpoints in order.
+
+- **Parameters** (per table):
+  - `registry` (string, required): Hostname rewritten by containerd (e.g. `"docker.io"`).
+  - `endpoint` (array of string, required): Ordered list of mirror endpoints (`"https://..."`).
+
+- **Example**:
+
+  ```toml
+  [[settings.container-registry.mirrors]]
+  registry = "docker.io"
+  endpoint = ["https://mirror.example.com"]
+
+  [[settings.container-registry.mirrors]]
+  registry = "gcr.io"
+  endpoint = ["https://gcr-mirror.example.com", "https://gcr-mirror-2.example.com"]
+  ```
+
+### `settings.container-registry.tls`
+
+**Type**: Map of Tables
+
+Per-mirror TLS overrides. The key is the mirror endpoint URL (`"https://..."`); the value holds the optional CA, client certificate and client key, plus connection-tuning flags.
+
+- **Parameters** (per table):
+  - `ca` (string): PEM-encoded CA bundle.
+  - `cert` (string): PEM-encoded client certificate.
+  - `key` (string): PEM-encoded client key.
+  - `override_path` (boolean): Override the URL path component. Default: `false`.
+  - `skip_verify` (boolean): Skip TLS verification. Default: `false`.
+
+- **Example**:
+
+  ```toml
+  [settings.container-registry.tls."https://mirror.example.com"]
+  ca = """-----BEGIN CERTIFICATE-----
+  ...
+  -----END CERTIFICATE-----"""
+  skip_verify = false
+  ```
+
+### `settings.container-registry.credentials`
+
+**Type**: Array of Tables
+
+Per-registry pull credentials. Each entry must declare exactly one of `username`/`password`, `auth`, or `identitytoken`; the others must be omitted.
+
+- **Parameters** (per table):
+  - `registry` (string, required): Hostname the credential applies to.
+  - `username` (string): Username (paired with `password`).
+  - `password` (string): Password (paired with `username`).
+  - `auth` (string): Pre-encoded `user:pass` string (typically base64 of `username:password`).
+  - `identitytoken` (string): OAuth2-style identity token.
+
+- **Example**:
+
+  ```toml
+  [[settings.container-registry.credentials]]
+  registry = "reg.example.com"
+  username = "robot"
+  password = "s3cr3t"
+
+  [[settings.container-registry.credentials]]
+  registry = "gcr.io"
+  auth = "X2FwcGE6c2VjcmV0Cg=="
+
+  [[settings.container-registry.credentials]]
+  registry = "ghcr.io"
+  identitytoken = "ghp_xxxxxxxxxxxxxxxxxxxx"
   ```
 
 ## Kubelet Device Plugins Settings (`settings.kubelet-device-plugins.*`)

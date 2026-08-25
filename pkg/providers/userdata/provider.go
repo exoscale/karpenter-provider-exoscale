@@ -80,6 +80,7 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		CPUManagerPolicy:            options.CPUManagerPolicy,
 		CPUManagerPolicyOptions:     options.CPUManagerPolicyOptions,
 		CPUManagerReconcilePeriod:   options.CPUManagerReconcilePeriod,
+		MaxPods:                     options.MaxPods,
 	}
 
 	if bootstrapOptions.Labels == nil {

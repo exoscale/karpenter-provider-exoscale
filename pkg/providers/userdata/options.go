@@ -25,6 +25,7 @@ type Options struct {
 	CPUManagerPolicy            string
 	CPUManagerPolicyOptions     []string
 	CPUManagerReconcilePeriod   string
+	MaxPods                     *int32
 }
 
 func NewOptions(
@@ -46,5 +47,6 @@ func NewOptions(
 		CPUManagerPolicy:            nodeClass.Spec.Kubelet.CPUManagerPolicy,
 		CPUManagerPolicyOptions:     nodeClass.Spec.Kubelet.CPUManagerPolicyOptions,
 		CPUManagerReconcilePeriod:   nodeClass.Spec.Kubelet.CPUManagerReconcilePeriod,
+		MaxPods:                     nodeClass.Spec.Kubelet.MaxPods,
 	}
 }

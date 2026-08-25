@@ -51,32 +51,37 @@ func newContainerRegistryReconciler(t *testing.T, objects ...client.Object) *Exo
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_NilSpec(t *testing.T) {
+func TestReconcileConfigurationHash_NilSpec(t *testing.T) {
 	nc := &apiv1.ExoscaleNodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc"}}
 	r := newContainerRegistryReconciler(t, nc)
-	if err := r.reconcileContainerRegistrySecrets(context.Background(), nc); err != nil {
+	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if nc.Status.ContainerRegistryHash != "" {
-		t.Errorf("expected empty hash, got %q", nc.Status.ContainerRegistryHash)
+	if nc.Status.ConfigurationHash != "" {
+		t.Errorf("expected empty hash, got %q", nc.Status.ConfigurationHash)
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_Empty(t *testing.T) {
+func TestReconcileConfigurationHash_EmptyRegistry(t *testing.T) {
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 		Spec:       apiv1.ExoscaleNodeClassSpec{ContainerRegistry: &apiv1.ContainerRegistrySpec{}},
 	}
 	r := newContainerRegistryReconciler(t, nc)
-	if err := r.reconcileContainerRegistrySecrets(context.Background(), nc); err != nil {
+	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if nc.Status.ContainerRegistryHash == "" {
-		t.Error("expected hash to be set for empty containerRegistry spec")
+	// An empty registry spec contributes no entries -> empty hash, which is
+	// consistent with the kubelet CPU manager and maxPods behaviour. Drift
+	// still fires when the user later adds registry config (hash becomes
+	// non-empty) or removes it (hash becomes empty while the NodeClaim
+	// still carries a stale non-empty hash).
+	if nc.Status.ConfigurationHash != "" {
+		t.Errorf("expected empty hash for empty containerRegistry spec, got %q", nc.Status.ConfigurationHash)
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_TLSHappyPath(t *testing.T) {
+func TestReconcileConfigurationHash_TLSHappyPath(t *testing.T) {
 	certPEM := generateTestCertPEM(t)
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
@@ -108,15 +113,15 @@ func TestReconcileContainerRegistrySecrets_TLSHappyPath(t *testing.T) {
 		},
 	}
 	r := newContainerRegistryReconciler(t, nc, secret)
-	if err := r.reconcileContainerRegistrySecrets(context.Background(), nc); err != nil {
+	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if nc.Status.ContainerRegistryHash == "" {
+	if nc.Status.ConfigurationHash == "" {
 		t.Fatal("expected hash to be set")
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_TLSInconsistent(t *testing.T) {
+func TestReconcileConfigurationHash_TLSInconsistent(t *testing.T) {
 	certPEM := generateTestCertPEM(t)
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
@@ -144,13 +149,13 @@ func TestReconcileContainerRegistrySecrets_TLSInconsistent(t *testing.T) {
 		Data:       map[string][]byte{"tls.crt": certPEM},
 	}
 	r := newContainerRegistryReconciler(t, nc, secret)
-	err := r.reconcileContainerRegistrySecrets(context.Background(), nc)
+	err := r.reconcileConfigurationHash(context.Background(), nc)
 	if err == nil || !strings.Contains(err.Error(), "TLSSecretInconsistent") {
 		t.Fatalf("expected TLSSecretInconsistent, got %v", err)
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_TLSInvalidPEM(t *testing.T) {
+func TestReconcileConfigurationHash_TLSInvalidPEM(t *testing.T) {
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 		Spec: apiv1.ExoscaleNodeClassSpec{
@@ -176,13 +181,13 @@ func TestReconcileContainerRegistrySecrets_TLSInvalidPEM(t *testing.T) {
 		Data:       map[string][]byte{"ca.crt": []byte("not-a-pem")},
 	}
 	r := newContainerRegistryReconciler(t, nc, secret)
-	err := r.reconcileContainerRegistrySecrets(context.Background(), nc)
+	err := r.reconcileConfigurationHash(context.Background(), nc)
 	if err == nil || !strings.Contains(err.Error(), "InvalidPEM") {
 		t.Fatalf("expected InvalidPEM, got %v", err)
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_TLSMissing(t *testing.T) {
+func TestReconcileConfigurationHash_TLSMissing(t *testing.T) {
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 		Spec: apiv1.ExoscaleNodeClassSpec{
@@ -204,13 +209,13 @@ func TestReconcileContainerRegistrySecrets_TLSMissing(t *testing.T) {
 		},
 	}
 	r := newContainerRegistryReconciler(t, nc)
-	err := r.reconcileContainerRegistrySecrets(context.Background(), nc)
+	err := r.reconcileConfigurationHash(context.Background(), nc)
 	if err == nil || !strings.Contains(err.Error(), "SecretMissing") {
 		t.Fatalf("expected SecretMissing, got %v", err)
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_TLSWrongNamespace(t *testing.T) {
+func TestReconcileConfigurationHash_TLSWrongNamespace(t *testing.T) {
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 		Spec: apiv1.ExoscaleNodeClassSpec{
@@ -233,13 +238,13 @@ func TestReconcileContainerRegistrySecrets_TLSWrongNamespace(t *testing.T) {
 		},
 	}
 	r := newContainerRegistryReconciler(t, nc)
-	err := r.reconcileContainerRegistrySecrets(context.Background(), nc)
+	err := r.reconcileConfigurationHash(context.Background(), nc)
 	if err == nil || !strings.Contains(err.Error(), "SecretNamespaceInvalid") {
 		t.Fatalf("expected SecretNamespaceInvalid, got %v", err)
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_CredentialsAllAuthMethods(t *testing.T) {
+func TestReconcileConfigurationHash_CredentialsAllAuthMethods(t *testing.T) {
 	basic := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "creds-basic", Namespace: "kube-system"},
 		Data:       map[string][]byte{"username": []byte("u"), "password": []byte("p")},
@@ -293,15 +298,15 @@ func TestReconcileContainerRegistrySecrets_CredentialsAllAuthMethods(t *testing.
 		},
 	}
 	r := newContainerRegistryReconciler(t, nc, basic, auth, token)
-	if err := r.reconcileContainerRegistrySecrets(context.Background(), nc); err != nil {
+	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if nc.Status.ContainerRegistryHash == "" {
+	if nc.Status.ConfigurationHash == "" {
 		t.Error("expected hash to be set")
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_CredentialMissing(t *testing.T) {
+func TestReconcileConfigurationHash_CredentialMissing(t *testing.T) {
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 		Spec: apiv1.ExoscaleNodeClassSpec{
@@ -321,13 +326,13 @@ func TestReconcileContainerRegistrySecrets_CredentialMissing(t *testing.T) {
 		},
 	}
 	r := newContainerRegistryReconciler(t, nc)
-	err := r.reconcileContainerRegistrySecrets(context.Background(), nc)
+	err := r.reconcileConfigurationHash(context.Background(), nc)
 	if err == nil || !strings.Contains(err.Error(), "SecretMissing") {
 		t.Fatalf("expected SecretMissing, got %v", err)
 	}
 }
 
-func TestReconcileContainerRegistrySecrets_HashIsDeterministic(t *testing.T) {
+func TestReconcileConfigurationHash_HashIsDeterministic(t *testing.T) {
 	spec := &apiv1.ContainerRegistrySpec{
 		Credentials: []apiv1.ContainerRegistryCredential{
 			{
@@ -358,14 +363,14 @@ func TestReconcileContainerRegistrySecrets_HashIsDeterministic(t *testing.T) {
 	nc2 := &apiv1.ExoscaleNodeClass{ObjectMeta: metav1.ObjectMeta{Name: "b"}, Spec: apiv1.ExoscaleNodeClassSpec{ContainerRegistry: spec}}
 	r1 := newContainerRegistryReconciler(t, nc1, secret)
 	r2 := newContainerRegistryReconciler(t, nc2, secret)
-	if err := r1.reconcileContainerRegistrySecrets(context.Background(), nc1); err != nil {
+	if err := r1.reconcileConfigurationHash(context.Background(), nc1); err != nil {
 		t.Fatal(err)
 	}
-	if err := r2.reconcileContainerRegistrySecrets(context.Background(), nc2); err != nil {
+	if err := r2.reconcileConfigurationHash(context.Background(), nc2); err != nil {
 		t.Fatal(err)
 	}
-	if nc1.Status.ContainerRegistryHash != nc2.Status.ContainerRegistryHash {
-		t.Errorf("hash not deterministic: %q vs %q", nc1.Status.ContainerRegistryHash, nc2.Status.ContainerRegistryHash)
+	if nc1.Status.ConfigurationHash != nc2.Status.ConfigurationHash {
+		t.Errorf("hash not deterministic: %q vs %q", nc1.Status.ConfigurationHash, nc2.Status.ConfigurationHash)
 	}
 }
 

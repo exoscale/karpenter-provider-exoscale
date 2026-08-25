@@ -1,6 +1,23 @@
 Changelog
 =========
 
+UNRELEASED
+----------
+
+- feat(kubelet): add spec.kubelet.maxPods override and drift detection
+- refactor(nodeclass): consolidate per-feature drift hashes
+  (containerRegistryHash, cpuManagerHash, maxPodsHash) into a single
+  `status.configurationHash` field and `karpenter.exoscale.com/configuration-hash`
+  NodeClaim annotation. Existing NodeClaims will see one drift cycle on upgrade
+  before settling on the new annotation.
+- fix(nodeclass): include resolved credential Secret bytes in the configuration
+  hash, so rotating a referenced registry Secret now triggers node recreation
+  (previously only the credential Kind was hashed, so rotation went unnoticed).
+- test(nodeclass,instance,userdata): add end-to-end tests covering the full
+  drift pipeline (reconciler -> status -> annotation patch -> comparison) and
+  the full user-data TOML emission with kubelet CPU manager, maxPods, container
+  registry and user-data merge.
+
 1.36.3
 ----------
 
