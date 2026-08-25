@@ -584,3 +584,117 @@ func TestGenerateCPUManagerTOMLAbsentWhenEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildConfigMaxPods(t *testing.T) {
+	s := &SKSBootstrap{}
+	base := &Options{
+		ClusterEndpoint: "https://api.example.com",
+		BootstrapToken:  "token123",
+		CABundle:        []byte("test-ca-bundle"),
+	}
+
+	t.Run("nil omitted", func(t *testing.T) {
+		cfg := s.buildConfig(base)
+		if cfg.Settings.Kubernetes.MaxPods != nil {
+			t.Errorf("MaxPods = %v, want nil when unset", *cfg.Settings.Kubernetes.MaxPods)
+		}
+	})
+
+	t.Run("set value emitted", func(t *testing.T) {
+		o := *base
+		v := int32(110)
+		o.MaxPods = &v
+		cfg := s.buildConfig(&o)
+		if cfg.Settings.Kubernetes.MaxPods == nil {
+			t.Fatal("MaxPods = nil, want 110")
+		}
+		if *cfg.Settings.Kubernetes.MaxPods != 110 {
+			t.Errorf("MaxPods = %d, want 110", *cfg.Settings.Kubernetes.MaxPods)
+		}
+	})
+
+	t.Run("zero value is propagated as-is", func(t *testing.T) {
+		// The sks-templates treats zero as "use kubelet default", but the
+		// Karpenter provider does not strip an explicit zero: doing so would
+		// break drift hashing (remove the override, hash stays empty). We
+		// always emit what the user asked for and let sks-templates decide.
+		o := *base
+		v := int32(0)
+		o.MaxPods = &v
+		cfg := s.buildConfig(&o)
+		if cfg.Settings.Kubernetes.MaxPods == nil || *cfg.Settings.Kubernetes.MaxPods != 0 {
+			t.Errorf("MaxPods = %v, want pointer to 0", cfg.Settings.Kubernetes.MaxPods)
+		}
+	})
+}
+
+func TestGenerateMaxPodsTOMLEmission(t *testing.T) {
+	s := New()
+
+	t.Run("unset -> absent", func(t *testing.T) {
+		options := &Options{
+			ClusterEndpoint: "https://api.example.com",
+			BootstrapToken:  "token123",
+			CABundle:        []byte("test-ca-bundle"),
+		}
+		encoded, err := s.Generate(options)
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		result := decodeUserData(t, encoded)
+		settings := result["settings"].(map[string]interface{})
+		k8s := settings["kubernetes"].(map[string]interface{})
+		if v, ok := k8s["max-pods"]; ok {
+			t.Errorf("max-pods = %v, want absent when unset", v)
+		}
+	})
+
+	t.Run("set -> emitted", func(t *testing.T) {
+		v := int32(250)
+		options := &Options{
+			ClusterEndpoint: "https://api.example.com",
+			BootstrapToken:  "token123",
+			CABundle:        []byte("test-ca-bundle"),
+			MaxPods:         &v,
+		}
+		encoded, err := s.Generate(options)
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		result := decodeUserData(t, encoded)
+		settings := result["settings"].(map[string]interface{})
+		k8s := settings["kubernetes"].(map[string]interface{})
+
+		got, ok := k8s["max-pods"].(int64)
+		if !ok {
+			t.Fatalf("max-pods = %v (%T), want int64 250", k8s["max-pods"], k8s["max-pods"])
+		}
+		if got != 250 {
+			t.Errorf("max-pods = %d, want 250", got)
+		}
+	})
+
+	t.Run("merged user data keeps user value", func(t *testing.T) {
+		v := int32(64)
+		userData := "[settings.kubernetes]\nmax-pods = 42\n"
+		options := &Options{
+			ClusterEndpoint: "https://api.example.com",
+			BootstrapToken:  "token123",
+			CABundle:        []byte("test-ca-bundle"),
+			MaxPods:         &v,
+			UserData:        &userData,
+		}
+		encoded, err := s.Generate(options)
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		result := decodeUserData(t, encoded)
+		settings := result["settings"].(map[string]interface{})
+		k8s := settings["kubernetes"].(map[string]interface{})
+
+		got, ok := k8s["max-pods"].(int64)
+		if !ok || got != 64 {
+			t.Errorf("max-pods = %v, want 64 (Karpenter value must override user value)", k8s["max-pods"])
+		}
+	})
+}

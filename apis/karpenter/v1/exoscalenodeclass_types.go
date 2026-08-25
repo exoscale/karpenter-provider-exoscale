@@ -250,6 +250,12 @@ type KubeletConfiguration struct {
 	// +optional
 	// The default value above must stay in sync with DefaultCPUManagerReconcilePeriod.
 	CPUManagerReconcilePeriod string `json:"cpuManagerReconcilePeriod,omitempty"`
+
+	// MaxPods sets the kubelet --max-pods top-level configuration field.
+	// When unset (nil), the kubelet built-in default is used.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxPods *int32 `json:"maxPods,omitempty"`
 }
 
 type KubeResourceReservation struct {
@@ -326,16 +332,13 @@ type ExoscaleNodeClassStatus struct {
 	// +kubebuilder:validation:items:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 	ElasticIPs []string `json:"elasticIPs,omitempty"`
 
-	// ContainerRegistryHash is a SHA256 of the resolved container registry
-	// configuration (including referenced Secret contents). It is used for
-	// drift detection when a referenced Secret is rotated.
+	// ConfigurationHash is a SHA256 over every bootstrap-affecting field
+	// (container registry Secrets, kubelet CPU manager, kubelet maxPods).
+	// The cloudprovider uses it to detect drift against the
+	// karpenter.exoscale.com/configuration-hash annotation stored on each
+	// NodeClaim. Empty when no drift-sensitive configuration is set.
 	// +optional
-	ContainerRegistryHash string `json:"containerRegistryHash,omitempty"`
-
-	// CPUManagerHash is a SHA256 of the kubelet CPU manager configuration.
-	// Empty when all CPU manager fields are at their defaults.
-	// +optional
-	CPUManagerHash string `json:"cpuManagerHash,omitempty"`
+	ConfigurationHash string `json:"configurationHash,omitempty"`
 
 	// ImageID is the resolved Exoscale instance template ID currently
 	// desired by this NodeClass (after applying spec.templateID or

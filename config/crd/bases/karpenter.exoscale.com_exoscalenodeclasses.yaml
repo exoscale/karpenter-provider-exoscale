@@ -376,6 +376,13 @@ spec:
                         pattern: ^(\d+(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?)$
                         type: string
                     type: object
+                  maxPods:
+                    description: |-
+                      MaxPods sets the kubelet --max-pods top-level configuration field.
+                      When unset (nil), the kubelet built-in default is used.
+                    format: int32
+                    minimum: 1
+                    type: integer
                   systemReserved:
                     description: SystemReserved is resources reserved for OS system
                       components
@@ -557,16 +564,13 @@ spec:
                   - type
                   type: object
                 type: array
-              containerRegistryHash:
+              configurationHash:
                 description: |-
-                  ContainerRegistryHash is a SHA256 of the resolved container registry
-                  configuration (including referenced Secret contents). It is used for
-                  drift detection when a referenced Secret is rotated.
-                type: string
-              cpuManagerHash:
-                description: |-
-                  CPUManagerHash is a SHA256 of the kubelet CPU manager configuration.
-                  Empty when all CPU manager fields are at their defaults.
+                  ConfigurationHash is a SHA256 over every bootstrap-affecting field
+                  (container registry Secrets, kubelet CPU manager, kubelet maxPods).
+                  The cloudprovider uses it to detect drift against the
+                  karpenter.exoscale.com/configuration-hash annotation stored on each
+                  NodeClaim. Empty when no drift-sensitive configuration is set.
                 type: string
               elasticIPs:
                 description: Computed ElasticIP IDs after applying selectors

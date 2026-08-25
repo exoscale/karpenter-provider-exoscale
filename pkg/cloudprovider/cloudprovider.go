@@ -292,27 +292,15 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return DriftReasonElasticIPs, nil
 	}
 
-	expected := nodeClass.Status.ContainerRegistryHash
+	expected := nodeClass.Status.ConfigurationHash
 	got := ""
 	if nodeClaim.Annotations != nil {
-		got = nodeClaim.Annotations[constants.AnnotationContainerRegistryHash]
+		got = nodeClaim.Annotations[constants.AnnotationConfigurationHash]
 	}
 	if got != expected {
 		log.FromContext(ctx).Info("detected user-data drift", "reason", DriftReasonUserDataChanged)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
 			fmt.Sprintf("User data drift detected: nodeClaim hash %q != nodeClass hash %q", got, expected))
-		return DriftReasonUserDataChanged, nil
-	}
-
-	expectedCPU := nodeClass.Status.CPUManagerHash
-	gotCPU := ""
-	if nodeClaim.Annotations != nil {
-		gotCPU = nodeClaim.Annotations[constants.AnnotationCPUManagerHash]
-	}
-	if gotCPU != expectedCPU {
-		log.FromContext(ctx).Info("detected kubelet CPU manager drift", "reason", DriftReasonUserDataChanged)
-		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
-			fmt.Sprintf("User data drift detected: nodeClaim cpu-manager hash %q != nodeClass cpu-manager hash %q", gotCPU, expectedCPU))
 		return DriftReasonUserDataChanged, nil
 	}
 

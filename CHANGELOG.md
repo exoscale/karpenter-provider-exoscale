@@ -1,6 +1,16 @@
 Changelog
 =========
 
+UNRELEASED
+----------
+
+- feat(kubelet): add spec.kubelet.maxPods override and drift detection
+- refactor(nodeclass): consolidate per-feature drift hashes
+  (containerRegistryHash, cpuManagerHash, maxPodsHash) into a single
+  `status.configurationHash` field and `karpenter.exoscale.com/configuration-hash`
+  NodeClaim annotation. Existing NodeClaims will see one drift cycle on upgrade
+  before settling on the new annotation.
+
 1.36.3
 ----------
 
