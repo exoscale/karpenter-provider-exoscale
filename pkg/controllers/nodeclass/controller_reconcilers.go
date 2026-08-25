@@ -303,9 +303,23 @@ func (r *ExoscaleNodeClassReconciler) containerRegistryHashEntries(ctx context.C
 	}
 
 	for _, credential := range resolved.Credentials {
+		// Hash the resolved secret bytes, not just the Kind label. Without
+		// this, rotating a referenced Secret in the cluster would not
+		// change the configuration hash and would silently miss drift on
+		// the running NodeClaim.
+		var value []byte
+		switch credential.Kind {
+		case "basic":
+			value = append(append([]byte{}, credential.Username...), 0)
+			value = append(value, credential.Password...)
+		case "auth":
+			value = credential.Auth
+		case "identitytoken":
+			value = credential.IdentityToken
+		}
 		entries = append(entries, hashEntry{
 			key:   fmt.Sprintf("registry/credential/%s/%s", credential.Registry, credential.Kind),
-			value: []byte(credential.Kind),
+			value: value,
 		})
 	}
 

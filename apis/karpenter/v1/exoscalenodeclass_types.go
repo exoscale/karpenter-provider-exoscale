@@ -254,6 +254,7 @@ type KubeletConfiguration struct {
 	// MaxPods sets the kubelet --max-pods top-level configuration field.
 	// When unset (nil), the kubelet built-in default is used.
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=255
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 }
