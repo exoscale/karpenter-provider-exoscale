@@ -17,6 +17,8 @@ UNRELEASED
   drift pipeline (reconciler -> status -> annotation patch -> comparison) and
   the full user-data TOML emission with kubelet CPU manager, maxPods, container
   registry and user-data merge.
+- build: update golang docker tag to v1.27 (#154)
+- fix(kubelet): increase max-pods limit from 255 to 65535
 
 1.36.3
 ----------

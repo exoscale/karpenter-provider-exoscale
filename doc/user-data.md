@@ -273,11 +273,11 @@ Resources reserved for node components.
 
 ### `settings.kubernetes.max-pods`
 
-**Type**: Integer (1-255)
+**Type**: Integer (1-65535)
 
 Sets the maximum number of pods that can run on this node.
 
-The kubelet built-in default is used when the setting is absent. Must be between `1` and `255` inclusive.
+The kubelet built-in default is used when the setting is absent. Must be between `1` and `65535` inclusive.
 
 - **Example**:
 
