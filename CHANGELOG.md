@@ -1,7 +1,7 @@
 Changelog
 =========
 
-UNRELEASED
+1.36.4
 ----------
 
 - feat(kubelet): add spec.kubelet.maxPods override and drift detection
