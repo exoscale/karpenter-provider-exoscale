@@ -381,7 +381,7 @@ spec:
                       MaxPods sets the kubelet --max-pods top-level configuration field.
                       When unset (nil), the kubelet built-in default is used.
                     format: int32
-                    maximum: 255
+                    maximum: 65535
                     minimum: 1
                     type: integer
                   systemReserved:
