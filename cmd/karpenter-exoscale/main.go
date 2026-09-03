@@ -97,6 +97,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		cloudProvider,
 		clusterState,
 		op.InstanceTypeStore,
+		controllers.WithRegistrationHook(cloudProvider),
 	)
 
 	if err := registerControllers(op.Manager, exoClient, instanceProvider, templateResolver, options.Zone, options.ClusterID); err != nil {

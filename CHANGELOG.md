@@ -1,6 +1,11 @@
 Changelog
 =========
 
+UNRELEASED
+----------
+
+- fix(node): require concrete kubelet status before NodeClaim registration
+
 1.36.4
 ----------
 

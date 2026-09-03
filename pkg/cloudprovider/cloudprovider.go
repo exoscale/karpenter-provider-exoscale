@@ -23,6 +23,7 @@ import (
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
+	nodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 )
 
 const (
@@ -33,6 +34,7 @@ const (
 	DriftReasonElasticIPs         cloudprovider.DriftReason = "ElasticIPs"
 	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
 	DriftReasonUserDataChanged    cloudprovider.DriftReason = "UserDataChanged"
+	kubeletRegistrationRequeue                              = 5 * time.Second
 )
 
 type CloudProvider struct {
@@ -353,6 +355,24 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 
 func (c *CloudProvider) Name() string {
 	return "exoscale"
+}
+
+// Registered gates Karpenter's logical NodeClaim registration on status that
+// can only have been published by a real kubelet. The provider creates a
+// placeholder Node immediately after instance launch, so Node existence and a
+// matching provider ID alone are not proof that bootstrap completed.
+func (c *CloudProvider) Registered(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (cloudprovider.NodeLifecycleHookResult, error) {
+	node, err := nodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		if nodeclaimutils.IsNodeNotFoundError(err) {
+			return cloudprovider.NodeLifecycleHookResult{RequeueAfter: kubeletRegistrationRequeue}, nil
+		}
+		return cloudprovider.NodeLifecycleHookResult{}, fmt.Errorf("getting node for kubelet registration: %w", err)
+	}
+	if node.Status.NodeInfo.KubeletVersion == "" {
+		return cloudprovider.NodeLifecycleHookResult{RequeueAfter: kubeletRegistrationRequeue}, nil
+	}
+	return cloudprovider.NodeLifecycleHookResult{}, nil
 }
 
 func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (*apiv1.ExoscaleNodeClass, error) {
