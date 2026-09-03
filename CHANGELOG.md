@@ -1,10 +1,12 @@
 Changelog
 =========
 
-UNRELEASED
+1.36.5
 ----------
 
 - fix(node): require concrete kubelet status before NodeClaim registration
+- fix(deps): update golang to 1.27.1
+- fix(deps): update github.com/exoscale/egoscale to v3.1.49
 
 1.36.4
 ----------
