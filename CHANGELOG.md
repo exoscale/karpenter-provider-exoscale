@@ -1,6 +1,11 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- fix(instance): disable automatic HTTP retries for instance creation
+
 1.36.5
 ----------
 

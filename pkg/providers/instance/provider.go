@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -138,7 +139,9 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	createCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
 	defer cancel()
 
-	operation, err := p.exoClient.CreateInstance(createCtx, createRequest)
+	// An accepted create may return a transient error. Do not let the SDK
+	// retry this non-idempotent POST; other operations retain their retries.
+	operation, err := p.exoClient.WithHTTPClient(&http.Client{}).CreateInstance(createCtx, createRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create instance: %w", err)
 	}
