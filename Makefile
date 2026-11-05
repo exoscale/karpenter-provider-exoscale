@@ -69,3 +69,11 @@ include go.mk/public.mk
 
 # Docker
 include Makefile.docker
+
+# go.mk/release.mk runs `go install github.com/goreleaser/goreleaser@$(GORELEASER_VERSION)`,
+# which is the v1 module path. goreleaser v2 lives at github.com/goreleaser/goreleaser/v2,
+# so override the recipe (after the go.mk includes above) to install from the /v2 path.
+.PHONY: install-goreleaser
+install-goreleaser:
+	echo Installing/updating 'goreleaser' executable
+	'$(GO)' install github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION)
