@@ -1,5 +1,10 @@
 GO_MK_REF := v2.0.3
 
+# goreleaser v1.x pins golang.org/x/tools < v0.36 whose internal/tokeninternal
+# canary no longer compiles with Go >= 1.25 ("invalid array length -delta * delta").
+# v2.12.x ships x/tools >= v0.38 where the canary was removed.
+GORELEASER_VERSION ?= v2.12.7
+
 # make go.mk a dependency for all targets
 .EXTRA_PREREQS = go.mk
 
