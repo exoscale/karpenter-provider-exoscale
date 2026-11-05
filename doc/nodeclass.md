@@ -17,6 +17,7 @@ kind: ExoscaleNodeClass
   - [`spec.antiAffinityGroupSelectorTerms`](#specantiAffinityGroupSelectorTerms)
   - [`spec.privateNetworkSelectorTerms`](#specprivateNetworkSelectorTerms)
   - [`spec.elasticIPSelectorTerms`](#specelasticIPSelectorTerms)
+  - [`spec.ipForwarding`](#specipForwarding)
   - [`spec.kubelet`](#speckubelet)
   - [`spec.userData`](#specuserData)
 - [Status Fields](#status-fields)
@@ -190,6 +191,26 @@ EIPs are attached to every instance launched from this NodeClass right after cre
 > `attach-instance-to-elastic-ip`. See the [Required IAM policy](iam.md) for
 > a ready-to-paste least-privilege policy covering all operations the provider
 > uses (including EIPs).
+
+---
+
+### `spec.ipForwarding`
+
+**Type**: Boolean
+**Default**: `false`
+
+Creates instances with IP forwarding enabled. This is required for VPC-native Pod routing.
+
+```yaml
+spec:
+  ipForwarding: true
+```
+
+IP forwarding can only be set when an instance is created. The value is part of the drift detection: changing it makes Karpenter replace the affected nodes.
+
+#### VPC-native Pod routing
+
+With `ipForwarding: true`, Nodes are eligible as VPC route targets: the Exoscale cloud-controller-manager attaches each Node to the configured VPC Subnet and creates one VPC route per Node, from the Node's Pod CIDR (`node.spec.podCIDR`) to its VPC address.
 
 ---
 

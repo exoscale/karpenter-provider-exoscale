@@ -118,6 +118,13 @@ type ExoscaleNodeClassSpec struct {
 	// +optional
 	EnableIPv6 bool `json:"enableIPv6,omitempty"`
 
+	// IPForwarding enables IP forwarding on instances created with this NodeClass.
+	// It is required for VPC-native Pod routing, where the Exoscale cloud-controller-manager
+	// uses Nodes as VPC route targets for their Pod CIDR.
+	// It can only be set at instance creation: changing it replaces existing Nodes (drift).
+	// +optional
+	IPForwarding bool `json:"ipForwarding,omitempty"`
+
 	// UserData is raw TOML content that will be merged with the generated
 	// user-data configuration. This allows specifying additional settings
 	// (e.g. static-pods, device plugins) that are not directly exposed

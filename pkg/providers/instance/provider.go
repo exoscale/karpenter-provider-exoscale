@@ -127,6 +127,10 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		Ipv6Enabled:        &nodeClass.Spec.EnableIPv6,
 	}
 
+	if nodeClass.Spec.IPForwarding {
+		createRequest.IPForwarding = &nodeClass.Spec.IPForwarding
+	}
+
 	if nodeClass.Spec.EnableIPv6 {
 		createRequest.PublicIPAssignment = egov3.PublicIPAssignmentDual
 	}

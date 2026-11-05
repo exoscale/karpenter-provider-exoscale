@@ -30,6 +30,7 @@ type Instance struct {
 	PrivateNetworks    []string
 	ElasticIPs         []string
 	AntiAffinityGroups []string
+	IPForwarding       bool
 	Capacity           map[v1.ResourceName]resource.Quantity
 	Addresses          []v1.NodeAddress
 	CreatedAt          time.Time
@@ -50,6 +51,7 @@ func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.
 		DiskSize:     instance.DiskSize,
 		Labels:       instance.Labels,
 		CreatedAt:    instance.CreatedAT,
+		IPForwarding: instance.IPForwarding != nil && *instance.IPForwarding,
 		Capacity:     make(map[v1.ResourceName]resource.Quantity),
 		Addresses: []v1.NodeAddress{
 			{
