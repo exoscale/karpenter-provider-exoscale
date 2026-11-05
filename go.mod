@@ -3,7 +3,7 @@ module github.com/exoscale/karpenter-provider-exoscale
 go 1.26.10
 
 require (
-	github.com/awslabs/operatorpkg v0.0.0-20260812232916-6d329cee9a40
+	github.com/awslabs/operatorpkg v0.0.0-20261002163259-5e8ed3699dea
 	github.com/exoscale/egoscale/v3 v3.1.62
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml/v2 v2.4.3
@@ -13,7 +13,7 @@ require (
 	k8s.io/apimachinery v0.36.4
 	k8s.io/client-go v0.36.4
 	sigs.k8s.io/controller-runtime v0.24.1
-	sigs.k8s.io/karpenter v1.14.1
+	sigs.k8s.io/karpenter v1.15.1
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -100,8 +100,9 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/apiextensions-apiserver v0.36.0 // indirect
 	k8s.io/apiserver v0.36.0 // indirect
+	k8s.io/autoscaler/vertical-pod-autoscaler v1.7.0 // indirect
 	k8s.io/cloud-provider v0.35.0 // indirect
-	k8s.io/component-base v0.36.0 // indirect
+	k8s.io/component-base v0.36.1 // indirect
 	k8s.io/component-helpers v0.35.0 // indirect
 	k8s.io/csi-translation-lib v0.35.0 // indirect
 	k8s.io/dynamic-resource-allocation v0.35.0 // indirect
