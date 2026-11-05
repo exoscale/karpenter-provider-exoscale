@@ -80,3 +80,95 @@ func TestDriftReasonImageID(t *testing.T) {
 		t.Error("DriftReasonImageID must not be empty")
 	}
 }
+
+func TestComputeExpectedSecurityGroups(t *testing.T) {
+	nodeClassSGs := []string{"sg-a", "sg-b"}
+	sksDefault := "sg-sks-default"
+
+	tests := []struct {
+		name               string
+		nodeClassSGs       []string
+		sksDefaultFound    bool
+		sksDefaultSGID     string
+		want               []string
+		wantInputUnchanged bool
+	}{
+		{
+			name:               "SKS default not found: returns nodeClass SGs as-is",
+			nodeClassSGs:       nodeClassSGs,
+			sksDefaultFound:    false,
+			sksDefaultSGID:     "",
+			want:               nodeClassSGs,
+			wantInputUnchanged: true,
+		},
+		{
+			name:               "SKS default found with empty ID: returns nodeClass SGs as-is",
+			nodeClassSGs:       nodeClassSGs,
+			sksDefaultFound:    true,
+			sksDefaultSGID:     "",
+			want:               nodeClassSGs,
+			wantInputUnchanged: true,
+		},
+		{
+			name:               "SKS default found and not in nodeClass: appended",
+			nodeClassSGs:       nodeClassSGs,
+			sksDefaultFound:    true,
+			sksDefaultSGID:     sksDefault,
+			want:               []string{"sg-a", "sg-b", sksDefault},
+			wantInputUnchanged: true,
+		},
+		{
+			name:               "SKS default already in nodeClass: no duplicate",
+			nodeClassSGs:       []string{"sg-a", sksDefault},
+			sksDefaultFound:    true,
+			sksDefaultSGID:     sksDefault,
+			want:               []string{"sg-a", sksDefault},
+			wantInputUnchanged: true,
+		},
+		{
+			name:               "empty nodeClass SGs with SKS default: only SKS default",
+			nodeClassSGs:       nil,
+			sksDefaultFound:    true,
+			sksDefaultSGID:     sksDefault,
+			want:               []string{sksDefault},
+			wantInputUnchanged: true,
+		},
+		{
+			name:               "nil nodeClass SGs without SKS default: nil",
+			nodeClassSGs:       nil,
+			sksDefaultFound:    false,
+			sksDefaultSGID:     "",
+			want:               nil,
+			wantInputUnchanged: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := append([]string(nil), tt.nodeClassSGs...)
+			got := computeExpectedSecurityGroups(tt.nodeClassSGs, tt.sksDefaultFound, tt.sksDefaultSGID)
+
+			if len(got) != len(tt.want) {
+				t.Fatalf("computeExpectedSecurityGroups() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("computeExpectedSecurityGroups()[%d] = %q, want %q (full: %v vs %v)", i, got[i], tt.want[i], got, tt.want)
+				}
+			}
+
+			// Verify the input slice was not mutated
+			if tt.wantInputUnchanged {
+				if len(tt.nodeClassSGs) != len(original) {
+					t.Errorf("input slice was mutated: len changed from %d to %d", len(original), len(tt.nodeClassSGs))
+				} else {
+					for i := range original {
+						if tt.nodeClassSGs[i] != original[i] {
+							t.Errorf("input slice was mutated at index %d: %q -> %q", i, original[i], tt.nodeClassSGs[i])
+						}
+					}
+				}
+			}
+		})
+	}
+}

@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
@@ -270,11 +271,22 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return DriftReasonAntiAffinityGroups, nil
 	}
 
-	left, right = lo.Difference(nodeClass.Status.SecurityGroups, inst.SecurityGroups)
+	// When the provider attaches the SKS cluster's default security group at
+	// instance creation time, that SG is not part of nodeClass.Status.SecurityGroups.
+	// Append it to the expected list so drift detection doesn't flag it as extra.
+	// GetSKSDefaultSecurityGroupID returns found=false when the feature is off.
+	sksDefaultSGID, sksDefaultSGFound, err := c.instanceProvider.GetSKSDefaultSecurityGroupID(ctx)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to get SKS default security group, skipping SG drift check")
+		return "", fmt.Errorf("failed to get SKS default security group: %w", err)
+	}
+	expectedSecurityGroups := computeExpectedSecurityGroups(nodeClass.Status.SecurityGroups, sksDefaultSGFound, sksDefaultSGID)
+
+	left, right = lo.Difference(expectedSecurityGroups, inst.SecurityGroups)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected security groups drift", "reason", DriftReasonSecurityGroups)
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
-			fmt.Sprintf("Instance security groups drift detected: nodeClass SecurityGroups %v != instance SecurityGroups %v", nodeClass.Status.SecurityGroups, inst.SecurityGroups))
+			fmt.Sprintf("Instance security groups drift detected: nodeClass SecurityGroups %v != instance SecurityGroups %v", expectedSecurityGroups, inst.SecurityGroups))
 		return DriftReasonSecurityGroups, nil
 	}
 
@@ -596,4 +608,19 @@ func (c *CloudProvider) publishEvent(nodeClaim *karpenterv1.NodeClaim, eventType
 		Reason:         reason,
 		Message:        message,
 	})
+}
+
+// computeExpectedSecurityGroups returns the list of security group IDs that
+// an instance is expected to have attached. When the SKS default security
+// group is enabled and known, it is appended to the nodeClass list so that
+// drift detection does not flag it as an unexpected extra SG on the instance.
+// The returned slice is a copy; the input is never mutated.
+func computeExpectedSecurityGroups(nodeClassSGs []string, sksDefaultSGFound bool, sksDefaultSGID string) []string {
+	if !sksDefaultSGFound || sksDefaultSGID == "" {
+		return nodeClassSGs
+	}
+	if slices.Contains(nodeClassSGs, sksDefaultSGID) {
+		return nodeClassSGs
+	}
+	return append(slices.Clone(nodeClassSGs), sksDefaultSGID)
 }

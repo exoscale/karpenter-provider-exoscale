@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -154,5 +155,67 @@ func TestGenerateInstanceLabels(t *testing.T) {
 
 	if !reflect.DeepEqual(labels, expectedLabels) {
 		t.Errorf("GenerateInstanceLabels() = %v, want %v", labels, expectedLabels)
+	}
+}
+
+func TestUseSKSDefaultSecurityGroup(t *testing.T) {
+	tests := []struct {
+		name string
+		opts *Options
+		want bool
+	}{
+		{name: "enabled", opts: &Options{UseSKSDefaultSecurityGroup: true}, want: true},
+		{name: "disabled", opts: &Options{UseSKSDefaultSecurityGroup: false}, want: false},
+		{name: "nil options defaults to false", opts: &Options{}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Provider{options: tt.opts}
+			if got := p.UseSKSDefaultSecurityGroup(); got != tt.want {
+				t.Errorf("UseSKSDefaultSecurityGroup() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSksDefaultSGIDFromCluster(t *testing.T) {
+	sgID := egov3.UUID("11111111-1111-1111-1111-111111111111")
+
+	tests := []struct {
+		name    string
+		cluster *egov3.SKSCluster
+		wantID  string
+		wantOK  bool
+	}{
+		{name: "nil cluster", cluster: nil, wantOK: false},
+		{name: "no default SG", cluster: &egov3.SKSCluster{}, wantOK: false},
+		{name: "with default SG", cluster: &egov3.SKSCluster{DefaultSecurityGroupID: &sgID}, wantID: sgID.String(), wantOK: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			id, ok := sksDefaultSGIDFromCluster(tt.cluster)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if id != tt.wantID {
+				t.Errorf("id = %q, want %q", id, tt.wantID)
+			}
+		})
+	}
+}
+
+// TestGetSKSDefaultSecurityGroupID_Disabled verifies the early return when
+// the feature flag is off — no API client needed since no call is made.
+func TestGetSKSDefaultSecurityGroupID_Disabled(t *testing.T) {
+	p := &Provider{options: &Options{ClusterID: "22222222-2222-2222-2222-222222222222", UseSKSDefaultSecurityGroup: false}}
+	id, ok, err := p.GetSKSDefaultSecurityGroupID(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false when disabled")
+	}
+	if id != "" {
+		t.Errorf("expected empty id when disabled, got %q", id)
 	}
 }
