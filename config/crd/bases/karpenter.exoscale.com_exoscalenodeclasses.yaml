@@ -286,6 +286,13 @@ spec:
                     pattern: ^[0-9]+\.[0-9]+\.[0-9]+$
                     type: string
                 type: object
+              ipForwarding:
+                description: |-
+                  IPForwarding enables IP forwarding on instances created with this NodeClass.
+                  It is required for VPC-native Pod routing, where the Exoscale cloud-controller-manager
+                  uses Nodes as VPC route targets for their Pod CIDR.
+                  It can only be set at instance creation: changing it replaces existing Nodes (drift).
+                type: boolean
               kubelet:
                 description: Kubelet contains configuration for kubelet
                 properties:

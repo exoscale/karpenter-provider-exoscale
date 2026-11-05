@@ -172,3 +172,14 @@ func TestComputeExpectedSecurityGroups(t *testing.T) {
 		})
 	}
 }
+
+// TestDriftReasonIPForwarding ensures the symbol is exported, non-empty and
+// distinct so users can rely on the drift reason in event matching / monitoring.
+func TestDriftReasonIPForwarding(t *testing.T) {
+	if DriftReasonIPForwarding == "" {
+		t.Error("DriftReasonIPForwarding must not be empty")
+	}
+	if DriftReasonIPForwarding == DriftReasonIPv6 {
+		t.Error("DriftReasonIPForwarding must be distinct from DriftReasonIPv6")
+	}
+}

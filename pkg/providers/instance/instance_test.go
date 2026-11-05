@@ -246,3 +246,28 @@ func TestInstance_IsRunning(t *testing.T) {
 		})
 	}
 }
+
+func TestFromExoscaleInstance_IPForwarding(t *testing.T) {
+	instanceType := &cloudprovider.InstanceType{Capacity: v1.ResourceList{}}
+
+	for name, tt := range map[string]struct {
+		in   *bool
+		want bool
+	}{
+		"unset":    {in: nil, want: false},
+		"disabled": {in: new(false), want: false},
+		"enabled":  {in: new(true), want: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			exoInstance := &egov3.Instance{
+				ID:           egov3.UUID("instance-789"),
+				InstanceType: &egov3.InstanceType{Family: "standard", Size: "medium"},
+				Template:     &egov3.Template{ID: egov3.UUID("template-789")},
+				IPForwarding: tt.in,
+			}
+			if got := FromExoscaleInstance(exoInstance, instanceType, "ch-gva-2").IPForwarding; got != tt.want {
+				t.Errorf("FromExoscaleInstance() IPForwarding = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

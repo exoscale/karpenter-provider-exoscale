@@ -34,6 +34,7 @@ const (
 	DriftReasonPrivateNetworks    cloudprovider.DriftReason = "PrivateNetworks"
 	DriftReasonElasticIPs         cloudprovider.DriftReason = "ElasticIPs"
 	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
+	DriftReasonIPForwarding       cloudprovider.DriftReason = "IPForwarding"
 	DriftReasonUserDataChanged    cloudprovider.DriftReason = "UserDataChanged"
 	kubeletRegistrationRequeue                              = 5 * time.Second
 )
@@ -289,6 +290,14 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
 			"Instance IPv6 drift detected: nodeClass EnableIPv6 is false but instance has IPv6Address")
 		return DriftReasonIPv6, nil
+	}
+
+	// IP forwarding can only be set at instance creation, so a mismatch requires replacement
+	if nodeClass.Spec.IPForwarding != inst.IPForwarding {
+		log.FromContext(ctx).Info("detected IP forwarding drift", "reason", DriftReasonIPForwarding)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance IP forwarding drift detected: nodeClass IPForwarding is %t but instance IPForwarding is %t", nodeClass.Spec.IPForwarding, inst.IPForwarding))
+		return DriftReasonIPForwarding, nil
 	}
 
 	left, right := lo.Difference(nodeClass.Status.AntiAffinityGroups, inst.AntiAffinityGroups)
