@@ -331,6 +331,32 @@ func (p *Provider) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (p *Provider) Reboot(ctx context.Context, id string) error {
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("instanceID", id))
+
+	rebootCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
+	defer cancel()
+
+	log.FromContext(ctx).Info("rebooting instance")
+
+	operation, err := p.exoClient.RebootInstance(rebootCtx, egov3.UUID(id))
+	if err != nil {
+		if p.IsNotFoundError(err) {
+			log.FromContext(ctx).Info("instance not found, nothing to reboot")
+			return err
+		}
+		log.FromContext(ctx).Error(err, "failed to reboot instance")
+		return fmt.Errorf("failed to reboot instance: %w", err)
+	}
+
+	// The reboot request has been accepted by the API, no need to wait for the operation to complete.
+	if operation != nil {
+		log.FromContext(ctx).Info("reboot operation accepted", "operationID", operation.ID)
+	}
+
+	return nil
+}
+
 func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]string) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("instanceID", id))
 

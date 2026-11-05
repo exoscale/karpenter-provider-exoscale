@@ -142,6 +142,34 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpenterv1.NodeC
 	return cloudprovider.NewNodeClaimNotFoundError(nil)
 }
 
+// Reboot restarts the instance backing the NodeClaim in place, as required by the
+// karpenter v1.15 CloudProvider interface. operationID identifies the logical reboot
+// operation; the Exoscale API is not idempotent per operation, but rebooting an instance
+// that is already rebooting is a no-op server-side, so repeated calls are safe.
+func (c *CloudProvider) Reboot(ctx context.Context, nodeClaim *karpenterv1.NodeClaim, operationID string) error {
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
+		"method", "Reboot",
+		"nodeClaim", nodeClaim.Name,
+		"operationID", operationID,
+	))
+
+	instanceID, err := utils.ParseProviderID(nodeClaim.Status.ProviderID)
+	if err != nil {
+		return fmt.Errorf("failed to parse provider ID %s: %w", nodeClaim.Status.ProviderID, err)
+	}
+
+	log.FromContext(ctx).Info("rebooting instance", "instanceID", instanceID)
+	if err := c.instanceProvider.Reboot(ctx, instanceID); err != nil {
+		if c.instanceProvider.IsNotFoundError(err) {
+			return cloudprovider.NewNodeClaimNotFoundError(err)
+		}
+		return err
+	}
+
+	log.FromContext(ctx).Info("instance reboot requested", "instanceID", instanceID)
+	return nil
+}
+
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpenterv1.NodeClaim, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"method", "Get",

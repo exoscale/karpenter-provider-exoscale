@@ -97,6 +97,7 @@ func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) erro
 		cloudProvider,
 		clusterState,
 		op.InstanceTypeStore,
+		op.PredictionStore,
 		controllers.WithRegistrationHook(cloudProvider),
 	)
 

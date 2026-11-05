@@ -3,8 +3,11 @@ Changelog
 
 UNRELEASED
 ----------
-- fix(deps): update golang toolchain to 1.26.10
+- chore(deps): update golang toolchain to 1.26.10
 - fix(drift): properly detect drift when default security group option is set on SKS cluster
+- feat(deps): karpenter 1.15 support (Reboot support, VPA support)
+- chore(deps): kubernetes 1.37
+- chore(deps): golang 1.27
 
 1.36.5
 ----------
