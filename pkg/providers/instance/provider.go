@@ -109,14 +109,10 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 
 	securityGroups := p.convertSecurityGroups(nodeClass.Status.SecurityGroups)
 
-	if p.options.UseSKSDefaultSecurityGroup {
-		cluster, err := p.exoClient.GetSKSCluster(ctx, egov3.UUID(p.options.ClusterID))
-		if err != nil {
-			return nil, fmt.Errorf("failed to get parent cluster %s: %w", p.options.ClusterID, err)
-		}
-		if cluster.DefaultSecurityGroupID != nil && !slices.Contains(nodeClass.Status.SecurityGroups, cluster.DefaultSecurityGroupID.String()) {
-			securityGroups = append(securityGroups, egov3.SecurityGroup{ID: *cluster.DefaultSecurityGroupID})
-		}
+	if sksSGID, ok, err := p.GetSKSDefaultSecurityGroupID(ctx); err != nil {
+		return nil, err
+	} else if ok && !slices.Contains(nodeClass.Status.SecurityGroups, sksSGID) {
+		securityGroups = append(securityGroups, egov3.SecurityGroup{ID: egov3.UUID(sksSGID)})
 	}
 
 	createRequest := egov3.CreateInstanceRequest{
@@ -512,6 +508,36 @@ func findCheapestInstanceType(instanceTypes []string, prices map[string]float64)
 
 func (p *Provider) IsNotFoundError(err error) bool {
 	return stderrors.Is(err, egov3.ErrNotFound)
+}
+
+// UseSKSDefaultSecurityGroup reports whether the provider is configured to
+// attach the SKS cluster's default security group to every instance.
+func (p *Provider) UseSKSDefaultSecurityGroup() bool {
+	return p.options.UseSKSDefaultSecurityGroup
+}
+
+// GetSKSDefaultSecurityGroupID returns the default security group ID of the
+// SKS cluster when UseSKSDefaultSecurityGroup is enabled. The boolean is
+// false when the feature is disabled or the cluster has no default SG set.
+func (p *Provider) GetSKSDefaultSecurityGroupID(ctx context.Context) (string, bool, error) {
+	if !p.options.UseSKSDefaultSecurityGroup {
+		return "", false, nil
+	}
+	cluster, err := p.exoClient.GetSKSCluster(ctx, egov3.UUID(p.options.ClusterID))
+	if err != nil {
+		return "", false, fmt.Errorf("failed to get SKS cluster %s: %w", p.options.ClusterID, err)
+	}
+	id, ok := sksDefaultSGIDFromCluster(cluster)
+	return id, ok, nil
+}
+
+// sksDefaultSGIDFromCluster extracts the default security group ID from an
+// SKS cluster. Pure function — unit-tested without any API mock.
+func sksDefaultSGIDFromCluster(cluster *egov3.SKSCluster) (string, bool) {
+	if cluster == nil || cluster.DefaultSecurityGroupID == nil {
+		return "", false
+	}
+	return cluster.DefaultSecurityGroupID.String(), true
 }
 
 func (p *Provider) convertSecurityGroups(ids []string) []egov3.SecurityGroup {
