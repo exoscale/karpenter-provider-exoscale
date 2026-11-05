@@ -1,7 +1,7 @@
 Changelog
 =========
 
-UNRELEASED
+1.37.0
 ----------
 - chore(deps): update golang toolchain to 1.26.10
 - fix(drift): properly detect drift when default security group option is set on SKS cluster
