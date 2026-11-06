@@ -38,7 +38,7 @@ github.com/emicklei/go-restful/v3/log
 ## explicit; go 1.18
 github.com/evanphx/json-patch/v5
 github.com/evanphx/json-patch/v5/internal/json
-# github.com/exoscale/egoscale/v3 v3.1.62
+# github.com/exoscale/egoscale/v3 v3.1.63
 ## explicit; go 1.25
 github.com/exoscale/egoscale/v3
 github.com/exoscale/egoscale/v3/credentials
