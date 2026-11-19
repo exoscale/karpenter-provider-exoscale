@@ -1,6 +1,6 @@
 module github.com/exoscale/karpenter-provider-exoscale
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/awslabs/operatorpkg v0.0.0-20261002163259-5e8ed3699dea
