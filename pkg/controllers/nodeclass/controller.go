@@ -456,6 +456,19 @@ func (r *ExoscaleNodeClassReconciler) validateSpec(nodeClass *apiv1.ExoscaleNode
 		return fmt.Errorf("invalid kubelet.systemReserved: %w", err)
 	}
 
+	// Mirror of the CEL rules on the CRD (defense in depth for objects that
+	// bypass apiserver admission, e.g. older CRDs): vpcSelector is mandatory
+	// when vpcSubnetSelectorTerms is set, and vice versa.
+	if len(nodeClass.Spec.VpcSubnetSelectorTerms) > 0 && nodeClass.Spec.VpcSelector == nil {
+		return fmt.Errorf("spec.vpcSelector is required when spec.vpcSubnetSelectorTerms is set")
+	}
+	if nodeClass.Spec.VpcSelector != nil && len(nodeClass.Spec.VpcSubnetSelectorTerms) == 0 {
+		return fmt.Errorf("spec.vpcSelector requires at least one entry in spec.vpcSubnetSelectorTerms")
+	}
+	if sel := nodeClass.Spec.VpcSelector; sel != nil && (sel.ID == "") == (sel.Name == "") {
+		return fmt.Errorf("spec.vpcSelector must set exactly one of id or name")
+	}
+
 	return nil
 }
 
