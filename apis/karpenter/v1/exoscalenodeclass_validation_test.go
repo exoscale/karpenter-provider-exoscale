@@ -132,13 +132,16 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 			testField: "privateNetworks",
 		},
 		{
-			name: "valid nodeclass with vpc subnets",
+			name: "valid nodeclass with vpc selector and subnets",
 			nodeClass: &ExoscaleNodeClass{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-nodeclass",
 				},
 				Spec: ExoscaleNodeClassSpec{
 					TemplateID: "20000000-0000-0000-0000-000000000001",
+					VpcSelector: &SelectorTerms{
+						Name: "my-vpc",
+					},
 					VpcSubnetSelectorTerms: []SelectorTerms{
 						{ID: "60000000-0000-0000-0000-000000000001"},
 						{Name: "my-subnet"},
@@ -146,6 +149,19 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 				},
 			},
 			wantValid: true,
+		},
+		{
+			name: "invalid nodeclass with vpc subnets but no vpc selector",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					TemplateID: "20000000-0000-0000-0000-000000000001",
+					VpcSubnetSelectorTerms: []SelectorTerms{
+						{ID: "60000000-0000-0000-0000-000000000001"},
+					},
+				},
+			},
+			wantValid: false,
+			testField: "vpcSelector",
 		},
 		{
 			name: "too many vpc subnet selector terms",

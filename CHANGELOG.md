@@ -4,10 +4,10 @@ Changelog
 Unreleased
 ----------
 - chore(deps): update github.com/exoscale/egoscale to v3.1.64
-- feat(nodeclass): add VPC subnet support via `spec.vpcSubnetSelectorTerms`
-  (select by subnet ID or name); resolved subnets are stored in `status.vpcID` /
-  `status.vpcSubnets`, attached to instances at creation time, and covered by drift
-  detection. All selected subnets must belong to the same VPC (max 7 subnets per NodeClass).
+- feat(nodeclass): add VPC subnet support via `spec.vpcSelector` (single VPC selected
+  by ID or name, required) and `spec.vpcSubnetSelectorTerms` (up to 7 subnets selected
+  by ID or name within that VPC); resolved into `status.vpcID` / `status.vpcSubnets`,
+  attached to instances at creation time, and covered by drift detection.
 - feat(nodeclass): add `spec.enableIPForwarding` to let instances act as a router in
   their VPC (ip-forwarding, e.g. NAT gateway); passed to the instance at creation time
   and covered by drift detection (immutable field, toggling replaces the node).

@@ -481,12 +481,26 @@ spec:
                   Karpenter-managed fields (api-server, bootstrap-token, cloud-provider,
                   cluster-certificate) will always take precedence over user-provided values.
                 type: string
+              vpcSelector:
+                description: |-
+                  VpcSelector selects the VPC (by ID or name) in which the subnets listed
+                  in VpcSubnetSelectorTerms live. An instance can only be attached to
+                  subnets of a single VPC, so exactly one VPC is selected here.
+                  Required when VpcSubnetSelectorTerms is set.
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of id or name must be specified
+                  rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
               vpcSubnetSelectorTerms:
                 description: |-
-                  VpcSubnetSelectorTerms is a list of selector terms to select VPC subnets
-                  to attach to every instance launched from this NodeClass.
-                  All selected subnets must belong to the same VPC (an instance can only
-                  be attached to subnets of a single VPC).
+                  VpcSubnetSelectorTerms is a list of selector terms to select subnets
+                  within the VPC selected by VpcSelector. The selected subnets are
+                  attached to every instance launched from this NodeClass at creation time.
                 items:
                   description: SelectorTerms defines a way to select resources by
                     ID or Name
@@ -522,6 +536,12 @@ spec:
             - message: userData and containerRegistry are mutually exclusive; configure
                 container registry via the structured containerRegistry field only
               rule: '!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))'
+            - message: vpcSelector is required when vpcSubnetSelectorTerms is set
+              rule: '!has(self.vpcSubnetSelectorTerms) || size(self.vpcSubnetSelectorTerms)
+                == 0 || has(self.vpcSelector)'
+            - message: vpcSelector requires at least one entry in vpcSubnetSelectorTerms
+              rule: '!has(self.vpcSelector) || (has(self.vpcSubnetSelectorTerms) &&
+                size(self.vpcSubnetSelectorTerms) > 0)'
             - message: cpuManagerPolicy 'static' requires a non-zero cpu reservation
                 in kube-reserved or system-reserved
               rule: '!has(self.kubelet) || !has(self.kubelet.cpuManagerPolicy) ||

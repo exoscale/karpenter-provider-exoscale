@@ -13,6 +13,7 @@ type MockClient struct {
 	GetAntiAffinityGroupFunc      func(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
 	GetPrivateNetworkFunc         func(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
 	GetElasticIPFunc              func(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error)
+	GetVpcFunc                    func(ctx context.Context, id egov3.UUID) (*egov3.Vpc, error)
 	GetSubnetFunc                 func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error)
 	ListInstancesFunc             func(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
 	DeleteInstanceFunc            func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
@@ -103,6 +104,13 @@ func (m *MockClient) ListAntiAffinityGroups(ctx context.Context) (*egov3.ListAnt
 func (m *MockClient) ListPrivateNetworks(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error) {
 	if m.ListPrivateNetworksFunc != nil {
 		return m.ListPrivateNetworksFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) GetVpc(ctx context.Context, id egov3.UUID) (*egov3.Vpc, error) {
+	if m.GetVpcFunc != nil {
+		return m.GetVpcFunc(ctx, id)
 	}
 	return nil, nil
 }

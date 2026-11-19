@@ -222,52 +222,88 @@ func (r *ExoscaleNodeClassReconciler) reconcilePrivateNetworks(ctx context.Conte
 	return nil
 }
 
-// reconcileVpcSubnets resolves spec.vpcSubnetSelectorTerms into
-// status.vpcSubnets (subnet IDs) and status.vpcID. An instance can only be
-// attached to subnets of a single VPC, so an error is returned when the
-// selection spans multiple VPCs.
+// resolveVpc resolves spec.vpcSelector (by ID or name) into a VPC ID,
+// verifying the VPC is accessible through the Get endpoint.
+func (r *ExoscaleNodeClassReconciler) resolveVpc(ctx context.Context, selector *apiv1.SelectorTerms) (egov3.UUID, error) {
+	if selector == nil {
+		return "", fmt.Errorf("vpcSelector is required when vpcSubnetSelectorTerms is set")
+	}
+
+	var vpcID egov3.UUID
+	if selector.ID != "" {
+		log.FromContext(ctx).V(1).Info("resolving vpc by ID", "vpcID", selector.ID)
+		vpc, err := r.ExoscaleClient.GetVpc(ctx, egov3.UUID(selector.ID))
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get vpc", "vpcID", selector.ID)
+			return "", fmt.Errorf("failed to get vpc %s: %w", selector.ID, err)
+		}
+		vpcID = vpc.ID
+	} else if selector.Name != "" {
+		log.FromContext(ctx).V(1).Info("resolving vpc by Name", "vpcName", selector.Name)
+		entry, err := r.getCachedVpcByName(ctx, selector.Name)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get vpc by name")
+			return "", fmt.Errorf("failed to get vpc by name: %w", err)
+		}
+		if entry == nil {
+			return "", fmt.Errorf("vpc with name %s not found", selector.Name)
+		}
+		// Verify the VPC is accessible through the Get endpoint.
+		vpc, err := r.ExoscaleClient.GetVpc(ctx, entry.ID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get vpc %s (name %s): %w", entry.ID, selector.Name, err)
+		}
+		vpcID = vpc.ID
+	} else {
+		return "", fmt.Errorf("vpcSelector requires id or name: selector %+v", selector)
+	}
+
+	return vpcID, nil
+}
+
+// reconcileVpcSubnets resolves spec.vpcSelector into status.vpcID and
+// spec.vpcSubnetSelectorTerms into status.vpcSubnets (subnet IDs within that
+// VPC). An instance can only be attached to subnets of a single VPC, so the
+// VPC is selected explicitly and subnets are only looked up inside it.
 func (r *ExoscaleNodeClassReconciler) reconcileVpcSubnets(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
 	subnetIDs := []string{}
 	vpcID := ""
 
-	appendSubnet := func(sub *vpcSubnet) error {
-		// Verify the subnet is accessible through the Get endpoint, mirroring
-		// the private network resolution behavior.
-		if _, err := r.ExoscaleClient.GetSubnet(ctx, sub.VpcID, sub.Subnet.ID); err != nil {
-			log.FromContext(ctx).Error(err, "failed to get vpc subnet", "subnetID", sub.Subnet.ID, "vpcID", sub.VpcID)
-			return fmt.Errorf("failed to get vpc subnet %s in vpc %s: %w", sub.Subnet.ID, sub.VpcID, err)
-		}
-		if vpcID != "" && vpcID != sub.VpcID.String() {
-			return fmt.Errorf("all vpc subnets must belong to the same VPC: subnet %s is in vpc %s but %s was already selected from vpc %s",
-				sub.Subnet.ID, sub.VpcID, subnetIDs[0], vpcID)
-		}
-		vpcID = sub.VpcID.String()
-		subnetIDs = append(subnetIDs, sub.Subnet.ID.String())
-		return nil
-	}
-
-	for _, selector := range nodeClass.Spec.VpcSubnetSelectorTerms {
-		var sub *vpcSubnet
-		var err error
-		if selector.ID != "" {
-			log.FromContext(ctx).V(1).Info("resolving vpc subnet by ID", "subnetID", selector.ID)
-			sub, err = r.getCachedVpcSubnetByID(ctx, selector.ID)
-			if err == nil && sub == nil {
-				err = fmt.Errorf("vpc subnet with ID %s not found", selector.ID)
-			}
-		} else if selector.Name != "" {
-			log.FromContext(ctx).V(1).Info("resolving vpc subnet by Name", "subnetName", selector.Name)
-			sub, err = r.getCachedVpcSubnetByName(ctx, selector.Name)
-			if err == nil && sub == nil {
-				err = fmt.Errorf("vpc subnet with name %s not found", selector.Name)
-			}
-		}
+	if len(nodeClass.Spec.VpcSubnetSelectorTerms) > 0 {
+		resolvedVpcID, err := r.resolveVpc(ctx, nodeClass.Spec.VpcSelector)
 		if err != nil {
-			log.FromContext(ctx).Error(err, "failed to get vpc subnet", "selector", selector)
-			return fmt.Errorf("failed to get vpc subnet for selector %+v: %w", selector, err)
-		}
-		if err := appendSubnet(sub); err != nil {
 			return err
+		}
+		vpcID = resolvedVpcID.String()
+
+		for _, selector := range nodeClass.Spec.VpcSubnetSelectorTerms {
+			var subnetID string
+			if selector.ID != "" {
+				log.FromContext(ctx).V(1).Info("resolving vpc subnet by ID", "subnetID", selector.ID, "vpcID", vpcID)
+				subnet, err := r.ExoscaleClient.GetSubnet(ctx, resolvedVpcID, egov3.UUID(selector.ID))
+				if err != nil {
+					log.FromContext(ctx).Error(err, "failed to get vpc subnet", "subnetID", selector.ID, "vpcID", vpcID)
+					return fmt.Errorf("failed to get subnet %s in vpc %s: %w", selector.ID, vpcID, err)
+				}
+				subnetID = subnet.ID.String()
+			} else if selector.Name != "" {
+				log.FromContext(ctx).V(1).Info("resolving vpc subnet by Name", "subnetName", selector.Name, "vpcID", vpcID)
+				subnet, err := r.getCachedSubnetByName(ctx, resolvedVpcID, selector.Name)
+				if err != nil {
+					return fmt.Errorf("failed to get subnet by name in vpc %s: %w", vpcID, err)
+				}
+				if subnet == nil {
+					return fmt.Errorf("subnet with name %s not found in vpc %s", selector.Name, vpcID)
+				}
+				// Verify the subnet is accessible through the Get endpoint.
+				if _, err := r.ExoscaleClient.GetSubnet(ctx, resolvedVpcID, subnet.ID); err != nil {
+					return fmt.Errorf("failed to get subnet %s in vpc %s: %w", subnet.ID, vpcID, err)
+				}
+				subnetID = subnet.ID.String()
+			} else {
+				return fmt.Errorf("vpc subnet selector requires id or name: selector %+v", selector)
+			}
+			subnetIDs = append(subnetIDs, subnetID)
 		}
 	}
 

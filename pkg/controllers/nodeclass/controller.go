@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
@@ -48,6 +49,7 @@ type ExoscaleClient interface {
 	GetAntiAffinityGroup(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
 	GetPrivateNetwork(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
 	GetElasticIP(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error)
+	GetVpc(ctx context.Context, id egov3.UUID) (*egov3.Vpc, error)
 	GetSubnet(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error)
 	ListInstances(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
 	DeleteInstance(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
@@ -72,7 +74,9 @@ type ExoscaleNodeClassReconciler struct {
 	sgCache          utils.ResourceCache[egov3.SecurityGroup]
 	pnCache          utils.ResourceCache[egov3.PrivateNetwork]
 	eipCache         utils.ResourceCache[egov3.ElasticIP]
-	subnetCache      utils.ResourceCache[vpcSubnet]
+	vpcCache         utils.ResourceCache[egov3.ListVpcEntry]
+	subnetCachesMu   sync.Mutex
+	subnetCaches     map[string]*utils.ResourceCache[egov3.ListSubnetEntry]
 }
 
 // +kubebuilder:rbac:groups=karpenter.exoscale.com,resources=exoscalenodeclasses,verbs=get;list;watch;create;update;patch;delete

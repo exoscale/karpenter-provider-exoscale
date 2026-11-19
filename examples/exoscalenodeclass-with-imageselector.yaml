@@ -33,9 +33,14 @@ spec:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
 
-  # VPC subnets (optional)
-  # Attach instances to subnets of a single VPC at creation time.
-  # All selected subnets must belong to the same VPC.
+  # VPC (optional)
+  # Select the VPC in which the subnets below live (by ID or name).
+  vpcSelector:
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-vpc"
+
+  # VPC subnets (optional, max 7)
+  # Subnets of the selected VPC, attached to instances at creation time.
   vpcSubnetSelectorTerms:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-subnet"

@@ -56,6 +56,8 @@ type SelectorTerms struct {
 // +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
 // +kubebuilder:validation:XValidation:rule="!has(self.containerRegistry) || (self.containerRegistry.mirrors.all(m, m.endpoints.all(e, !has(e.tlsSecretRef) || size(e.tlsSecretRef.name) > 0)) && (!has(self.containerRegistry.credentials) || self.containerRegistry.credentials.all(c, [has(c.basic), has(c.auth), has(c.identityToken)].filter(x, x).size() == 1)))",message="containerRegistry.mirrors[*].endpoints[*].tlsSecretRef.name must be non-empty when set, and each credentials entry must declare exactly one of basic/auth/identityToken"
 // +kubebuilder:validation:XValidation:rule="!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))",message="userData and containerRegistry are mutually exclusive; configure container registry via the structured containerRegistry field only"
+// +kubebuilder:validation:XValidation:rule="!has(self.vpcSubnetSelectorTerms) || size(self.vpcSubnetSelectorTerms) == 0 || has(self.vpcSelector)",message="vpcSelector is required when vpcSubnetSelectorTerms is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.vpcSelector) || (has(self.vpcSubnetSelectorTerms) && size(self.vpcSubnetSelectorTerms) > 0)",message="vpcSelector requires at least one entry in vpcSubnetSelectorTerms"
 // +kubebuilder:validation:XValidation:rule="!has(self.kubelet) || !has(self.kubelet.cpuManagerPolicy) || self.kubelet.cpuManagerPolicy != 'static' || ((has(self.kubelet.kubeReserved) && has(self.kubelet.kubeReserved.cpu) && self.kubelet.kubeReserved.cpu != '0') || (has(self.kubelet.systemReserved) && has(self.kubelet.systemReserved.cpu) && self.kubelet.systemReserved.cpu != '0'))",message="cpuManagerPolicy 'static' requires a non-zero cpu reservation in kube-reserved or system-reserved"
 type ExoscaleNodeClassSpec struct {
 	// +optional
@@ -105,10 +107,16 @@ type ExoscaleNodeClassSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworkSelectorTerms []SelectorTerms `json:"privateNetworkSelectorTerms,omitempty"`
 
-	// VpcSubnetSelectorTerms is a list of selector terms to select VPC subnets
-	// to attach to every instance launched from this NodeClass.
-	// All selected subnets must belong to the same VPC (an instance can only
-	// be attached to subnets of a single VPC).
+	// VpcSelector selects the VPC (by ID or name) in which the subnets listed
+	// in VpcSubnetSelectorTerms live. An instance can only be attached to
+	// subnets of a single VPC, so exactly one VPC is selected here.
+	// Required when VpcSubnetSelectorTerms is set.
+	// +optional
+	VpcSelector *SelectorTerms `json:"vpcSelector,omitempty"`
+
+	// VpcSubnetSelectorTerms is a list of selector terms to select subnets
+	// within the VPC selected by VpcSelector. The selected subnets are
+	// attached to every instance launched from this NodeClass at creation time.
 	// +optional
 	// +kubebuilder:validation:MaxItems=7
 	VpcSubnetSelectorTerms []SelectorTerms `json:"vpcSubnetSelectorTerms,omitempty"`
