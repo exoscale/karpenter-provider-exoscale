@@ -271,6 +271,16 @@ func (in *ExoscaleNodeClassSpec) DeepCopyInto(out *ExoscaleNodeClassSpec) {
 		*out = make([]SelectorTerms, len(*in))
 		copy(*out, *in)
 	}
+	if in.VpcSelector != nil {
+		in, out := &in.VpcSelector, &out.VpcSelector
+		*out = new(SelectorTerms)
+		**out = **in
+	}
+	if in.VpcSubnetSelectorTerms != nil {
+		in, out := &in.VpcSubnetSelectorTerms, &out.VpcSubnetSelectorTerms
+		*out = make([]SelectorTerms, len(*in))
+		copy(*out, *in)
+	}
 	if in.ElasticIPSelectorTerms != nil {
 		in, out := &in.ElasticIPSelectorTerms, &out.ElasticIPSelectorTerms
 		*out = make([]SelectorTerms, len(*in))
@@ -321,6 +331,11 @@ func (in *ExoscaleNodeClassStatus) DeepCopyInto(out *ExoscaleNodeClassStatus) {
 	}
 	if in.PrivateNetworks != nil {
 		in, out := &in.PrivateNetworks, &out.PrivateNetworks
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.VpcSubnets != nil {
+		in, out := &in.VpcSubnets, &out.VpcSubnets
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}

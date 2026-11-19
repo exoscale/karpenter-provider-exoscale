@@ -8,6 +8,7 @@ import (
 	egov3 "github.com/exoscale/egoscale/v3"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
+	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -244,5 +245,118 @@ func TestInstance_IsRunning(t *testing.T) {
 				t.Errorf("IsRunning() with state %q = %v, want %v", tt.state, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFromExoscaleInstance_WithVpc(t *testing.T) {
+	zone := "ch-gva-2"
+
+	exoInstance := &egov3.Instance{
+		ID:    egov3.UUID("instance-vpc"),
+		Name:  "test-instance-vpc",
+		State: egov3.InstanceStateRunning,
+		InstanceType: &egov3.InstanceType{
+			Family: "standard",
+			Size:   "medium",
+		},
+		Template: &egov3.Template{ID: egov3.UUID("template-123")},
+		Vpc: &egov3.InstanceVpc{
+			ID:   egov3.UUID("11111111-0000-0000-0000-000000000001"),
+			Name: "my-vpc",
+			Subnets: []egov3.InstanceVpcSubnets{
+				{ID: egov3.UUID("440e8400-e29b-41d4-a716-446655440030"), Name: "subnet-1"},
+				{ID: egov3.UUID("550e8400-e29b-41d4-a716-446655440031"), Name: "subnet-2"},
+			},
+		},
+	}
+
+	instanceType := &cloudprovider.InstanceType{
+		Capacity: v1.ResourceList{
+			v1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+			v1.ResourceMemory: *resource.NewQuantity(4*1024*1024*1024, resource.BinarySI),
+		},
+	}
+
+	got := FromExoscaleInstance(exoInstance, instanceType, zone)
+	if got == nil {
+		t.Fatal("FromExoscaleInstance() returned nil")
+	}
+
+	if got.VpcID != "11111111-0000-0000-0000-000000000001" {
+		t.Errorf("FromExoscaleInstance() VpcID = %v, want %v", got.VpcID, "11111111-0000-0000-0000-000000000001")
+	}
+
+	wantSubnets := []string{"440e8400-e29b-41d4-a716-446655440030", "550e8400-e29b-41d4-a716-446655440031"}
+	if len(got.VpcSubnets) != len(wantSubnets) {
+		t.Fatalf("FromExoscaleInstance() VpcSubnets = %v, want %v", got.VpcSubnets, wantSubnets)
+	}
+	for i, want := range wantSubnets {
+		if got.VpcSubnets[i] != want {
+			t.Errorf("FromExoscaleInstance() VpcSubnets[%d] = %v, want %v", i, got.VpcSubnets[i], want)
+		}
+	}
+}
+
+func TestFromExoscaleInstance_WithoutVpc(t *testing.T) {
+	exoInstance := &egov3.Instance{
+		ID:    egov3.UUID("instance-novpc"),
+		Name:  "test-instance-novpc",
+		State: egov3.InstanceStateRunning,
+		InstanceType: &egov3.InstanceType{
+			Family: "standard",
+			Size:   "medium",
+		},
+		Template: &egov3.Template{ID: egov3.UUID("template-123")},
+	}
+
+	instanceType := &cloudprovider.InstanceType{
+		Capacity: v1.ResourceList{
+			v1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+		},
+	}
+
+	got := FromExoscaleInstance(exoInstance, instanceType, "ch-gva-2")
+	if got == nil {
+		t.Fatal("FromExoscaleInstance() returned nil")
+	}
+	if got.VpcID != "" {
+		t.Errorf("FromExoscaleInstance() VpcID = %v, want empty", got.VpcID)
+	}
+	if len(got.VpcSubnets) != 0 {
+		t.Errorf("FromExoscaleInstance() VpcSubnets = %v, want empty", got.VpcSubnets)
+	}
+}
+
+func TestFromExoscaleInstance_IPForwarding(t *testing.T) {
+	instanceType := &cloudprovider.InstanceType{
+		Capacity: v1.ResourceList{
+			v1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+		},
+	}
+
+	newInstance := func(ipForwarding *bool) *egov3.Instance {
+		return &egov3.Instance{
+			ID:           egov3.UUID("instance-ipfwd"),
+			Name:         "test-instance-ipfwd",
+			State:        egov3.InstanceStateRunning,
+			InstanceType: &egov3.InstanceType{Family: "standard", Size: "medium"},
+			Template:     &egov3.Template{ID: egov3.UUID("template-123")},
+			IPForwarding: ipForwarding,
+		}
+	}
+
+	got := FromExoscaleInstance(newInstance(lo.ToPtr(true)), instanceType, "ch-gva-2")
+	if !got.IPForwarding {
+		t.Error("FromExoscaleInstance() IPForwarding = false, want true")
+	}
+
+	got = FromExoscaleInstance(newInstance(lo.ToPtr(false)), instanceType, "ch-gva-2")
+	if got.IPForwarding {
+		t.Error("FromExoscaleInstance() IPForwarding = true, want false")
+	}
+
+	got = FromExoscaleInstance(newInstance(nil), instanceType, "ch-gva-2")
+	if got.IPForwarding {
+		t.Error("FromExoscaleInstance() IPForwarding = true for nil, want false")
 	}
 }

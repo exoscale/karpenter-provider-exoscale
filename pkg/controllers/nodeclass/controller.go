@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
@@ -36,6 +37,7 @@ const (
 	ConditionSecurityGroupsResolved     = "SecurityGroupsResolved"
 	ConditionAntiAffinityGroupsResolved = "AntiAffinityGroupsResolved"
 	ConditionPrivateNetworksResolved    = "PrivateNetworksResolved"
+	ConditionVpcSubnetsResolved         = "VpcSubnetsResolved"
 	ConditionElasticIPsResolved         = "ElasticIPsResolved"
 	ConditionContainerRegistryResolved  = "ContainerRegistrySecretsResolved"
 )
@@ -47,12 +49,16 @@ type ExoscaleClient interface {
 	GetAntiAffinityGroup(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
 	GetPrivateNetwork(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
 	GetElasticIP(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error)
+	GetVpc(ctx context.Context, id egov3.UUID) (*egov3.Vpc, error)
+	GetSubnet(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error)
 	ListInstances(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
 	DeleteInstance(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
 	ListSecurityGroups(ctx context.Context, opts ...egov3.ListSecurityGroupsOpt) (*egov3.ListSecurityGroupsResponse, error)
 	ListAntiAffinityGroups(ctx context.Context) (*egov3.ListAntiAffinityGroupsResponse, error)
 	ListPrivateNetworks(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error)
 	ListElasticIPS(ctx context.Context) (*egov3.ListElasticIPSResponse, error)
+	ListVpcs(ctx context.Context) (*egov3.ListVpcsResponse, error)
+	ListSubnets(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error)
 	AttachInstanceToElasticIP(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToElasticIPRequest) (*egov3.Operation, error)
 }
 
@@ -68,6 +74,9 @@ type ExoscaleNodeClassReconciler struct {
 	sgCache          utils.ResourceCache[egov3.SecurityGroup]
 	pnCache          utils.ResourceCache[egov3.PrivateNetwork]
 	eipCache         utils.ResourceCache[egov3.ElasticIP]
+	vpcCache         utils.ResourceCache[egov3.ListVpcEntry]
+	subnetCachesMu   sync.Mutex
+	subnetCaches     map[string]*utils.ResourceCache[egov3.ListSubnetEntry]
 }
 
 // +kubebuilder:rbac:groups=karpenter.exoscale.com,resources=exoscalenodeclasses,verbs=get;list;watch;create;update;patch;delete
@@ -168,6 +177,12 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 			condition:    ConditionPrivateNetworksResolved,
 		},
 		{
+			reconcileFn:  r.reconcileVpcSubnets,
+			reason:       "VpcSubnetResolutionFailed",
+			errorMessage: "VPC subnet resolution failed",
+			condition:    ConditionVpcSubnetsResolved,
+		},
+		{
 			reconcileFn:  r.reconcileConfigurationHash,
 			reason:       "ConfigurationHashComputeFailed",
 			errorMessage: "configuration hash compute failed",
@@ -192,7 +207,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	}
 
 	if nodeClass.StatusConditions().IsTrue(ConditionTemplateResolved, ConditionSecurityGroupsResolved, ConditionAntiAffinityGroupsResolved,
-		ConditionPrivateNetworksResolved, ConditionElasticIPsResolved, ConditionContainerRegistryResolved) {
+		ConditionPrivateNetworksResolved, ConditionVpcSubnetsResolved, ConditionElasticIPsResolved, ConditionContainerRegistryResolved) {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 		r.Recorder.Eventf(nodeClass, nil, "Normal", "Ready", "Ready", "NodeClass is ready for use")
 	}
@@ -439,6 +454,19 @@ func (r *ExoscaleNodeClassReconciler) validateSpec(nodeClass *apiv1.ExoscaleNode
 	sr := nodeClass.Spec.Kubelet.SystemReserved
 	if err := validateResourceQuantities(sr.CPU, sr.Memory, sr.EphemeralStorage); err != nil {
 		return fmt.Errorf("invalid kubelet.systemReserved: %w", err)
+	}
+
+	// Mirror of the CEL rules on the CRD (defense in depth for objects that
+	// bypass apiserver admission, e.g. older CRDs): vpcSelector is mandatory
+	// when vpcSubnetSelectorTerms is set, and vice versa.
+	if len(nodeClass.Spec.VpcSubnetSelectorTerms) > 0 && nodeClass.Spec.VpcSelector == nil {
+		return fmt.Errorf("spec.vpcSelector is required when spec.vpcSubnetSelectorTerms is set")
+	}
+	if nodeClass.Spec.VpcSelector != nil && len(nodeClass.Spec.VpcSubnetSelectorTerms) == 0 {
+		return fmt.Errorf("spec.vpcSelector requires at least one entry in spec.vpcSubnetSelectorTerms")
+	}
+	if sel := nodeClass.Spec.VpcSelector; sel != nil && (sel.ID == "") == (sel.Name == "") {
+		return fmt.Errorf("spec.vpcSelector must set exactly one of id or name")
 	}
 
 	return nil

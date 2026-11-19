@@ -114,10 +114,27 @@ spec:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-anti-affinity-group"
 
-  # Private networks (optional)
+  # Private networks (optional, deprecated: use vpcSubnetSelectorTerms instead)
   privateNetworkSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
+
+  # VPC (optional)
+  # Select the VPC in which the subnets below live (by ID or name).
+  # Required when vpcSubnetSelectorTerms is set.
+  vpcSelector:
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-vpc"
+
+  # VPC subnets (optional, max 7)
+  # Subnets of the selected VPC, attached to instances at creation time.
+  vpcSubnetSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-subnet"
+
+  # IP forwarding (optional): let instances act as a router in their VPC
+  # (e.g. NAT gateway). Immutable after creation; toggling triggers drift.
+  # enableIPForwarding: false
 
   # Elastic IPs (optional)
   elasticIPSelectorTerms: []
@@ -173,6 +190,7 @@ spec:
   antiAffinityGroupSelectorTerms: []
 
   privateNetworkSelectorTerms: []
+  vpcSubnetSelectorTerms: []
   
   # GPU-specific labels
   nodeLabels:
@@ -220,6 +238,7 @@ spec:
   diskSize: 50
   securityGroupSelectorTerms: []
   privateNetworkSelectorTerms: []
+  vpcSubnetSelectorTerms: []
 ```
 
 Example using `imageTemplateSelector: {}` to auto-detect control plane version:
@@ -235,6 +254,7 @@ spec:
   diskSize: 50
   securityGroupSelectorTerms: []
   privateNetworkSelectorTerms: []
+  vpcSubnetSelectorTerms: []
 ```
 
 When `imageTemplateSelector` is used the provider will resolve the optimal

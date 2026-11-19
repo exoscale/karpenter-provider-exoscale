@@ -56,6 +56,8 @@ type SelectorTerms struct {
 // +kubebuilder:validation:XValidation:rule="(has(self.templateID) && !has(self.imageTemplateSelector)) || (!has(self.templateID) && has(self.imageTemplateSelector))",message="exactly one of templateID or imageTemplateSelector must be specified"
 // +kubebuilder:validation:XValidation:rule="!has(self.containerRegistry) || (self.containerRegistry.mirrors.all(m, m.endpoints.all(e, !has(e.tlsSecretRef) || size(e.tlsSecretRef.name) > 0)) && (!has(self.containerRegistry.credentials) || self.containerRegistry.credentials.all(c, [has(c.basic), has(c.auth), has(c.identityToken)].filter(x, x).size() == 1)))",message="containerRegistry.mirrors[*].endpoints[*].tlsSecretRef.name must be non-empty when set, and each credentials entry must declare exactly one of basic/auth/identityToken"
 // +kubebuilder:validation:XValidation:rule="!(has(self.userData) && size(self.userData) > 0 && has(self.containerRegistry))",message="userData and containerRegistry are mutually exclusive; configure container registry via the structured containerRegistry field only"
+// +kubebuilder:validation:XValidation:rule="!has(self.vpcSubnetSelectorTerms) || size(self.vpcSubnetSelectorTerms) == 0 || has(self.vpcSelector)",message="vpcSelector is required when vpcSubnetSelectorTerms is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.vpcSelector) || (has(self.vpcSubnetSelectorTerms) && size(self.vpcSubnetSelectorTerms) > 0)",message="vpcSelector requires at least one entry in vpcSubnetSelectorTerms"
 // +kubebuilder:validation:XValidation:rule="!has(self.kubelet) || !has(self.kubelet.cpuManagerPolicy) || self.kubelet.cpuManagerPolicy != 'static' || ((has(self.kubelet.kubeReserved) && has(self.kubelet.kubeReserved.cpu) && self.kubelet.kubeReserved.cpu != '0') || (has(self.kubelet.systemReserved) && has(self.kubelet.systemReserved.cpu) && self.kubelet.systemReserved.cpu != '0'))",message="cpuManagerPolicy 'static' requires a non-zero cpu reservation in kube-reserved or system-reserved"
 type ExoscaleNodeClassSpec struct {
 	// +optional
@@ -94,15 +96,30 @@ type ExoscaleNodeClassSpec struct {
 	AntiAffinityGroupSelectorTerms []SelectorTerms `json:"antiAffinityGroupSelectorTerms,omitempty"`
 
 	// PrivateNetworks is a list of private network IDs to attach to instances
-	// Deprecated: Use PrivateNetworkSelectorTerms instead
+	// Deprecated: Private Networks are deprecated, use VpcSubnetSelectorTerms instead
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
 
 	// PrivateNetworkSelectorTerms is a list of selector terms to select private networks
+	// Deprecated: Private Networks are deprecated, use VpcSubnetSelectorTerms instead
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworkSelectorTerms []SelectorTerms `json:"privateNetworkSelectorTerms,omitempty"`
+
+	// VpcSelector selects the VPC (by ID or name) in which the subnets listed
+	// in VpcSubnetSelectorTerms live. An instance can only be attached to
+	// subnets of a single VPC, so exactly one VPC is selected here.
+	// Required when VpcSubnetSelectorTerms is set.
+	// +optional
+	VpcSelector *SelectorTerms `json:"vpcSelector,omitempty"`
+
+	// VpcSubnetSelectorTerms is a list of selector terms to select subnets
+	// within the VPC selected by VpcSelector. The selected subnets are
+	// attached to every instance launched from this NodeClass at creation time.
+	// +optional
+	// +kubebuilder:validation:MaxItems=7
+	VpcSubnetSelectorTerms []SelectorTerms `json:"vpcSubnetSelectorTerms,omitempty"`
 
 	// ElasticIPSelectorTerms is a list of selector terms to select elastic IPs
 	// to attach to every instance launched from this NodeClass.
@@ -117,6 +134,14 @@ type ExoscaleNodeClassSpec struct {
 	// EnableIPv6 indicates whether to enable IPv6 for instances created with this NodeClass
 	// +optional
 	EnableIPv6 bool `json:"enableIPv6,omitempty"`
+
+	// EnableIPForwarding indicates whether instances created with this NodeClass
+	// can act as a router in a VPC network (ip-forwarding). Intended for nodes
+	// attached to VPC subnets (see vpcSubnetSelectorTerms) that must forward
+	// traffic, e.g. NAT gateways. Immutable after instance creation: toggling
+	// this field triggers drift and node replacement.
+	// +optional
+	EnableIPForwarding bool `json:"enableIPForwarding,omitempty"`
 
 	// UserData is raw TOML content that will be merged with the generated
 	// user-data configuration. This allows specifying additional settings
@@ -327,6 +352,16 @@ type ExoscaleNodeClassStatus struct {
 	// Computed PrivateNetwork IDs after applying selectors
 	// +optional
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
+
+	// Computed VPC ID after applying selectors. Set when at least one VPC
+	// subnet is selected; all selected subnets must belong to this VPC.
+	// +optional
+	// +kubebuilder:validation:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+	VpcID string `json:"vpcID,omitempty"`
+
+	// Computed VPC subnet IDs after applying selectors
+	// +optional
+	VpcSubnets []string `json:"vpcSubnets,omitempty"`
 
 	// Computed ElasticIP IDs after applying selectors
 	// +optional

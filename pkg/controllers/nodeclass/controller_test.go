@@ -417,6 +417,73 @@ func TestValidateSpec(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "vpc subnets without vpcSelector",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{{ID: "60000000-0000-0000-0000-000000000001"}},
+				},
+			},
+			wantErr:     true,
+			errContains: "spec.vpcSelector is required",
+		},
+		{
+			name: "vpcSelector without subnets",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSelector: &apiv1.SelectorTerms{Name: "my-vpc"},
+				},
+			},
+			wantErr:     true,
+			errContains: "requires at least one entry in spec.vpcSubnetSelectorTerms",
+		},
+		{
+			name: "vpcSelector with both id and name",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSelector:            &apiv1.SelectorTerms{ID: "11111111-0000-0000-0000-000000000001", Name: "my-vpc"},
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{{Name: "my-subnet"}},
+				},
+			},
+			wantErr:     true,
+			errContains: "exactly one of id or name",
+		},
+		{
+			name: "vpcSelector with neither id nor name",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSelector:            &apiv1.SelectorTerms{},
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{{Name: "my-subnet"}},
+				},
+			},
+			wantErr:     true,
+			errContains: "exactly one of id or name",
+		},
+		{
+			name: "valid vpcSelector with subnets",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSelector:            &apiv1.SelectorTerms{Name: "my-vpc"},
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{{ID: "60000000-0000-0000-0000-000000000001"}, {Name: "my-subnet"}},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -132,6 +132,58 @@ func TestExoscaleNodeClass_Validation(t *testing.T) {
 			testField: "privateNetworks",
 		},
 		{
+			name: "valid nodeclass with vpc selector and subnets",
+			nodeClass: &ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: ExoscaleNodeClassSpec{
+					TemplateID: "20000000-0000-0000-0000-000000000001",
+					VpcSelector: &SelectorTerms{
+						Name: "my-vpc",
+					},
+					VpcSubnetSelectorTerms: []SelectorTerms{
+						{ID: "60000000-0000-0000-0000-000000000001"},
+						{Name: "my-subnet"},
+					},
+				},
+			},
+			wantValid: true,
+		},
+		{
+			name: "invalid nodeclass with vpc subnets but no vpc selector",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					TemplateID: "20000000-0000-0000-0000-000000000001",
+					VpcSubnetSelectorTerms: []SelectorTerms{
+						{ID: "60000000-0000-0000-0000-000000000001"},
+					},
+				},
+			},
+			wantValid: false,
+			testField: "vpcSelector",
+		},
+		{
+			name: "too many vpc subnet selector terms",
+			nodeClass: &ExoscaleNodeClass{
+				Spec: ExoscaleNodeClassSpec{
+					TemplateID: "20000000-0000-0000-0000-000000000001",
+					VpcSubnetSelectorTerms: []SelectorTerms{
+						{ID: "60000000-0000-0000-0000-000000000001"},
+						{ID: "60000000-0000-0000-0000-000000000002"},
+						{ID: "60000000-0000-0000-0000-000000000003"},
+						{ID: "60000000-0000-0000-0000-000000000004"},
+						{ID: "60000000-0000-0000-0000-000000000005"},
+						{ID: "60000000-0000-0000-0000-000000000006"},
+						{ID: "60000000-0000-0000-0000-000000000007"},
+						{ID: "60000000-0000-0000-0000-000000000008"}, // Max is 7
+					},
+				},
+			},
+			wantValid: false,
+			testField: "vpcSubnetSelectorTerms",
+		},
+		{
 			name: "image GC thresholds invalid in kubelet",
 			nodeClass: &ExoscaleNodeClass{
 				Spec: ExoscaleNodeClassSpec{

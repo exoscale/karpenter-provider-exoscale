@@ -32,8 +32,10 @@ const (
 	DriftReasonAntiAffinityGroups cloudprovider.DriftReason = "AntiAffinityGroups"
 	DriftReasonSecurityGroups     cloudprovider.DriftReason = "SecurityGroups"
 	DriftReasonPrivateNetworks    cloudprovider.DriftReason = "PrivateNetworks"
+	DriftReasonVpcSubnets         cloudprovider.DriftReason = "VpcSubnets"
 	DriftReasonElasticIPs         cloudprovider.DriftReason = "ElasticIPs"
 	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
+	DriftReasonIPForwarding       cloudprovider.DriftReason = "IPForwardingToggleDrift"
 	DriftReasonUserDataChanged    cloudprovider.DriftReason = "UserDataChanged"
 	kubeletRegistrationRequeue                              = 5 * time.Second
 )
@@ -291,6 +293,15 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return DriftReasonIPv6, nil
 	}
 
+	// ip-forwarding is immutable on an instance (not settable via UpdateInstance),
+	// so a mismatch can only be resolved by replacing the node.
+	if nodeClass.Spec.EnableIPForwarding != inst.IPForwarding {
+		log.FromContext(ctx).Info("detected IP forwarding drift", "reason", DriftReasonIPForwarding)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance IP forwarding drift detected: nodeClass EnableIPForwarding is %t but instance IPForwarding is %t", nodeClass.Spec.EnableIPForwarding, inst.IPForwarding))
+		return DriftReasonIPForwarding, nil
+	}
+
 	left, right := lo.Difference(nodeClass.Status.AntiAffinityGroups, inst.AntiAffinityGroups)
 	if len(left) != 0 || len(right) != 0 {
 		log.FromContext(ctx).Info("detected anti-affinity groups drift", "reason", DriftReasonAntiAffinityGroups)
@@ -324,6 +335,14 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
 			fmt.Sprintf("Instance private networks drift detected: nodeClass PrivateNetworks %v != instance PrivateNetworks %v", nodeClass.Status.PrivateNetworks, inst.PrivateNetworks))
 		return DriftReasonPrivateNetworks, nil
+	}
+
+	left, right = lo.Difference(nodeClass.Status.VpcSubnets, inst.VpcSubnets)
+	if len(left) != 0 || len(right) != 0 {
+		log.FromContext(ctx).Info("detected vpc subnets drift", "reason", DriftReasonVpcSubnets)
+		c.publishEvent(nodeClaim, v1.EventTypeNormal, "DriftDetected",
+			fmt.Sprintf("Instance VPC subnets drift detected: nodeClass VpcSubnets %v (vpc %s) != instance VpcSubnets %v (vpc %s)", nodeClass.Status.VpcSubnets, nodeClass.Status.VpcID, inst.VpcSubnets, inst.VpcID))
+		return DriftReasonVpcSubnets, nil
 	}
 
 	left, right = lo.Difference(nodeClass.Status.ElasticIPs, inst.ElasticIPs)

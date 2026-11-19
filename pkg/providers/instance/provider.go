@@ -131,6 +131,28 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		createRequest.PublicIPAssignment = egov3.PublicIPAssignmentDual
 	}
 
+	// ip-forwarding is only set when enabled so the API default (false) applies otherwise
+	if nodeClass.Spec.EnableIPForwarding {
+		createRequest.IPForwarding = &nodeClass.Spec.EnableIPForwarding
+	}
+
+	// Attach the instance to the resolved VPC subnets at creation time. The
+	// nodeclass reconciler guarantees all selected subnets belong to a single
+	// VPC (status.vpcID).
+	if len(nodeClass.Status.VpcSubnets) > 0 {
+		if nodeClass.Status.VpcID == "" {
+			return nil, fmt.Errorf("nodeClass %s has VPC subnets resolved but no VPC ID", nodeClass.Name)
+		}
+		subnets := make([]egov3.CreateInstanceRequestVpcSubnets, len(nodeClass.Status.VpcSubnets))
+		for i, subnetID := range nodeClass.Status.VpcSubnets {
+			subnets[i] = egov3.CreateInstanceRequestVpcSubnets{ID: egov3.UUID(subnetID)}
+		}
+		createRequest.Vpc = &egov3.CreateInstanceRequestVpc{
+			ID:      egov3.UUID(nodeClass.Status.VpcID),
+			Subnets: subnets,
+		}
+	}
+
 	createCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
 	defer cancel()
 
