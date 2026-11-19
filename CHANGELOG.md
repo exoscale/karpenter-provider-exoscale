@@ -1,7 +1,7 @@
 Changelog
 =========
 
-Unreleased
+1.37.1
 ----------
 - chore(deps): update github.com/exoscale/egoscale to v3.1.64
 - feat(nodeclass): add VPC subnet support via `spec.vpcSelector` (single VPC selected
