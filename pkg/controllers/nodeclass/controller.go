@@ -36,6 +36,7 @@ const (
 	ConditionSecurityGroupsResolved     = "SecurityGroupsResolved"
 	ConditionAntiAffinityGroupsResolved = "AntiAffinityGroupsResolved"
 	ConditionPrivateNetworksResolved    = "PrivateNetworksResolved"
+	ConditionVpcSubnetsResolved         = "VpcSubnetsResolved"
 	ConditionElasticIPsResolved         = "ElasticIPsResolved"
 	ConditionContainerRegistryResolved  = "ContainerRegistrySecretsResolved"
 )
@@ -47,12 +48,15 @@ type ExoscaleClient interface {
 	GetAntiAffinityGroup(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
 	GetPrivateNetwork(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
 	GetElasticIP(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error)
+	GetSubnet(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error)
 	ListInstances(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
 	DeleteInstance(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
 	ListSecurityGroups(ctx context.Context, opts ...egov3.ListSecurityGroupsOpt) (*egov3.ListSecurityGroupsResponse, error)
 	ListAntiAffinityGroups(ctx context.Context) (*egov3.ListAntiAffinityGroupsResponse, error)
 	ListPrivateNetworks(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error)
 	ListElasticIPS(ctx context.Context) (*egov3.ListElasticIPSResponse, error)
+	ListVpcs(ctx context.Context) (*egov3.ListVpcsResponse, error)
+	ListSubnets(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error)
 	AttachInstanceToElasticIP(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToElasticIPRequest) (*egov3.Operation, error)
 }
 
@@ -68,6 +72,7 @@ type ExoscaleNodeClassReconciler struct {
 	sgCache          utils.ResourceCache[egov3.SecurityGroup]
 	pnCache          utils.ResourceCache[egov3.PrivateNetwork]
 	eipCache         utils.ResourceCache[egov3.ElasticIP]
+	subnetCache      utils.ResourceCache[vpcSubnet]
 }
 
 // +kubebuilder:rbac:groups=karpenter.exoscale.com,resources=exoscalenodeclasses,verbs=get;list;watch;create;update;patch;delete
@@ -168,6 +173,12 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 			condition:    ConditionPrivateNetworksResolved,
 		},
 		{
+			reconcileFn:  r.reconcileVpcSubnets,
+			reason:       "VpcSubnetResolutionFailed",
+			errorMessage: "VPC subnet resolution failed",
+			condition:    ConditionVpcSubnetsResolved,
+		},
+		{
 			reconcileFn:  r.reconcileConfigurationHash,
 			reason:       "ConfigurationHashComputeFailed",
 			errorMessage: "configuration hash compute failed",
@@ -192,7 +203,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	}
 
 	if nodeClass.StatusConditions().IsTrue(ConditionTemplateResolved, ConditionSecurityGroupsResolved, ConditionAntiAffinityGroupsResolved,
-		ConditionPrivateNetworksResolved, ConditionElasticIPsResolved, ConditionContainerRegistryResolved) {
+		ConditionPrivateNetworksResolved, ConditionVpcSubnetsResolved, ConditionElasticIPsResolved, ConditionContainerRegistryResolved) {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 		r.Recorder.Eventf(nodeClass, nil, "Normal", "Ready", "Ready", "NodeClass is ready for use")
 	}

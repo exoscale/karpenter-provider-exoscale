@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
+    controller-gen.kubebuilder.io/version: v0.23.0
   name: exoscalenodeclasses.karpenter.exoscale.com
 spec:
   group: karpenter.exoscale.com
@@ -270,6 +270,14 @@ spec:
                     rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
                 maxItems: 10
                 type: array
+              enableIPForwarding:
+                description: |-
+                  EnableIPForwarding indicates whether instances created with this NodeClass
+                  can act as a router in a VPC network (ip-forwarding). Intended for nodes
+                  attached to VPC subnets (see vpcSubnetSelectorTerms) that must forward
+                  traffic, e.g. NAT gateways. Immutable after instance creation: toggling
+                  this field triggers drift and node replacement.
+                type: boolean
               enableIPv6:
                 description: EnableIPv6 indicates whether to enable IPv6 for instances
                   created with this NodeClass
@@ -472,6 +480,26 @@ spec:
                   Karpenter-managed fields (api-server, bootstrap-token, cloud-provider,
                   cluster-certificate) will always take precedence over user-provided values.
                 type: string
+              vpcSubnetSelectorTerms:
+                description: |-
+                  VpcSubnetSelectorTerms is a list of selector terms to select VPC subnets
+                  to attach to every instance launched from this NodeClass.
+                  All selected subnets must belong to the same VPC (an instance can only
+                  be attached to subnets of a single VPC).
+                items:
+                  description: SelectorTerms defines a way to select resources by
+                    ID or Name
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of id or name must be specified
+                    rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
+                maxItems: 10
+                type: array
             type: object
             x-kubernetes-validations:
             - message: imageGCLowThresholdPercent must be less than imageGCHighThresholdPercent
@@ -593,6 +621,17 @@ spec:
                 type: array
               securityGroups:
                 description: Computed SecurityGroup IDs after applying selectors
+                items:
+                  type: string
+                type: array
+              vpcID:
+                description: |-
+                  Computed VPC ID after applying selectors. Set when at least one VPC
+                  subnet is selected; all selected subnets must belong to this VPC.
+                pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+                type: string
+              vpcSubnets:
+                description: Computed VPC subnet IDs after applying selectors
                 items:
                   type: string
                 type: array

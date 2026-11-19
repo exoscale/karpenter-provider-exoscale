@@ -172,3 +172,21 @@ func TestComputeExpectedSecurityGroups(t *testing.T) {
 		})
 	}
 }
+
+func TestDriftReasonVpcSubnets(t *testing.T) {
+	if DriftReasonVpcSubnets == "" {
+		t.Error("DriftReasonVpcSubnets must not be empty")
+	}
+	if DriftReasonVpcSubnets == DriftReasonPrivateNetworks {
+		t.Error("DriftReasonVpcSubnets must be distinct from DriftReasonPrivateNetworks")
+	}
+}
+
+func TestDriftReasonIPForwarding(t *testing.T) {
+	if DriftReasonIPForwarding == "" {
+		t.Error("DriftReasonIPForwarding must not be empty")
+	}
+	if DriftReasonIPForwarding == DriftReasonIPv6 {
+		t.Error("DriftReasonIPForwarding must be distinct from DriftReasonIPv6")
+	}
+}

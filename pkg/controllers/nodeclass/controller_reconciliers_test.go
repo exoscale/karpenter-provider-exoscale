@@ -3,6 +3,7 @@ package nodeclass
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1048,6 +1049,379 @@ func TestReconcilePrivateNetworks(t *testing.T) {
 							i, tt.nodeClass.Status.PrivateNetworks[i], expectedID)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestReconcileVpcSubnets(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = apiv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	const (
+		vpcA = "11111111-0000-0000-0000-000000000001"
+		vpcB = "22222222-0000-0000-0000-000000000002"
+	)
+
+	tests := []struct {
+		name                      string
+		nodeClass                 *apiv1.ExoscaleNodeClass
+		exoscaleClientListVpcs    func(ctx context.Context) (*egov3.ListVpcsResponse, error)
+		exoscaleClientListSubnets func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error)
+		exoscaleClientGetSubnet   func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error)
+		wantErr                   bool
+		errContains               string
+		expectedSubnetIDs         []string
+		expectedVpcID             string
+	}{
+		{
+			name: "successfully resolves vpc subnets by ID selector",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{ID: "550e8400-e29b-41d4-a716-446655440031"},
+					},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{{ID: egov3.UUID(vpcA), Name: "vpc-a"}},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("550e8400-e29b-41d4-a716-446655440031"), Name: "subnet-2"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				return &egov3.Subnet{ID: id, Name: "subnet-2"}, nil
+			},
+			wantErr:           false,
+			expectedSubnetIDs: []string{"550e8400-e29b-41d4-a716-446655440031"},
+			expectedVpcID:     vpcA,
+		},
+		{
+			name: "successfully resolves vpc subnets by Name selector",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{Name: "my-subnet"},
+					},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{{ID: egov3.UUID(vpcA), Name: "vpc-a"}},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("660e8400-e29b-41d4-a716-446655440032"), Name: "my-subnet"},
+						{ID: egov3.UUID("770e8400-e29b-41d4-a716-446655440033"), Name: "other-subnet"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				return &egov3.Subnet{ID: id, Name: "my-subnet"}, nil
+			},
+			wantErr:           false,
+			expectedSubnetIDs: []string{"660e8400-e29b-41d4-a716-446655440032"},
+			expectedVpcID:     vpcA,
+		},
+		{
+			name: "successfully resolves multiple subnets with mixed selectors in the same VPC",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{ID: "aa0e8400-e29b-41d4-a716-446655440036"},
+						{ID: "bb0e8400-e29b-41d4-a716-446655440037"},
+						{Name: "named-subnet"},
+					},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{{ID: egov3.UUID(vpcA), Name: "vpc-a"}},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("aa0e8400-e29b-41d4-a716-446655440036"), Name: "deprecated-subnet"},
+						{ID: egov3.UUID("bb0e8400-e29b-41d4-a716-446655440037"), Name: "id-selector-subnet"},
+						{ID: egov3.UUID("cc0e8400-e29b-41d4-a716-446655440038"), Name: "named-subnet"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				return &egov3.Subnet{ID: id}, nil
+			},
+			wantErr: false,
+			expectedSubnetIDs: []string{
+				"aa0e8400-e29b-41d4-a716-446655440036",
+				"bb0e8400-e29b-41d4-a716-446655440037",
+				"cc0e8400-e29b-41d4-a716-446655440038",
+			},
+			expectedVpcID: vpcA,
+		},
+		{
+			name: "no subnets selected leaves status empty",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec:       apiv1.ExoscaleNodeClassSpec{},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				t.Error("ListVpcs should not be called when no subnet is selected")
+				return nil, errors.New("should not be called")
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				t.Error("ListSubnets should not be called when no subnet is selected")
+				return nil, errors.New("should not be called")
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				t.Error("GetSubnet should not be called when no subnet is selected")
+				return nil, errors.New("should not be called")
+			},
+			wantErr:           false,
+			expectedSubnetIDs: []string{},
+			expectedVpcID:     "",
+		},
+		{
+			name: "fails when vpc subnet not found by ID",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{ID: "880e8400-e29b-41d4-a716-446655440034"},
+					},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{{ID: egov3.UUID(vpcA), Name: "vpc-a"}},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				return &egov3.ListSubnetsResponse{Subnets: []egov3.ListSubnetEntry{}}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				t.Error("GetSubnet should not be called for an unknown subnet ID")
+				return nil, errors.New("should not be called")
+			},
+			wantErr:     true,
+			errContains: "vpc subnet with ID 880e8400-e29b-41d4-a716-446655440034 not found",
+		},
+		{
+			name: "fails when vpc subnet not found by Name",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{{Name: "non-existent-subnet"}},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{{ID: egov3.UUID(vpcA), Name: "vpc-a"}},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("990e8400-e29b-41d4-a716-446655440035"), Name: "other-subnet"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				t.Error("GetSubnet should not be called for an unknown subnet name")
+				return nil, errors.New("should not be called")
+			},
+			wantErr:     true,
+			errContains: "vpc subnet with name non-existent-subnet not found",
+		},
+		{
+			name: "fails when subnet name is ambiguous across VPCs",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{{Name: "dup-subnet"}},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{
+						{ID: egov3.UUID(vpcA), Name: "vpc-a"},
+						{ID: egov3.UUID(vpcB), Name: "vpc-b"},
+					},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("dd0e8400-e29b-41d4-a716-446655440039"), Name: "dup-subnet"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				t.Error("GetSubnet should not be called for an ambiguous subnet name")
+				return nil, errors.New("should not be called")
+			},
+			wantErr:     true,
+			errContains: "ambiguous",
+		},
+		{
+			name: "fails when selected subnets span multiple VPCs",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{ID: "ee0e8400-e29b-41d4-a716-44665544003a"},
+						{ID: "ff0e8400-e29b-41d4-a716-44665544003b"},
+					},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{
+						{ID: egov3.UUID(vpcA), Name: "vpc-a"},
+						{ID: egov3.UUID(vpcB), Name: "vpc-b"},
+					},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				switch vpcID.String() {
+				case vpcA:
+					return &egov3.ListSubnetsResponse{
+						Subnets: []egov3.ListSubnetEntry{
+							{ID: egov3.UUID("ee0e8400-e29b-41d4-a716-44665544003a"), Name: "subnet-vpc-a"},
+						},
+					}, nil
+				case vpcB:
+					return &egov3.ListSubnetsResponse{
+						Subnets: []egov3.ListSubnetEntry{
+							{ID: egov3.UUID("ff0e8400-e29b-41d4-a716-44665544003b"), Name: "subnet-vpc-b"},
+						},
+					}, nil
+				}
+				return nil, fmt.Errorf("unexpected vpc ID %s", vpcID)
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				return &egov3.Subnet{ID: id}, nil
+			},
+			wantErr:     true,
+			errContains: "must belong to the same VPC",
+		},
+		{
+			name: "fails when GetSubnet returns error",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{ID: "a10e8400-e29b-41d4-a716-44665544003c"},
+					},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{{ID: egov3.UUID(vpcA), Name: "vpc-a"}},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("a10e8400-e29b-41d4-a716-44665544003c"), Name: "subnet-x"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				return nil, errors.New("API error")
+			},
+			wantErr:     true,
+			errContains: "failed to get vpc subnet",
+		},
+		{
+			name: "fails when ListVpcs returns error",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{{Name: "some-subnet"}},
+				},
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return nil, errors.New("API error")
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				t.Error("ListSubnets should not be called when ListVpcs fails")
+				return nil, errors.New("should not be called")
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				t.Error("GetSubnet should not be called when listing fails")
+				return nil, errors.New("should not be called")
+			},
+			wantErr:     true,
+			errContains: "failed to get vpc subnet",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(tt.nodeClass).
+				Build()
+
+			mockExoClient := &providers.MockClient{
+				ListVpcsFunc:    tt.exoscaleClientListVpcs,
+				ListSubnetsFunc: tt.exoscaleClientListSubnets,
+				GetSubnetFunc:   tt.exoscaleClientGetSubnet,
+			}
+
+			reconciler := &ExoscaleNodeClassReconciler{
+				Client:         fakeClient,
+				Scheme:         scheme,
+				ExoscaleClient: mockExoClient,
+				Recorder:       events.NewFakeRecorder(10),
+				Zone:           "ch-gva-2",
+			}
+
+			ctx := context.Background()
+			err := reconciler.reconcileVpcSubnets(ctx, tt.nodeClass)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("reconcileVpcSubnets() expected error but got none")
+					return
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("reconcileVpcSubnets() error = %v, want error containing %v", err, tt.errContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("reconcileVpcSubnets() unexpected error = %v", err)
+				return
+			}
+
+			if len(tt.expectedSubnetIDs) != len(tt.nodeClass.Status.VpcSubnets) {
+				t.Errorf("reconcileVpcSubnets() got %d vpc subnets, want %d",
+					len(tt.nodeClass.Status.VpcSubnets), len(tt.expectedSubnetIDs))
+				return
+			}
+			for i, expectedID := range tt.expectedSubnetIDs {
+				if tt.nodeClass.Status.VpcSubnets[i] != expectedID {
+					t.Errorf("reconcileVpcSubnets() vpc subnet[%d] = %v, want %v",
+						i, tt.nodeClass.Status.VpcSubnets[i], expectedID)
+				}
+			}
+			if tt.nodeClass.Status.VpcID != tt.expectedVpcID {
+				t.Errorf("reconcileVpcSubnets() vpcID = %v, want %v", tt.nodeClass.Status.VpcID, tt.expectedVpcID)
 			}
 		})
 	}

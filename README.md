@@ -119,6 +119,17 @@ spec:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
 
+  # VPC subnets (optional)
+  # Attach instances to subnets of a single VPC at creation time.
+  # All selected subnets must belong to the same VPC.
+  vpcSubnetSelectorTerms: []
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-subnet"
+
+  # IP forwarding (optional): let instances act as a router in their VPC
+  # (e.g. NAT gateway). Immutable after creation; toggling triggers drift.
+  # enableIPForwarding: false
+
   # Elastic IPs (optional)
   elasticIPSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
@@ -173,6 +184,7 @@ spec:
   antiAffinityGroupSelectorTerms: []
 
   privateNetworkSelectorTerms: []
+  vpcSubnetSelectorTerms: []
   
   # GPU-specific labels
   nodeLabels:
@@ -220,6 +232,7 @@ spec:
   diskSize: 50
   securityGroupSelectorTerms: []
   privateNetworkSelectorTerms: []
+  vpcSubnetSelectorTerms: []
 ```
 
 Example using `imageTemplateSelector: {}` to auto-detect control plane version:
@@ -235,6 +248,7 @@ spec:
   diskSize: 50
   securityGroupSelectorTerms: []
   privateNetworkSelectorTerms: []
+  vpcSubnetSelectorTerms: []
 ```
 
 When `imageTemplateSelector` is used the provider will resolve the optimal

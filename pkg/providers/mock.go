@@ -13,12 +13,15 @@ type MockClient struct {
 	GetAntiAffinityGroupFunc      func(ctx context.Context, id egov3.UUID) (*egov3.AntiAffinityGroup, error)
 	GetPrivateNetworkFunc         func(ctx context.Context, id egov3.UUID) (*egov3.PrivateNetwork, error)
 	GetElasticIPFunc              func(ctx context.Context, id egov3.UUID) (*egov3.ElasticIP, error)
+	GetSubnetFunc                 func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error)
 	ListInstancesFunc             func(ctx context.Context, opts ...egov3.ListInstancesOpt) (*egov3.ListInstancesResponse, error)
 	DeleteInstanceFunc            func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error)
 	ListSecurityGroupsFunc        func(ctx context.Context, opts ...egov3.ListSecurityGroupsOpt) (*egov3.ListSecurityGroupsResponse, error)
 	ListAntiAffinityGroupsFunc    func(ctx context.Context) (*egov3.ListAntiAffinityGroupsResponse, error)
 	ListPrivateNetworksFunc       func(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error)
 	ListElasticIPSFunc            func(ctx context.Context) (*egov3.ListElasticIPSResponse, error)
+	ListVpcsFunc                  func(ctx context.Context) (*egov3.ListVpcsResponse, error)
+	ListSubnetsFunc               func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error)
 	AttachInstanceToElasticIPFunc func(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToElasticIPRequest) (*egov3.Operation, error)
 }
 
@@ -100,6 +103,27 @@ func (m *MockClient) ListAntiAffinityGroups(ctx context.Context) (*egov3.ListAnt
 func (m *MockClient) ListPrivateNetworks(ctx context.Context) (*egov3.ListPrivateNetworksResponse, error) {
 	if m.ListPrivateNetworksFunc != nil {
 		return m.ListPrivateNetworksFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) GetSubnet(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+	if m.GetSubnetFunc != nil {
+		return m.GetSubnetFunc(ctx, vpcID, id)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) ListVpcs(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+	if m.ListVpcsFunc != nil {
+		return m.ListVpcsFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockClient) ListSubnets(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+	if m.ListSubnetsFunc != nil {
+		return m.ListSubnetsFunc(ctx, vpcID)
 	}
 	return nil, nil
 }

@@ -33,6 +33,13 @@ spec:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
 
+  # VPC subnets (optional)
+  # Attach instances to subnets of a single VPC at creation time.
+  # All selected subnets must belong to the same VPC.
+  vpcSubnetSelectorTerms:
+  # - id: "123e4567-e89b-12d3-a456-426614174000"
+  # - name: "my-subnet"
+
   # Elastic IPs (optional)
   elasticIPSelectorTerms:
   # - id: "123e4567-e89b-12d3-a456-426614174000"

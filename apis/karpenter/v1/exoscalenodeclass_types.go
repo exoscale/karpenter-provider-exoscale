@@ -104,6 +104,14 @@ type ExoscaleNodeClassSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworkSelectorTerms []SelectorTerms `json:"privateNetworkSelectorTerms,omitempty"`
 
+	// VpcSubnetSelectorTerms is a list of selector terms to select VPC subnets
+	// to attach to every instance launched from this NodeClass.
+	// All selected subnets must belong to the same VPC (an instance can only
+	// be attached to subnets of a single VPC).
+	// +optional
+	// +kubebuilder:validation:MaxItems=10
+	VpcSubnetSelectorTerms []SelectorTerms `json:"vpcSubnetSelectorTerms,omitempty"`
+
 	// ElasticIPSelectorTerms is a list of selector terms to select elastic IPs
 	// to attach to every instance launched from this NodeClass.
 	// +optional
@@ -117,6 +125,14 @@ type ExoscaleNodeClassSpec struct {
 	// EnableIPv6 indicates whether to enable IPv6 for instances created with this NodeClass
 	// +optional
 	EnableIPv6 bool `json:"enableIPv6,omitempty"`
+
+	// EnableIPForwarding indicates whether instances created with this NodeClass
+	// can act as a router in a VPC network (ip-forwarding). Intended for nodes
+	// attached to VPC subnets (see vpcSubnetSelectorTerms) that must forward
+	// traffic, e.g. NAT gateways. Immutable after instance creation: toggling
+	// this field triggers drift and node replacement.
+	// +optional
+	EnableIPForwarding bool `json:"enableIPForwarding,omitempty"`
 
 	// UserData is raw TOML content that will be merged with the generated
 	// user-data configuration. This allows specifying additional settings
@@ -327,6 +343,16 @@ type ExoscaleNodeClassStatus struct {
 	// Computed PrivateNetwork IDs after applying selectors
 	// +optional
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
+
+	// Computed VPC ID after applying selectors. Set when at least one VPC
+	// subnet is selected; all selected subnets must belong to this VPC.
+	// +optional
+	// +kubebuilder:validation:Pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+	VpcID string `json:"vpcID,omitempty"`
+
+	// Computed VPC subnet IDs after applying selectors
+	// +optional
+	VpcSubnets []string `json:"vpcSubnets,omitempty"`
 
 	// Computed ElasticIP IDs after applying selectors
 	// +optional

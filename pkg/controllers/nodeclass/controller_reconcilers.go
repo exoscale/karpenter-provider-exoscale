@@ -218,6 +218,60 @@ func (r *ExoscaleNodeClassReconciler) reconcilePrivateNetworks(ctx context.Conte
 	return nil
 }
 
+// reconcileVpcSubnets resolves spec.vpcSubnetSelectorTerms into
+// status.vpcSubnets (subnet IDs) and status.vpcID. An instance can only be
+// attached to subnets of a single VPC, so an error is returned when the
+// selection spans multiple VPCs.
+func (r *ExoscaleNodeClassReconciler) reconcileVpcSubnets(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	subnetIDs := []string{}
+	vpcID := ""
+
+	appendSubnet := func(sub *vpcSubnet) error {
+		// Verify the subnet is accessible through the Get endpoint, mirroring
+		// the private network resolution behavior.
+		if _, err := r.ExoscaleClient.GetSubnet(ctx, sub.VpcID, sub.Subnet.ID); err != nil {
+			log.FromContext(ctx).Error(err, "failed to get vpc subnet", "subnetID", sub.Subnet.ID, "vpcID", sub.VpcID)
+			return fmt.Errorf("failed to get vpc subnet %s in vpc %s: %w", sub.Subnet.ID, sub.VpcID, err)
+		}
+		if vpcID != "" && vpcID != sub.VpcID.String() {
+			return fmt.Errorf("all vpc subnets must belong to the same VPC: subnet %s is in vpc %s but %s was already selected from vpc %s",
+				sub.Subnet.ID, sub.VpcID, subnetIDs[0], vpcID)
+		}
+		vpcID = sub.VpcID.String()
+		subnetIDs = append(subnetIDs, sub.Subnet.ID.String())
+		return nil
+	}
+
+	for _, selector := range nodeClass.Spec.VpcSubnetSelectorTerms {
+		var sub *vpcSubnet
+		var err error
+		if selector.ID != "" {
+			log.FromContext(ctx).V(1).Info("resolving vpc subnet by ID", "subnetID", selector.ID)
+			sub, err = r.getCachedVpcSubnetByID(ctx, selector.ID)
+			if err == nil && sub == nil {
+				err = fmt.Errorf("vpc subnet with ID %s not found", selector.ID)
+			}
+		} else if selector.Name != "" {
+			log.FromContext(ctx).V(1).Info("resolving vpc subnet by Name", "subnetName", selector.Name)
+			sub, err = r.getCachedVpcSubnetByName(ctx, selector.Name)
+			if err == nil && sub == nil {
+				err = fmt.Errorf("vpc subnet with name %s not found", selector.Name)
+			}
+		}
+		if err != nil {
+			log.FromContext(ctx).Error(err, "failed to get vpc subnet", "selector", selector)
+			return fmt.Errorf("failed to get vpc subnet for selector %+v: %w", selector, err)
+		}
+		if err := appendSubnet(sub); err != nil {
+			return err
+		}
+	}
+
+	nodeClass.Status.VpcSubnets = subnetIDs
+	nodeClass.Status.VpcID = vpcID
+	return nil
+}
+
 // reconcileConfigurationHash computes a single SHA256 hash over every
 // bootstrap-affecting field of the NodeClass (container registry Secret
 // contents, kubelet CPU manager, kubelet maxPods) and stores it in
