@@ -3,6 +3,7 @@ package nodeclass
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1369,6 +1370,96 @@ func TestReconcileVpcSubnets(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "ambiguous",
+		},
+		{
+			name: "subnet that only exists in another VPC is rejected and other VPC is never listed",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSelector: &apiv1.SelectorTerms{Name: "karpenter-test-vpc"},
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{Name: "sks-vpc"},
+						{Name: "sks-vpc-2"}, // only exists in vpcB (e.g. default-ch-gva-2)
+					},
+				},
+			},
+			exoscaleClientGetVpc: func(ctx context.Context, id egov3.UUID) (*egov3.Vpc, error) {
+				if id.String() != vpcA {
+					t.Errorf("GetVpc called with unexpected vpc %s", id)
+				}
+				return &egov3.Vpc{ID: egov3.UUID(vpcA), Name: "karpenter-test-vpc"}, nil
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{
+						{ID: egov3.UUID(vpcA), Name: "karpenter-test-vpc"},
+						{ID: egov3.UUID(vpcB), Name: "default-ch-gva-2"},
+					},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				if vpcID.String() != vpcA {
+					t.Errorf("ListSubnets must only be called for the selected VPC, got %s (%s)", vpcID, vpcID)
+					return nil, fmt.Errorf("ListSubnets called for non-selected vpc %s", vpcID)
+				}
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("aa0e8400-e29b-41d4-a716-446655440036"), Name: "sks-vpc"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				if vpcID.String() != vpcA {
+					t.Errorf("GetSubnet must only be called for the selected VPC, got %s", vpcID)
+				}
+				return &egov3.Subnet{ID: id, Name: "sks-vpc"}, nil
+			},
+			wantErr:     true,
+			errContains: "subnet with name sks-vpc-2 not found in vpc " + vpcA,
+		},
+		{
+			name: "subnets are only resolved inside the selected VPC even when another VPC has same-named subnets",
+			nodeClass: &apiv1.ExoscaleNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodeclass"},
+				Spec: apiv1.ExoscaleNodeClassSpec{
+					VpcSelector: &apiv1.SelectorTerms{Name: "karpenter-test-vpc"},
+					VpcSubnetSelectorTerms: []apiv1.SelectorTerms{
+						{Name: "sks-vpc"},
+					},
+				},
+			},
+			exoscaleClientGetVpc: func(ctx context.Context, id egov3.UUID) (*egov3.Vpc, error) {
+				return &egov3.Vpc{ID: egov3.UUID(vpcA), Name: "karpenter-test-vpc"}, nil
+			},
+			exoscaleClientListVpcs: func(ctx context.Context) (*egov3.ListVpcsResponse, error) {
+				return &egov3.ListVpcsResponse{
+					Vpcs: []egov3.ListVpcEntry{
+						{ID: egov3.UUID(vpcA), Name: "karpenter-test-vpc"},
+						{ID: egov3.UUID(vpcB), Name: "default-ch-gva-2"},
+					},
+				}, nil
+			},
+			exoscaleClientListSubnets: func(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error) {
+				if vpcID.String() != vpcA {
+					t.Errorf("ListSubnets must only be called for the selected VPC, got %s", vpcID)
+					return nil, fmt.Errorf("ListSubnets called for non-selected vpc %s", vpcID)
+				}
+				// vpcA's sks-vpc has a different ID than vpcB's same-named sks-vpc
+				return &egov3.ListSubnetsResponse{
+					Subnets: []egov3.ListSubnetEntry{
+						{ID: egov3.UUID("aa0e8400-e29b-41d4-a716-446655440036"), Name: "sks-vpc"},
+					},
+				}, nil
+			},
+			exoscaleClientGetSubnet: func(ctx context.Context, vpcID, id egov3.UUID) (*egov3.Subnet, error) {
+				if vpcID.String() != vpcA {
+					t.Errorf("GetSubnet must only be called for the selected VPC, got %s", vpcID)
+				}
+				return &egov3.Subnet{ID: id, Name: "sks-vpc"}, nil
+			},
+			wantErr:           false,
+			expectedSubnetIDs: []string{"aa0e8400-e29b-41d4-a716-446655440036"},
+			expectedVpcID:     vpcA,
 		},
 		{
 			name: "fails when ListVpcs returns error",
