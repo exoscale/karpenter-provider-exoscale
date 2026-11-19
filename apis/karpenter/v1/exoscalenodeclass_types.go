@@ -94,12 +94,13 @@ type ExoscaleNodeClassSpec struct {
 	AntiAffinityGroupSelectorTerms []SelectorTerms `json:"antiAffinityGroupSelectorTerms,omitempty"`
 
 	// PrivateNetworks is a list of private network IDs to attach to instances
-	// Deprecated: Use PrivateNetworkSelectorTerms instead
+	// Deprecated: Private Networks are deprecated, use VpcSubnetSelectorTerms instead
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworks []string `json:"privateNetworks,omitempty"`
 
 	// PrivateNetworkSelectorTerms is a list of selector terms to select private networks
+	// Deprecated: Private Networks are deprecated, use VpcSubnetSelectorTerms instead
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	PrivateNetworkSelectorTerms []SelectorTerms `json:"privateNetworkSelectorTerms,omitempty"`

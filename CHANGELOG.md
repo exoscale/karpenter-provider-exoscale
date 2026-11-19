@@ -11,6 +11,9 @@ Unreleased
 - feat(nodeclass): add `spec.enableIPForwarding` to let instances act as a router in
   their VPC (ip-forwarding, e.g. NAT gateway); passed to the instance at creation time
   and covered by drift detection (immutable field, toggling replaces the node).
+- deprecation(nodeclass): mark `spec.privateNetworks` and `spec.privateNetworkSelectorTerms`
+  as deprecated in favor of `spec.vpcSubnetSelectorTerms` (Private Networks are legacy,
+  VPC subnets are the replacement). The reconciler logs a warning when they are used.
 
 1.37.0
 ----------

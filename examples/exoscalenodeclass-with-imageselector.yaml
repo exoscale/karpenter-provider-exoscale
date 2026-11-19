@@ -28,7 +28,7 @@ spec:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-anti-affinity-group"
 
-  # Private networks (optional)
+  # Private networks (optional, deprecated: use vpcSubnetSelectorTerms instead)
   privateNetworkSelectorTerms:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"

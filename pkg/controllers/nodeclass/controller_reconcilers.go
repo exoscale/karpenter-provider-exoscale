@@ -174,6 +174,10 @@ func (r *ExoscaleNodeClassReconciler) reconcileElasticIPs(ctx context.Context, n
 	return nil
 }
 func (r *ExoscaleNodeClassReconciler) reconcilePrivateNetworks(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
+	if len(nodeClass.Spec.PrivateNetworks) > 0 || len(nodeClass.Spec.PrivateNetworkSelectorTerms) > 0 {
+		log.FromContext(ctx).Info("privateNetworks/privateNetworkSelectorTerms are deprecated, use vpcSubnetSelectorTerms instead")
+	}
+
 	privNetIDs := []string{}
 
 	// Deprecated field, use selector instead now
