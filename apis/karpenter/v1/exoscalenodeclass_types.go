@@ -109,7 +109,7 @@ type ExoscaleNodeClassSpec struct {
 	// All selected subnets must belong to the same VPC (an instance can only
 	// be attached to subnets of a single VPC).
 	// +optional
-	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:MaxItems=7
 	VpcSubnetSelectorTerms []SelectorTerms `json:"vpcSubnetSelectorTerms,omitempty"`
 
 	// ElasticIPSelectorTerms is a list of selector terms to select elastic IPs

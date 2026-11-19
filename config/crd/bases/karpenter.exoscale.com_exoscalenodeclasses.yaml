@@ -498,7 +498,7 @@ spec:
                   x-kubernetes-validations:
                   - message: exactly one of id or name must be specified
                     rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
-                maxItems: 10
+                maxItems: 7
                 type: array
             type: object
             x-kubernetes-validations:
