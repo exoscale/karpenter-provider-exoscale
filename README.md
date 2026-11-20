@@ -136,6 +136,10 @@ spec:
   # (e.g. NAT gateway). Immutable after creation; toggling triggers drift.
   # enableIPForwarding: false
 
+  # DRA (optional): GPUs are exposed by the NVIDIA DRA driver instead of
+  # the device plugin. Requires --ignore-dra-requests=false.
+  # enableDRA: false
+
   # Elastic IPs (optional)
   elasticIPSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"

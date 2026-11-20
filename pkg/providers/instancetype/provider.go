@@ -10,12 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unique"
 
 	egov3 "github.com/exoscale/egoscale/v3"
 	v1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	resourcev1 "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -23,7 +25,10 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
-const ResourceNvidiaGPU = "nvidia.com/gpu"
+const (
+	ResourceNvidiaGPU = "nvidia.com/gpu"
+	NvidiaDRADriver   = "gpu.nvidia.com"
+)
 
 //go:embed prices.json
 var pricesJSON []byte
@@ -127,6 +132,11 @@ func (p *Provider) List(nodeClass *v1.ExoscaleNodeClass) ([]*cloudprovider.Insta
 			Offerings:    base.Offerings.DeepCopy(),
 			Capacity:     capacity,
 			Overhead:     overhead,
+		}
+
+		if nodeClass.Spec.EnableDRA {
+			delete(capacity, ResourceNvidiaGPU)
+			instanceTypes[i].DynamicResources = base.DynamicResources
 		}
 	}
 
@@ -235,11 +245,39 @@ func (p *Provider) createInstanceType(instanceFamily, instanceSize, name string,
 	}
 
 	return &cloudprovider.InstanceType{
-		Name:         name,
-		Requirements: requirements,
-		Offerings:    offerings,
-		Capacity:     resources,
-		Overhead:     &cloudprovider.InstanceTypeOverhead{},
+		Name:             name,
+		Requirements:     requirements,
+		Offerings:        offerings,
+		Capacity:         resources,
+		Overhead:         &cloudprovider.InstanceTypeOverhead{},
+		DynamicResources: buildDynamicResources(name, exoType.Gpus),
+	}
+}
+
+// buildDynamicResources mirrors the ResourceSlice the NVIDIA DRA driver
+// publishes on a node: one device per GPU, with the "type" attribute its
+// DeviceClass selects on.
+// ponytail: no productName/memory attributes, claims selecting on them won't
+// match until node launch; add a per-family table if users need it.
+func buildDynamicResources(name string, gpus int64) cloudprovider.DynamicResources {
+	if gpus == 0 {
+		return cloudprovider.DynamicResources{}
+	}
+	devices := make([]cloudprovider.Device, gpus)
+	for i := range devices {
+		devices[i] = cloudprovider.Device{
+			Name: unique.Make(fmt.Sprintf("gpu-%d", i)),
+			Attributes: map[resourcev1.QualifiedName]resourcev1.DeviceAttribute{
+				"type": {StringValue: lo.ToPtr("gpu")},
+			},
+		}
+	}
+	return cloudprovider.DynamicResources{
+		ResourceSliceTemplates: []*cloudprovider.ResourceSliceTemplate{{
+			Driver:  unique.Make(NvidiaDRADriver),
+			Pool:    cloudprovider.ResourcePool{Name: unique.Make(name)},
+			Devices: devices,
+		}},
 	}
 }
 

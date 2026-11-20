@@ -143,6 +143,16 @@ type ExoscaleNodeClassSpec struct {
 	// +optional
 	EnableIPForwarding bool `json:"enableIPForwarding,omitempty"`
 
+	// EnableDRA indicates that GPUs of instances created with this NodeClass
+	// are exposed through the NVIDIA DRA driver (gpu.nvidia.com) instead of
+	// the device plugin. Karpenter then simulates the GPU ResourceSlices to
+	// provision nodes for pods with ResourceClaims, and stops advertising
+	// the nvidia.com/gpu extended resource. Requires the controller to run
+	// with --ignore-dra-requests=false, and the DRA driver to be deployed
+	// in the cluster.
+	// +optional
+	EnableDRA bool `json:"enableDRA,omitempty"`
+
 	// UserData is raw TOML content that will be merged with the generated
 	// user-data configuration. This allows specifying additional settings
 	// (e.g. static-pods, device plugins) that are not directly exposed

@@ -270,6 +270,16 @@ spec:
                     rule: (has(self.id) && !has(self.name)) || (!has(self.id) && has(self.name))
                 maxItems: 10
                 type: array
+              enableDRA:
+                description: |-
+                  EnableDRA indicates that GPUs of instances created with this NodeClass
+                  are exposed through the NVIDIA DRA driver (gpu.nvidia.com) instead of
+                  the device plugin. Karpenter then simulates the GPU ResourceSlices to
+                  provision nodes for pods with ResourceClaims, and stops advertising
+                  the nvidia.com/gpu extended resource. Requires the controller to run
+                  with --ignore-dra-requests=false, and the DRA driver to be deployed
+                  in the cluster.
+                type: boolean
               enableIPForwarding:
                 description: |-
                   EnableIPForwarding indicates whether instances created with this NodeClass

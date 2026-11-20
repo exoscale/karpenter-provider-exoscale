@@ -1,6 +1,12 @@
 Changelog
 =========
 
+Unreleased
+----------
+- feat(nodeclass): add `spec.enableDRA` to provision GPU nodes for pods using DRA
+  `ResourceClaims` (NVIDIA DRA driver `gpu.nvidia.com`); requires
+  `--ignore-dra-requests=false`.
+
 1.37.1
 ----------
 - chore(deps): update github.com/exoscale/egoscale to v3.1.64

@@ -51,6 +51,7 @@ func main() {
 // +kubebuilder:rbac:groups=,resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments;csinodes;storageclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims;resourceslices;deviceclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=create;get;list;update;watch
 
 func run(ctx context.Context, ctxOp context.Context, op *operator.Operator) error {
