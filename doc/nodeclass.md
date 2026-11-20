@@ -16,6 +16,9 @@ kind: ExoscaleNodeClass
   - [`spec.securityGroupSelectorTerms`](#specsecurityGroupSelectorTerms)
   - [`spec.antiAffinityGroupSelectorTerms`](#specantiAffinityGroupSelectorTerms)
   - [`spec.privateNetworkSelectorTerms`](#specprivateNetworkSelectorTerms)
+  - [`spec.vpcSelector`](#specvpcselector)
+  - [`spec.vpcSubnetSelectorTerms`](#specvpcsubnetselectorterms)
+  - [`spec.enableIPForwarding`](#specenableipforwarding)
   - [`spec.elasticIPSelectorTerms`](#specelasticIPSelectorTerms)
   - [`spec.kubelet`](#speckubelet)
   - [`spec.userData`](#specuserData)
@@ -158,6 +161,66 @@ spec:
 
 > [!NOTE]
 > The deprecated `spec.privateNetworks` field (list of UUIDs) is still accepted but will be removed in a future release.
+> Private Networks are deprecated in favor of VPC subnets: use `spec.vpcSubnetSelectorTerms` instead.
+
+---
+
+### `spec.vpcSelector`
+
+**Type**: Selector terms (single item)
+
+Selects the [Exoscale VPC](https://www.exoscale.com/vpc/) in which the subnets listed in `spec.vpcSubnetSelectorTerms` live, by ID or name. An instance can only be attached to subnets of a single VPC, so exactly one VPC must be selected here.
+
+**Required when `spec.vpcSubnetSelectorTerms` is set.**
+
+```yaml
+spec:
+  vpcSelector:
+    - id: "60000000-0000-0000-0000-000000000001"
+    - name: "my-vpc"
+```
+
+> [!NOTE]
+> The IAM role bound to `EXOSCALE_API_KEY` must allow the VPC operations used
+> by the provider: `list-vpcs` and `get-vpc`. See the
+> [Required IAM policy](iam.md).
+
+---
+
+### `spec.vpcSubnetSelectorTerms`
+
+**Type**: List of selector terms
+**Max items**: 7
+
+Selects subnets within the VPC chosen by `spec.vpcSelector`, by ID or name. The selected subnets are attached to every instance launched from this NodeClass at creation time. All selected subnets must belong to the selected VPC.
+
+The resolved VPC and subnet IDs are published in `status.vpcID` and `status.vpcSubnets` and are part of the drift detection: a change to the resolved set triggers Karpenter to roll the affected nodes.
+
+```yaml
+spec:
+  vpcSubnetSelectorTerms:
+    - id: "50000000-0000-0000-0000-000000000001"
+    - name: "my-subnet"
+```
+
+> [!NOTE]
+> The IAM role bound to `EXOSCALE_API_KEY` must allow the subnet operations
+> used by the provider: `list-subnets` and `get-subnet`. See the
+> [Required IAM policy](iam.md).
+
+---
+
+### `spec.enableIPForwarding`
+
+**Type**: Boolean
+**Default**: `false`
+
+Enables ip-forwarding on instances created with this NodeClass, letting them act as a router in their VPC (e.g. a NAT gateway). Intended for nodes attached to VPC subnets via `spec.vpcSubnetSelectorTerms`. Immutable after instance creation: toggling this field triggers drift and node replacement.
+
+```yaml
+spec:
+  enableIPForwarding: true
+```
 
 ---
 
@@ -322,4 +385,6 @@ The `status` subresource is managed by the controller and reflects the resolved 
 | `securityGroups`     | List of Strings  | Resolved security group IDs after applying selectors.      |
 | `antiAffinityGroups` | List of Strings  | Resolved anti-affinity group IDs after applying selectors. |
 | `privateNetworks`    | List of Strings  | Resolved private network IDs after applying selectors.     |
+| `vpcID`              | String (UUID)    | Resolved VPC ID after applying `spec.vpcSelector`.         |
+| `vpcSubnets`         | List of Strings  | Resolved VPC subnet IDs after applying selectors.          |
 | `elasticIPs`         | List of Strings  | Resolved Elastic IP IDs after applying selectors.          |
