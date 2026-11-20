@@ -4,7 +4,7 @@ cel.dev/expr
 # github.com/antlr4-go/antlr/v4 v4.13.1
 ## explicit; go 1.22
 github.com/antlr4-go/antlr/v4
-# github.com/awslabs/operatorpkg v0.0.0-20261002163259-5e8ed3699dea
+# github.com/awslabs/operatorpkg v0.0.0-20261030165915-63f6f735c934
 ## explicit; go 1.25.0
 github.com/awslabs/operatorpkg/controller
 github.com/awslabs/operatorpkg/docs
