@@ -19,6 +19,7 @@ kind: ExoscaleNodeClass
   - [`spec.vpcSelector`](#specvpcselector)
   - [`spec.vpcSubnetSelectorTerms`](#specvpcsubnetselectorterms)
   - [`spec.enableIPForwarding`](#specenableipforwarding)
+  - [`spec.enableDRA`](#specenabledra)
   - [`spec.elasticIPSelectorTerms`](#specelasticIPSelectorTerms)
   - [`spec.kubelet`](#speckubelet)
   - [`spec.userData`](#specuserData)
@@ -220,6 +221,29 @@ Enables ip-forwarding on instances created with this NodeClass, letting them act
 ```yaml
 spec:
   enableIPForwarding: true
+```
+
+---
+
+### `spec.enableDRA`
+
+**Type**: Boolean
+**Default**: `false`
+
+Declares that GPUs of instances created with this NodeClass are exposed through the [NVIDIA DRA driver](https://github.com/NVIDIA/k8s-dra-driver-gpu) (`gpu.nvidia.com`) instead of the NVIDIA device plugin. Karpenter then provisions GPU nodes for pods requesting GPUs through `ResourceClaims`, and stops advertising the `nvidia.com/gpu` extended resource for this NodeClass.
+
+Requirements:
+
+- the controller runs with `--ignore-dra-requests=false` (env `IGNORE_DRA_REQUESTS=false`); Karpenter ignores DRA requests by default until its DRA support is GA,
+- the NVIDIA DRA driver is deployed in the cluster.
+
+Karpenter only knows the GPU count and the `type: gpu` attribute before a node launches: claims selecting on other attributes (e.g. `productName`) are not provisioned for.
+
+```yaml
+spec:
+  imageTemplateSelector:
+    variant: nvidia
+  enableDRA: true
 ```
 
 ---

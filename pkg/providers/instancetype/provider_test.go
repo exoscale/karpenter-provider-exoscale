@@ -345,3 +345,35 @@ func assertResource(t *testing.T, instanceName, label string, got resource.Quant
 		t.Errorf("[%s] %s = %v, want %v", instanceName, label, got.String(), want.String())
 	}
 }
+
+func TestListDRA(t *testing.T) {
+	gpuType := &cloudprovider.InstanceType{
+		Name:             "gpua30.small",
+		Capacity:         buildResourceList(12, 56*1024*1024*1024, 2),
+		Overhead:         &cloudprovider.InstanceTypeOverhead{},
+		DynamicResources: buildDynamicResources("gpua30.small", 2),
+	}
+	p := &Provider{instanceTypesByName: map[string]*cloudprovider.InstanceType{gpuType.Name: gpuType}}
+
+	for _, enableDRA := range []bool{false, true} {
+		got, err := p.List(&exov1.ExoscaleNodeClass{Spec: exov1.ExoscaleNodeClassSpec{EnableDRA: enableDRA}})
+		if err != nil {
+			t.Fatalf("List() unexpected error: %v", err)
+		}
+		it := got[0]
+		_, hasGPU := it.Capacity[ResourceNvidiaGPU]
+		templates := it.DynamicResources.ResourceSliceTemplates
+		if enableDRA == hasGPU {
+			t.Errorf("enableDRA=%t: nvidia.com/gpu in capacity = %t", enableDRA, hasGPU)
+		}
+		if enableDRA != (len(templates) == 1) {
+			t.Fatalf("enableDRA=%t: got %d ResourceSliceTemplates", enableDRA, len(templates))
+		}
+		if enableDRA && (templates[0].Driver.Value() != NvidiaDRADriver || len(templates[0].Devices) != 2) {
+			t.Errorf("unexpected template: driver=%s devices=%d", templates[0].Driver.Value(), len(templates[0].Devices))
+		}
+	}
+	if _, ok := gpuType.Capacity[ResourceNvidiaGPU]; !ok {
+		t.Error("List() mutated the cached base capacity")
+	}
+}
