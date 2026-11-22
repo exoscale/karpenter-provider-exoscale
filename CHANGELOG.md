@@ -1,6 +1,10 @@
 Changelog
 =========
 
+UNRELEASED
+----------
+- fix(instancetype): set the zone on offerings so cost tracking and consolidation find their price
+
 1.37.2
 ----------
 - fix(zone-check): ListZone is unauthenticated, use GetZoneAPIEndpoint instead
