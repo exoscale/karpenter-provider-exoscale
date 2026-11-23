@@ -136,21 +136,10 @@ func getEndpoint(apiEndpoint, apiEnvironment string) *egov3.Endpoint {
 }
 
 func (c *Options) validateZone(ctx context.Context, client *egov3.Client) error {
-	zones, err := client.ListZones(ctx)
+	_, err := client.GetZoneAPIEndpoint(ctx, egov3.ZoneName(c.Zone))
 	if err != nil {
-		return fmt.Errorf("failed to list zones: %w", err)
+		return fmt.Errorf("zone %s not found or not accessible with the provided API key: %w", c.Zone, err)
 	}
 
-	for _, z := range zones.Zones {
-		if string(z.Name) == c.Zone {
-			return nil
-		}
-	}
-
-	var availableZones []string
-	for _, z := range zones.Zones {
-		availableZones = append(availableZones, string(z.Name))
-	}
-
-	return fmt.Errorf("zone %s not found. Available zones: %v", c.Zone, availableZones)
+	return nil
 }
