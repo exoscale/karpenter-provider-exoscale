@@ -1,6 +1,10 @@
 Changelog
 =========
 
+UNRELEASED
+----------
+- fix(zone-check): ListZone is unauthenticated, use GetZoneAPIEndpoint instead
+
 1.37.1
 ----------
 - chore(deps): update github.com/exoscale/egoscale to v3.1.64
