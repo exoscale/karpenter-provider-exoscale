@@ -1,7 +1,7 @@
 Changelog
 =========
 
-UNRELEASED
+1.37.2
 ----------
 - fix(zone-check): ListZone is unauthenticated, use GetZoneAPIEndpoint instead
 
