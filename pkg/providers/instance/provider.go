@@ -98,10 +98,6 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		return nil, fmt.Errorf("failed to find instance type ID for %s", instanceTypeName)
 	}
 
-	if err := p.checkAntiAffinityGroups(ctx, nodeClass.Status.AntiAffinityGroups); err != nil {
-		return nil, fmt.Errorf("anti-affinity group capacity check failed: %w", err)
-	}
-
 	t, err := p.templateProvider.ResolveTemplate(ctx, nodeClass)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve template ID: %w", err)
@@ -153,19 +149,47 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		}
 	}
 
-	createCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
-	defer cancel()
-
-	operation, err := p.exoClient.CreateInstance(createCtx, createRequest)
+	createdInstance, err := p.findNodeClaimInstance(ctx, nodeClaim.Name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create instance: %w", err)
+		return nil, err
 	}
 
-	log.FromContext(ctx).Info("instance creation started", "operationID", operation.ID)
-	createdInstance, err := p.exoClient.GetInstance(ctx, operation.Reference.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get created instance: %w", err)
+	if createdInstance != nil {
+		log.FromContext(ctx).Info("adopting instance already created for this NodeClaim", "instanceID", createdInstance.ID)
+		it, err := p.instanceTypeProvider.GetByID(string(createdInstance.InstanceType.ID))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instance type %s: %w", createdInstance.InstanceType.ID, err)
+		}
+		instanceTypeName = it.Name
+	} else {
+		if err := p.checkAntiAffinityGroups(ctx, nodeClass.Status.AntiAffinityGroups); err != nil {
+			return nil, fmt.Errorf("anti-affinity group capacity check failed: %w", err)
+		}
+
+		createCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
+		defer cancel()
+
+		operation, err := p.exoClient.CreateInstance(createCtx, createRequest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create instance: %w", err)
+		}
+
+		log.FromContext(ctx).Info("instance creation started", "operationID", operation.ID)
+		createdInstance, err = p.exoClient.GetInstance(ctx, operation.Reference.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get created instance: %w", err)
+		}
 	}
+
+	var attachedNetworks, attachedEIPs []egov3.UUID
+	for _, n := range createdInstance.PrivateNetworks {
+		attachedNetworks = append(attachedNetworks, n.ID)
+	}
+	for _, eip := range createdInstance.ElasticIPS {
+		attachedEIPs = append(attachedEIPs, eip.ID)
+	}
+	privateNetworks := unattached(nodeClass.Status.PrivateNetworks, attachedNetworks)
+	elasticIPs := unattached(nodeClass.Status.ElasticIPs, attachedEIPs)
 
 	// Hydrate the instance type
 	createdInstance.InstanceType = &egov3.InstanceType{}
@@ -190,8 +214,8 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		}
 	}
 
-	if len(nodeClass.Status.PrivateNetworks) > 0 {
-		if err := p.attachPrivateNetworks(ctx, createdInstance.ID, nodeClass.Status.PrivateNetworks); err != nil {
+	if len(privateNetworks) > 0 {
+		if err := p.attachPrivateNetworks(ctx, createdInstance.ID, privateNetworks); err != nil {
 			log.FromContext(ctx).Error(err, "failed to attach private networks, cleaning up instance")
 
 			deleteErr := p.Delete(ctx, createdInstance.ID.String())
@@ -203,8 +227,8 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		}
 	}
 
-	if len(nodeClass.Status.ElasticIPs) > 0 {
-		if err := p.attachElasticIPs(ctx, createdInstance.ID, nodeClass.Status.ElasticIPs); err != nil {
+	if len(elasticIPs) > 0 {
+		if err := p.attachElasticIPs(ctx, createdInstance.ID, elasticIPs); err != nil {
 			log.FromContext(ctx).Error(err, "failed to attach elastic IPs, cleaning up instance")
 
 			deleteErr := p.Delete(ctx, createdInstance.ID.String())
@@ -229,6 +253,44 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	}
 
 	return instance, nil
+}
+
+// findNodeClaimInstance returns the instance already created for the
+// NodeClaim, if any: a previous Create may have failed after the API
+// accepted POST /instance, and creating again would leak a duplicate.
+func (p *Provider) findNodeClaimInstance(ctx context.Context, nodeClaimName string) (*egov3.Instance, error) {
+	encodedLabels, err := labelfilter.NodeClaimFilter(p.options.ClusterID, nodeClaimName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build labels filter: %w", err)
+	}
+
+	instances, err := p.exoClient.ListInstances(ctx, egov3.ListInstancesWithLabels(encodedLabels))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instances of NodeClaim %s: %w", nodeClaimName, err)
+	}
+
+	for _, instance := range instances.Instances {
+		if instance.Labels[constants.InstanceLabelManagedBy] != constants.ManagedByKarpenter ||
+			instance.Labels[constants.InstanceLabelClusterID] != p.options.ClusterID ||
+			instance.Labels[constants.InstanceLabelNodeClaim] != nodeClaimName ||
+			instance.State == egov3.InstanceStateDestroying || instance.State == egov3.InstanceStateDestroyed {
+			continue
+		}
+
+		existing, err := p.exoClient.GetInstance(ctx, instance.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instance %s of NodeClaim %s: %w", instance.ID, nodeClaimName, err)
+		}
+		return existing, nil
+	}
+
+	return nil, nil
+}
+
+func unattached(ids []string, attached []egov3.UUID) []string {
+	return slices.DeleteFunc(slices.Clone(ids), func(id string) bool {
+		return slices.Contains(attached, egov3.UUID(id))
+	})
 }
 
 // patchNodeClaimAnnotations records the resolved container-registry hash and

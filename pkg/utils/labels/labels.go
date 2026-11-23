@@ -24,6 +24,16 @@ func KarpenterFilter(clusterID string) (string, error) {
 	return encode(labels)
 }
 
+// NodeClaimFilter is KarpenterFilter narrowed to the instance created for
+// the given NodeClaim.
+func NodeClaimFilter(clusterID, nodeClaimName string) (string, error) {
+	return encode(map[string]string{
+		constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
+		constants.InstanceLabelClusterID: clusterID,
+		constants.InstanceLabelNodeClaim: nodeClaimName,
+	})
+}
+
 // encode renders a labels map into the URL-encoded `k=v k2=v2` form
 // expected by the Exoscale API `labels` query parameter.
 //
