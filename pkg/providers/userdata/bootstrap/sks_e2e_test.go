@@ -43,16 +43,16 @@ func TestE2E_GenerateFullPipeline(t *testing.T) {
 	}
 
 	result := decodeUserData(t, encoded)
-	settings, ok := result["settings"].(map[string]interface{})
+	settings, ok := result["settings"].(map[string]any)
 	if !ok {
 		t.Fatalf("settings key missing or wrong type: %T", result["settings"])
 	}
-	k8s, ok := settings["kubernetes"].(map[string]interface{})
+	k8s, ok := settings["kubernetes"].(map[string]any)
 	if !ok {
 		t.Fatalf("settings.kubernetes key missing or wrong type: %T", settings["kubernetes"])
 	}
 
-	mustEqual := func(key string, want interface{}) {
+	mustEqual := func(key string, want any) {
 		t.Helper()
 		if got := k8s[key]; got != want {
 			t.Errorf("settings.kubernetes.%s = %v (%T), want %v (%T)", key, got, got, want, want)
@@ -100,8 +100,8 @@ max-pods = 42
 	}
 
 	result := decodeUserData(t, encoded)
-	settings := result["settings"].(map[string]interface{})
-	k8s := settings["kubernetes"].(map[string]interface{})
+	settings := result["settings"].(map[string]any)
+	k8s := settings["kubernetes"].(map[string]any)
 
 	if got := k8s["cpu-manager-policy"]; got != "static" {
 		t.Errorf("cpu-manager-policy = %v, want static (Karpenter must override user value)", got)
@@ -113,9 +113,9 @@ max-pods = 42
 
 func int32Ptr(v int32) *int32 { return &v }
 
-func mustEqualSlice(t *testing.T, key string, got interface{}, want []string) {
+func mustEqualSlice(t *testing.T, key string, got any, want []string) {
 	t.Helper()
-	arr, ok := got.([]interface{})
+	arr, ok := got.([]any)
 	if !ok {
 		t.Errorf("%s = %v (%T), want []string", key, got, got)
 		return

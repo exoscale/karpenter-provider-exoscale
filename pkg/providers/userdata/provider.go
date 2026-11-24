@@ -2,17 +2,17 @@ package userdata
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata/bootstrap"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/yaml"
 )
 
 type Provider struct {
@@ -100,7 +100,7 @@ func (p *Provider) getCACertFromClusterInfo(ctx context.Context) ([]byte, error)
 		return nil, fmt.Errorf("kubeconfig not found in cluster-info ConfigMap")
 	}
 
-	return p.extractCACertFromKubeconfig(kubeconfig)
+	return extractCACertFromKubeconfig(kubeconfig)
 }
 
 func (p *Provider) getCACertFromKubeRootCA(ctx context.Context) ([]byte, error) {
@@ -120,36 +120,27 @@ func (p *Provider) getCACertFromKubeRootCA(ctx context.Context) ([]byte, error) 
 	return []byte(caCertStr), nil
 }
 
-func (p *Provider) extractCACertFromKubeconfig(kubeconfig string) ([]byte, error) {
-	var config map[string]interface{}
-	if err := yaml.Unmarshal([]byte(kubeconfig), &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal kubeconfig: %w", err)
+// cluster-info (kube-public) holds a kubeadm-style kubeconfig with a single
+// cluster and no contexts.
+func extractCACertFromKubeconfig(kubeconfig string) ([]byte, error) {
+	config, err := clientcmd.Load([]byte(kubeconfig))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse kubeconfig: %w", err)
 	}
 
-	clusters, ok := config["clusters"].([]interface{})
-	if !ok || len(clusters) == 0 {
-		return nil, fmt.Errorf("no clusters found in kubeconfig")
+	var cluster *clientcmdapi.Cluster
+	if kctx, ok := config.Contexts[config.CurrentContext]; ok {
+		cluster = config.Clusters[kctx.Cluster]
+	} else if len(config.Clusters) == 1 {
+		for _, c := range config.Clusters {
+			cluster = c
+		}
 	}
-
-	cluster, ok := clusters[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid cluster format in kubeconfig")
+	if cluster == nil {
+		return nil, fmt.Errorf("cannot pick a cluster from kubeconfig: %d clusters and no current-context", len(config.Clusters))
 	}
-
-	clusterData, ok := cluster["cluster"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("cluster data not found in kubeconfig")
-	}
-
-	caCertData, ok := clusterData["certificate-authority-data"].(string)
-	if !ok {
+	if len(cluster.CertificateAuthorityData) == 0 {
 		return nil, fmt.Errorf("certificate-authority-data not found in kubeconfig")
 	}
-
-	caCert, err := base64.StdEncoding.DecodeString(caCertData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode CA certificate: %w", err)
-	}
-
-	return caCert, nil
+	return cluster.CertificateAuthorityData, nil
 }

@@ -47,72 +47,72 @@ func TestBuildConfigWithoutFeatureGates(t *testing.T) {
 func TestDeepMerge(t *testing.T) {
 	tests := []struct {
 		name string
-		dst  map[string]interface{}
-		src  map[string]interface{}
-		want map[string]interface{}
+		dst  map[string]any
+		src  map[string]any
+		want map[string]any
 	}{
 		{
 			name: "src overwrites scalar values",
-			dst:  map[string]interface{}{"a": "old"},
-			src:  map[string]interface{}{"a": "new"},
-			want: map[string]interface{}{"a": "new"},
+			dst:  map[string]any{"a": "old"},
+			src:  map[string]any{"a": "new"},
+			want: map[string]any{"a": "new"},
 		},
 		{
 			name: "src adds new keys",
-			dst:  map[string]interface{}{"a": "1"},
-			src:  map[string]interface{}{"b": "2"},
-			want: map[string]interface{}{"a": "1", "b": "2"},
+			dst:  map[string]any{"a": "1"},
+			src:  map[string]any{"b": "2"},
+			want: map[string]any{"a": "1", "b": "2"},
 		},
 		{
 			name: "nested maps are merged recursively",
-			dst: map[string]interface{}{
-				"settings": map[string]interface{}{
-					"kubernetes": map[string]interface{}{
-						"node-labels": map[string]interface{}{"env": "prod"},
+			dst: map[string]any{
+				"settings": map[string]any{
+					"kubernetes": map[string]any{
+						"node-labels": map[string]any{"env": "prod"},
 					},
-					"kubelet-device-plugins": map[string]interface{}{
-						"nvidia": map[string]interface{}{"device-sharing-strategy": "time-slicing"},
+					"kubelet-device-plugins": map[string]any{
+						"nvidia": map[string]any{"device-sharing-strategy": "time-slicing"},
 					},
 				},
 			},
-			src: map[string]interface{}{
-				"settings": map[string]interface{}{
-					"kubernetes": map[string]interface{}{
+			src: map[string]any{
+				"settings": map[string]any{
+					"kubernetes": map[string]any{
 						"api-server": "https://api.example.com",
 					},
 				},
 			},
-			want: map[string]interface{}{
-				"settings": map[string]interface{}{
-					"kubernetes": map[string]interface{}{
+			want: map[string]any{
+				"settings": map[string]any{
+					"kubernetes": map[string]any{
 						"api-server":  "https://api.example.com",
-						"node-labels": map[string]interface{}{"env": "prod"},
+						"node-labels": map[string]any{"env": "prod"},
 					},
-					"kubelet-device-plugins": map[string]interface{}{
-						"nvidia": map[string]interface{}{"device-sharing-strategy": "time-slicing"},
+					"kubelet-device-plugins": map[string]any{
+						"nvidia": map[string]any{"device-sharing-strategy": "time-slicing"},
 					},
 				},
 			},
 		},
 		{
 			name: "src overwrites nested scalar in map",
-			dst: map[string]interface{}{
-				"settings": map[string]interface{}{
-					"kubernetes": map[string]interface{}{
+			dst: map[string]any{
+				"settings": map[string]any{
+					"kubernetes": map[string]any{
 						"api-server": "https://user-provided.example.com",
 					},
 				},
 			},
-			src: map[string]interface{}{
-				"settings": map[string]interface{}{
-					"kubernetes": map[string]interface{}{
+			src: map[string]any{
+				"settings": map[string]any{
+					"kubernetes": map[string]any{
 						"api-server": "https://karpenter-managed.example.com",
 					},
 				},
 			},
-			want: map[string]interface{}{
-				"settings": map[string]interface{}{
-					"kubernetes": map[string]interface{}{
+			want: map[string]any{
+				"settings": map[string]any{
+					"kubernetes": map[string]any{
 						"api-server": "https://karpenter-managed.example.com",
 					},
 				},
@@ -132,7 +132,7 @@ func TestDeepMerge(t *testing.T) {
 	}
 }
 
-func decodeUserData(t *testing.T, encoded string) map[string]interface{} {
+func decodeUserData(t *testing.T, encoded string) map[string]any {
 	t.Helper()
 	compressed, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
@@ -147,7 +147,7 @@ func decodeUserData(t *testing.T, encoded string) map[string]interface{} {
 	if err != nil {
 		t.Fatalf("failed to read gzip data: %v", err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := toml.Unmarshal(data, &result); err != nil {
 		t.Fatalf("failed to unmarshal TOML: %v", err)
 	}
@@ -177,11 +177,11 @@ replicas = 4
 
 	result := decodeUserData(t, encoded)
 
-	settings, ok := result["settings"].(map[string]interface{})
+	settings, ok := result["settings"].(map[string]any)
 	if !ok {
 		t.Fatal("settings not found in result")
 	}
-	k8s, ok := settings["kubernetes"].(map[string]interface{})
+	k8s, ok := settings["kubernetes"].(map[string]any)
 	if !ok {
 		t.Fatal("settings.kubernetes not found in result")
 	}
@@ -189,11 +189,11 @@ replicas = 4
 		t.Errorf("api-server = %v, want https://api.example.com", k8s["api-server"])
 	}
 
-	plugins, ok := settings["kubelet-device-plugins"].(map[string]interface{})
+	plugins, ok := settings["kubelet-device-plugins"].(map[string]any)
 	if !ok {
 		t.Fatal("settings.kubelet-device-plugins not found in merged result")
 	}
-	nvidia, ok := plugins["nvidia"].(map[string]interface{})
+	nvidia, ok := plugins["nvidia"].(map[string]any)
 	if !ok {
 		t.Fatal("settings.kubelet-device-plugins.nvidia not found in merged result")
 	}
@@ -226,8 +226,8 @@ custom-label = "custom-value"
 	}
 
 	result := decodeUserData(t, encoded)
-	settings := result["settings"].(map[string]interface{})
-	k8s := settings["kubernetes"].(map[string]interface{})
+	settings := result["settings"].(map[string]any)
+	k8s := settings["kubernetes"].(map[string]any)
 
 	if k8s["api-server"] != "https://api.example.com" {
 		t.Errorf("api-server = %v, want https://api.example.com (Karpenter should win)", k8s["api-server"])
@@ -236,7 +236,7 @@ custom-label = "custom-value"
 		t.Errorf("bootstrap-token = %v, want token123 (Karpenter should win)", k8s["bootstrap-token"])
 	}
 
-	labels, ok := k8s["node-labels"].(map[string]interface{})
+	labels, ok := k8s["node-labels"].(map[string]any)
 	if !ok {
 		t.Fatal("node-labels not found")
 	}
@@ -261,8 +261,8 @@ func TestGenerateWithoutUserData(t *testing.T) {
 	}
 
 	result := decodeUserData(t, encoded)
-	settings := result["settings"].(map[string]interface{})
-	k8s := settings["kubernetes"].(map[string]interface{})
+	settings := result["settings"].(map[string]any)
+	k8s := settings["kubernetes"].(map[string]any)
 
 	if k8s["api-server"] != "https://api.example.com" {
 		t.Errorf("api-server = %v, want https://api.example.com", k8s["api-server"])
@@ -304,8 +304,8 @@ func TestGenerateWithEmptyUserData(t *testing.T) {
 	}
 
 	result := decodeUserData(t, encoded)
-	settings := result["settings"].(map[string]interface{})
-	k8s := settings["kubernetes"].(map[string]interface{})
+	settings := result["settings"].(map[string]any)
+	k8s := settings["kubernetes"].(map[string]any)
 	if k8s["api-server"] != "https://api.example.com" {
 		t.Errorf("api-server = %v, want https://api.example.com", k8s["api-server"])
 	}
@@ -401,13 +401,13 @@ func TestGenerateCPUManagerTOMLEmission(t *testing.T) {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	result := decodeUserData(t, encoded)
-	settings := result["settings"].(map[string]interface{})
-	k8s := settings["kubernetes"].(map[string]interface{})
+	settings := result["settings"].(map[string]any)
+	k8s := settings["kubernetes"].(map[string]any)
 
 	if k8s["cpu-manager-policy"] != "static" {
 		t.Errorf("cpu-manager-policy = %v, want static", k8s["cpu-manager-policy"])
 	}
-	opts, ok := k8s["cpu-manager-policy-options"].([]interface{})
+	opts, ok := k8s["cpu-manager-policy-options"].([]any)
 	if !ok || len(opts) != 1 || opts[0] != "full-pcpus-only" {
 		t.Errorf("cpu-manager-policy-options = %v, want [full-pcpus-only]", k8s["cpu-manager-policy-options"])
 	}
@@ -433,8 +433,8 @@ func TestGenerateCPUManagerTOMLDefaultPeriodOmitted(t *testing.T) {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	result := decodeUserData(t, encoded)
-	settings := result["settings"].(map[string]interface{})
-	k8s := settings["kubernetes"].(map[string]interface{})
+	settings := result["settings"].(map[string]any)
+	k8s := settings["kubernetes"].(map[string]any)
 
 	if _, ok := k8s["cpu-manager-reconcile-period"]; ok {
 		t.Errorf("cpu-manager-reconcile-period must be absent when value equals kubelet default 10s, got %v", k8s["cpu-manager-reconcile-period"])
@@ -453,8 +453,8 @@ func TestGenerateCPUManagerTOMLAbsentWhenEmpty(t *testing.T) {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	result := decodeUserData(t, encoded)
-	settings := result["settings"].(map[string]interface{})
-	k8s := settings["kubernetes"].(map[string]interface{})
+	settings := result["settings"].(map[string]any)
+	k8s := settings["kubernetes"].(map[string]any)
 
 	for _, key := range []string{"cpu-manager-policy", "cpu-manager-policy-options", "cpu-manager-reconcile-period"} {
 		if v, ok := k8s[key]; ok {
@@ -517,8 +517,8 @@ func TestGenerateMaxPodsTOMLEmission(t *testing.T) {
 			t.Fatalf("Generate() error = %v", err)
 		}
 		result := decodeUserData(t, encoded)
-		settings := result["settings"].(map[string]interface{})
-		k8s := settings["kubernetes"].(map[string]interface{})
+		settings := result["settings"].(map[string]any)
+		k8s := settings["kubernetes"].(map[string]any)
 		if v, ok := k8s["max-pods"]; ok {
 			t.Errorf("max-pods = %v, want absent when unset", v)
 		}
@@ -537,8 +537,8 @@ func TestGenerateMaxPodsTOMLEmission(t *testing.T) {
 			t.Fatalf("Generate() error = %v", err)
 		}
 		result := decodeUserData(t, encoded)
-		settings := result["settings"].(map[string]interface{})
-		k8s := settings["kubernetes"].(map[string]interface{})
+		settings := result["settings"].(map[string]any)
+		k8s := settings["kubernetes"].(map[string]any)
 
 		got, ok := k8s["max-pods"].(int64)
 		if !ok {
@@ -564,8 +564,8 @@ func TestGenerateMaxPodsTOMLEmission(t *testing.T) {
 			t.Fatalf("Generate() error = %v", err)
 		}
 		result := decodeUserData(t, encoded)
-		settings := result["settings"].(map[string]interface{})
-		k8s := settings["kubernetes"].(map[string]interface{})
+		settings := result["settings"].(map[string]any)
+		k8s := settings["kubernetes"].(map[string]any)
 
 		got, ok := k8s["max-pods"].(int64)
 		if !ok || got != 64 {

@@ -126,12 +126,12 @@ func mergeUserData(config *Config, rawUserData string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var generatedMap map[string]interface{}
+	var generatedMap map[string]any
 	if err := toml.Unmarshal(generatedTOML, &generatedMap); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal generated config: %w", err)
 	}
 
-	var userMap map[string]interface{}
+	var userMap map[string]any
 	if err := toml.Unmarshal([]byte(rawUserData), &userMap); err != nil {
 		return nil, fmt.Errorf("failed to parse user data as TOML: %w", err)
 	}
@@ -141,14 +141,14 @@ func mergeUserData(config *Config, rawUserData string) ([]byte, error) {
 
 // deepMerge recursively merges src into dst. Values from src take precedence.
 // For nested maps, merging is recursive. For all other types, src overwrites dst.
-func deepMerge(dst, src map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(dst))
+func deepMerge(dst, src map[string]any) map[string]any {
+	result := make(map[string]any, len(dst))
 	for k, v := range dst {
 		result[k] = v
 	}
 	for k, v := range src {
-		if srcMap, ok := v.(map[string]interface{}); ok {
-			if dstMap, ok := result[k].(map[string]interface{}); ok {
+		if srcMap, ok := v.(map[string]any); ok {
+			if dstMap, ok := result[k].(map[string]any); ok {
 				result[k] = deepMerge(dstMap, srcMap)
 				continue
 			}
