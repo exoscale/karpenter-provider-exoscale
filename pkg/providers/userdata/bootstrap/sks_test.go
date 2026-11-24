@@ -5,98 +5,13 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"io"
+	"reflect"
 	"testing"
 
-	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/pelletier/go-toml/v2"
 )
 
-func TestConvertKubeResourceReservation(t *testing.T) {
-	tests := []struct {
-		name string
-		rr   apiv1.KubeResourceReservation
-		want *ResourceReservation
-	}{
-		{
-			name: "empty reservation",
-			rr:   apiv1.KubeResourceReservation{},
-			want: &ResourceReservation{},
-		},
-		{
-			name: "all fields set",
-			rr: apiv1.KubeResourceReservation{
-				CPU:              "100m",
-				Memory:           "1Gi",
-				EphemeralStorage: "10Gi",
-			},
-			want: &ResourceReservation{
-				CPU:              "100m",
-				Memory:           "1Gi",
-				EphemeralStorage: "10Gi",
-			},
-		},
-		{
-			name: "partial fields",
-			rr: apiv1.KubeResourceReservation{
-				CPU:    "200m",
-				Memory: "2Gi",
-			},
-			want: &ResourceReservation{
-				CPU:    "200m",
-				Memory: "2Gi",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := convertKubeResourceReservation(tt.rr)
-			if got.CPU != tt.want.CPU || got.Memory != tt.want.Memory || got.EphemeralStorage != tt.want.EphemeralStorage {
-				t.Errorf("convertKubeResourceReservation() = %+v, want %+v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestMarshalTOML(t *testing.T) {
-	s := &SKSBootstrap{}
-	config := &Config{
-		Settings: Settings{
-			Kubernetes: KubernetesSettings{
-				APIServer:          "https://api.example.com",
-				BootstrapToken:     "token123",
-				CloudProvider:      "external",
-				ClusterCertificate: "base64cert",
-			},
-		},
-	}
-
-	got, err := s.marshalTOML(config)
-	if err != nil {
-		t.Fatalf("marshalTOML() error = %v", err)
-	}
-
-	if len(got) == 0 {
-		t.Error("marshalTOML() returned empty bytes")
-	}
-}
-
-func TestCompressAndEncode(t *testing.T) {
-	s := &SKSBootstrap{}
-	input := []byte("test user data content")
-
-	got, err := s.compressAndEncode(input)
-	if err != nil {
-		t.Fatalf("compressAndEncode() error = %v", err)
-	}
-
-	if len(got) == 0 {
-		t.Error("compressAndEncode() returned empty string")
-	}
-}
-
 func TestBuildConfigWithFeatureGates(t *testing.T) {
-	s := &SKSBootstrap{}
 	options := &Options{
 		ClusterEndpoint: "https://api.exoscale-cloud.com",
 		BootstrapToken:  "token123",
@@ -108,38 +23,21 @@ func TestBuildConfigWithFeatureGates(t *testing.T) {
 		},
 	}
 
-	config := s.buildConfig(options)
+	config := buildConfig(options)
 
-	if config.Settings.Kubernetes.FeatureGates == nil {
-		t.Fatal("FeatureGates should not be nil")
-	}
-
-	if len(config.Settings.Kubernetes.FeatureGates) != 3 {
-		t.Errorf("Expected 3 feature gates, got %d", len(config.Settings.Kubernetes.FeatureGates))
-	}
-
-	if config.Settings.Kubernetes.FeatureGates["ImageVolume"] != true {
-		t.Error("ImageVolume should be true")
-	}
-
-	if config.Settings.Kubernetes.FeatureGates["MemoryQoS"] != true {
-		t.Error("MemoryQoS should be true")
-	}
-
-	if config.Settings.Kubernetes.FeatureGates["TestFeature"] != false {
-		t.Error("TestFeature should be false")
+	if !reflect.DeepEqual(config.Settings.Kubernetes.FeatureGates, options.FeatureGates) {
+		t.Errorf("FeatureGates = %v, want %v", config.Settings.Kubernetes.FeatureGates, options.FeatureGates)
 	}
 }
 
 func TestBuildConfigWithoutFeatureGates(t *testing.T) {
-	s := &SKSBootstrap{}
 	options := &Options{
 		ClusterEndpoint: "https://api.exoscale-cloud.com",
 		BootstrapToken:  "token123",
 		CABundle:        []byte("test-ca-bundle"),
 	}
 
-	config := s.buildConfig(options)
+	config := buildConfig(options)
 
 	if config.Settings.Kubernetes.FeatureGates != nil {
 		t.Error("FeatureGates should be nil when not provided")
@@ -225,7 +123,6 @@ func TestDeepMerge(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := deepMerge(tt.dst, tt.src)
-			// Compare by marshaling to TOML
 			gotBytes, _ := toml.Marshal(got)
 			wantBytes, _ := toml.Marshal(tt.want)
 			if string(gotBytes) != string(wantBytes) {
@@ -258,8 +155,6 @@ func decodeUserData(t *testing.T, encoded string) map[string]interface{} {
 }
 
 func TestGenerateWithUserData(t *testing.T) {
-	s := New()
-
 	customUserData := `[settings.kubelet-device-plugins.nvidia]
 device-sharing-strategy = "time-slicing"
 
@@ -275,14 +170,13 @@ replicas = 4
 		UserData:        &customUserData,
 	}
 
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
 	result := decodeUserData(t, encoded)
 
-	// Verify Karpenter-managed fields are present
 	settings, ok := result["settings"].(map[string]interface{})
 	if !ok {
 		t.Fatal("settings not found in result")
@@ -295,7 +189,6 @@ replicas = 4
 		t.Errorf("api-server = %v, want https://api.example.com", k8s["api-server"])
 	}
 
-	// Verify user-provided nvidia plugin config is preserved
 	plugins, ok := settings["kubelet-device-plugins"].(map[string]interface{})
 	if !ok {
 		t.Fatal("settings.kubelet-device-plugins not found in merged result")
@@ -310,8 +203,6 @@ replicas = 4
 }
 
 func TestGenerateUserDataDoesNotOverrideKarpenterFields(t *testing.T) {
-	s := New()
-
 	// User tries to override api-server — Karpenter should win
 	customUserData := `[settings.kubernetes]
 api-server = "https://malicious.example.com"
@@ -329,7 +220,7 @@ custom-label = "custom-value"
 		UserData:        &customUserData,
 	}
 
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -338,7 +229,6 @@ custom-label = "custom-value"
 	settings := result["settings"].(map[string]interface{})
 	k8s := settings["kubernetes"].(map[string]interface{})
 
-	// Karpenter-managed fields must take precedence
 	if k8s["api-server"] != "https://api.example.com" {
 		t.Errorf("api-server = %v, want https://api.example.com (Karpenter should win)", k8s["api-server"])
 	}
@@ -346,7 +236,6 @@ custom-label = "custom-value"
 		t.Errorf("bootstrap-token = %v, want token123 (Karpenter should win)", k8s["bootstrap-token"])
 	}
 
-	// Both user-provided and Karpenter labels should be present
 	labels, ok := k8s["node-labels"].(map[string]interface{})
 	if !ok {
 		t.Fatal("node-labels not found")
@@ -360,15 +249,13 @@ custom-label = "custom-value"
 }
 
 func TestGenerateWithoutUserData(t *testing.T) {
-	s := New()
-
 	options := &Options{
 		ClusterEndpoint: "https://api.example.com",
 		BootstrapToken:  "token123",
 		CABundle:        []byte("test-ca-bundle"),
 	}
 
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -381,15 +268,12 @@ func TestGenerateWithoutUserData(t *testing.T) {
 		t.Errorf("api-server = %v, want https://api.example.com", k8s["api-server"])
 	}
 
-	// No kubelet-device-plugins section should exist
 	if _, ok := settings["kubelet-device-plugins"]; ok {
 		t.Error("kubelet-device-plugins should not be present without userData")
 	}
 }
 
 func TestGenerateWithInvalidUserData(t *testing.T) {
-	s := New()
-
 	invalidTOML := `this is not valid [[ toml`
 	options := &Options{
 		ClusterEndpoint: "https://api.example.com",
@@ -398,15 +282,13 @@ func TestGenerateWithInvalidUserData(t *testing.T) {
 		UserData:        &invalidTOML,
 	}
 
-	_, err := s.Generate(options)
+	_, err := Generate(options)
 	if err == nil {
 		t.Fatal("Generate() should fail with invalid TOML user data")
 	}
 }
 
 func TestGenerateWithEmptyUserData(t *testing.T) {
-	s := New()
-
 	empty := ""
 	options := &Options{
 		ClusterEndpoint: "https://api.example.com",
@@ -416,7 +298,7 @@ func TestGenerateWithEmptyUserData(t *testing.T) {
 	}
 
 	// Empty string should behave like no user data
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -430,7 +312,6 @@ func TestGenerateWithEmptyUserData(t *testing.T) {
 }
 
 func TestBuildConfigCPUManager(t *testing.T) {
-	s := &SKSBootstrap{}
 	base := &Options{
 		ClusterEndpoint: "https://api.example.com",
 		BootstrapToken:  "token123",
@@ -438,7 +319,7 @@ func TestBuildConfigCPUManager(t *testing.T) {
 	}
 
 	t.Run("empty", func(t *testing.T) {
-		cfg := s.buildConfig(base)
+		cfg := buildConfig(base)
 		k := cfg.Settings.Kubernetes
 		if k.CPUManagerPolicy != "" || k.CPUManagerPolicyOptions != nil || k.CPUManagerReconcilePeriod != "" {
 			t.Errorf("expected no CPU manager fields, got policy=%q options=%v period=%q",
@@ -449,7 +330,7 @@ func TestBuildConfigCPUManager(t *testing.T) {
 	t.Run("static only", func(t *testing.T) {
 		o := *base
 		o.CPUManagerPolicy = "static"
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if cfg.Settings.Kubernetes.CPUManagerPolicy != "static" {
 			t.Errorf("CPUManagerPolicy = %q, want static", cfg.Settings.Kubernetes.CPUManagerPolicy)
 		}
@@ -459,7 +340,7 @@ func TestBuildConfigCPUManager(t *testing.T) {
 		o := *base
 		o.CPUManagerPolicy = "static"
 		o.CPUManagerPolicyOptions = []string{"full-pcpus-only", "align-by-socket"}
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if got := cfg.Settings.Kubernetes.CPUManagerPolicyOptions; len(got) != 2 {
 			t.Errorf("CPUManagerPolicyOptions = %v, want 2 entries", got)
 		}
@@ -469,7 +350,7 @@ func TestBuildConfigCPUManager(t *testing.T) {
 		o := *base
 		o.CPUManagerPolicy = "none"
 		o.CPUManagerPolicyOptions = []string{"full-pcpus-only"}
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if cfg.Settings.Kubernetes.CPUManagerPolicyOptions != nil {
 			t.Errorf("CPUManagerPolicyOptions should be nil when policy=none, got %v",
 				cfg.Settings.Kubernetes.CPUManagerPolicyOptions)
@@ -479,7 +360,7 @@ func TestBuildConfigCPUManager(t *testing.T) {
 	t.Run("options dropped when policy is empty", func(t *testing.T) {
 		o := *base
 		o.CPUManagerPolicyOptions = []string{"full-pcpus-only"}
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if cfg.Settings.Kubernetes.CPUManagerPolicyOptions != nil {
 			t.Errorf("CPUManagerPolicyOptions should be nil when policy is empty, got %v",
 				cfg.Settings.Kubernetes.CPUManagerPolicyOptions)
@@ -489,7 +370,7 @@ func TestBuildConfigCPUManager(t *testing.T) {
 	t.Run("reconcile period", func(t *testing.T) {
 		o := *base
 		o.CPUManagerReconcilePeriod = "5s"
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if cfg.Settings.Kubernetes.CPUManagerReconcilePeriod != "5s" {
 			t.Errorf("CPUManagerReconcilePeriod = %q, want 5s", cfg.Settings.Kubernetes.CPUManagerReconcilePeriod)
 		}
@@ -498,7 +379,7 @@ func TestBuildConfigCPUManager(t *testing.T) {
 	t.Run("default period (10s) omitted", func(t *testing.T) {
 		o := *base
 		o.CPUManagerReconcilePeriod = "10s"
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if cfg.Settings.Kubernetes.CPUManagerReconcilePeriod != "" {
 			t.Errorf("CPUManagerReconcilePeriod = %q, want empty (kubelet default 10s must not be emitted)", cfg.Settings.Kubernetes.CPUManagerReconcilePeriod)
 		}
@@ -506,7 +387,6 @@ func TestBuildConfigCPUManager(t *testing.T) {
 }
 
 func TestGenerateCPUManagerTOMLEmission(t *testing.T) {
-	s := New()
 	options := &Options{
 		ClusterEndpoint:           "https://api.example.com",
 		BootstrapToken:            "token123",
@@ -516,7 +396,7 @@ func TestGenerateCPUManagerTOMLEmission(t *testing.T) {
 		CPUManagerReconcilePeriod: "5s",
 	}
 
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -539,7 +419,6 @@ func TestGenerateCPUManagerTOMLEmission(t *testing.T) {
 func TestGenerateCPUManagerTOMLDefaultPeriodOmitted(t *testing.T) {
 	// Simulates what the apiserver hands us after server-side default
 	// injection: period is "10s" even though the user never set it.
-	s := New()
 	options := &Options{
 		ClusterEndpoint:           "https://api.example.com",
 		BootstrapToken:            "token123",
@@ -549,7 +428,7 @@ func TestGenerateCPUManagerTOMLDefaultPeriodOmitted(t *testing.T) {
 		CPUManagerReconcilePeriod: "10s",
 	}
 
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -563,14 +442,13 @@ func TestGenerateCPUManagerTOMLDefaultPeriodOmitted(t *testing.T) {
 }
 
 func TestGenerateCPUManagerTOMLAbsentWhenEmpty(t *testing.T) {
-	s := New()
 	options := &Options{
 		ClusterEndpoint: "https://api.example.com",
 		BootstrapToken:  "token123",
 		CABundle:        []byte("test-ca-bundle"),
 	}
 
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -586,7 +464,6 @@ func TestGenerateCPUManagerTOMLAbsentWhenEmpty(t *testing.T) {
 }
 
 func TestBuildConfigMaxPods(t *testing.T) {
-	s := &SKSBootstrap{}
 	base := &Options{
 		ClusterEndpoint: "https://api.example.com",
 		BootstrapToken:  "token123",
@@ -594,7 +471,7 @@ func TestBuildConfigMaxPods(t *testing.T) {
 	}
 
 	t.Run("nil omitted", func(t *testing.T) {
-		cfg := s.buildConfig(base)
+		cfg := buildConfig(base)
 		if cfg.Settings.Kubernetes.MaxPods != nil {
 			t.Errorf("MaxPods = %v, want nil when unset", *cfg.Settings.Kubernetes.MaxPods)
 		}
@@ -604,7 +481,7 @@ func TestBuildConfigMaxPods(t *testing.T) {
 		o := *base
 		v := int32(110)
 		o.MaxPods = &v
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if cfg.Settings.Kubernetes.MaxPods == nil {
 			t.Fatal("MaxPods = nil, want 110")
 		}
@@ -621,7 +498,7 @@ func TestBuildConfigMaxPods(t *testing.T) {
 		o := *base
 		v := int32(0)
 		o.MaxPods = &v
-		cfg := s.buildConfig(&o)
+		cfg := buildConfig(&o)
 		if cfg.Settings.Kubernetes.MaxPods == nil || *cfg.Settings.Kubernetes.MaxPods != 0 {
 			t.Errorf("MaxPods = %v, want pointer to 0", cfg.Settings.Kubernetes.MaxPods)
 		}
@@ -629,15 +506,13 @@ func TestBuildConfigMaxPods(t *testing.T) {
 }
 
 func TestGenerateMaxPodsTOMLEmission(t *testing.T) {
-	s := New()
-
 	t.Run("unset -> absent", func(t *testing.T) {
 		options := &Options{
 			ClusterEndpoint: "https://api.example.com",
 			BootstrapToken:  "token123",
 			CABundle:        []byte("test-ca-bundle"),
 		}
-		encoded, err := s.Generate(options)
+		encoded, err := Generate(options)
 		if err != nil {
 			t.Fatalf("Generate() error = %v", err)
 		}
@@ -657,7 +532,7 @@ func TestGenerateMaxPodsTOMLEmission(t *testing.T) {
 			CABundle:        []byte("test-ca-bundle"),
 			MaxPods:         &v,
 		}
-		encoded, err := s.Generate(options)
+		encoded, err := Generate(options)
 		if err != nil {
 			t.Fatalf("Generate() error = %v", err)
 		}
@@ -684,7 +559,7 @@ func TestGenerateMaxPodsTOMLEmission(t *testing.T) {
 			MaxPods:         &v,
 			UserData:        &userData,
 		}
-		encoded, err := s.Generate(options)
+		encoded, err := Generate(options)
 		if err != nil {
 			t.Fatalf("Generate() error = %v", err)
 		}

@@ -4,6 +4,8 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"maps"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -16,7 +18,6 @@ import (
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata"
 	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -72,13 +73,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		return nil, fmt.Errorf("unsupported architecture requirement: %s", archRequirement)
 	}
 
-	instanceName := nodeClaim.Name
-	if p.GetInstancePrefix() != "" {
-		instanceName = p.GetInstancePrefix() + instanceName
-	}
-
 	instanceTypeRequirement := requirements.Get(corev1.LabelInstanceTypeStable)
-
 	if instanceTypeRequirement == nil || len(instanceTypeRequirement.Values()) == 0 {
 		return nil, fmt.Errorf("no instance type requirement specified")
 	}
@@ -87,7 +82,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	prices := make(map[string]float64)
 	for _, typeName := range instanceTypes {
 		instanceType, err := p.instanceTypeProvider.GetByName(typeName)
-		if err == nil && instanceType != nil && len(instanceType.Offerings) > 0 {
+		if err == nil && len(instanceType.Offerings) > 0 {
 			prices[typeName] = instanceType.Offerings[0].Price
 		}
 	}
@@ -116,7 +111,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	}
 
 	createRequest := egov3.CreateInstanceRequest{
-		Name:               instanceName,
+		Name:               p.options.InstancePrefix + nodeClaim.Name,
 		InstanceType:       &egov3.InstanceType{ID: egov3.UUID(instanceTypeID)},
 		Template:           &egov3.Template{ID: egov3.UUID(t.ID)},
 		DiskSize:           nodeClass.Spec.DiskSize,
@@ -167,58 +162,37 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		return nil, fmt.Errorf("failed to get created instance: %w", err)
 	}
 
-	// Hydrate the instance type
-	createdInstance.InstanceType = &egov3.InstanceType{}
 	instanceType, err := p.instanceTypeProvider.GetByName(instanceTypeName)
-	if err == nil && instanceType != nil {
-		parts := strings.SplitN(instanceTypeName, ".", 2)
-		if len(parts) == 2 {
-			createdInstance.InstanceType.Family = egov3.InstanceTypeFamily(parts[0])
-			createdInstance.InstanceType.Size = egov3.InstanceTypeSize(parts[1])
-		}
-
-		if instanceType.Capacity != nil {
-			if cpuQuantity, ok := instanceType.Capacity[corev1.ResourceCPU]; ok {
-				createdInstance.InstanceType.Cpus = cpuQuantity.Value()
-			}
-			if memQuantity, ok := instanceType.Capacity[corev1.ResourceMemory]; ok {
-				createdInstance.InstanceType.Memory = memQuantity.Value()
-			}
-			if gpuQuantity, ok := instanceType.Capacity[instancetype.ResourceNvidiaGPU]; ok {
-				createdInstance.InstanceType.Gpus = gpuQuantity.Value()
-			}
-		}
-	}
-
-	if len(nodeClass.Status.PrivateNetworks) > 0 {
-		if err := p.attachPrivateNetworks(ctx, createdInstance.ID, nodeClass.Status.PrivateNetworks); err != nil {
-			log.FromContext(ctx).Error(err, "failed to attach private networks, cleaning up instance")
-
-			deleteErr := p.Delete(ctx, createdInstance.ID.String())
-			if deleteErr != nil {
-				log.FromContext(ctx).Error(deleteErr, "failed to delete instance after network attachment failure")
-			}
-
-			return nil, fmt.Errorf("failed to attach private networks to instance %s: %w", createdInstance.ID.String(), err)
-		}
-	}
-
-	if len(nodeClass.Status.ElasticIPs) > 0 {
-		if err := p.attachElasticIPs(ctx, createdInstance.ID, nodeClass.Status.ElasticIPs); err != nil {
-			log.FromContext(ctx).Error(err, "failed to attach elastic IPs, cleaning up instance")
-
-			deleteErr := p.Delete(ctx, createdInstance.ID.String())
-			if deleteErr != nil {
-				log.FromContext(ctx).Error(deleteErr, "failed to delete instance after elastic IP attachment failure")
-			}
-
-			return nil, fmt.Errorf("failed to attach elastic IPs to instance %s: %w", createdInstance.ID.String(), err)
-		}
-	}
-
-	instanceType, err = p.instanceTypeProvider.GetByName(instanceTypeName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get instance type %s: %w", createdInstance.InstanceType.ID, err)
+		return nil, fmt.Errorf("failed to get instance type %s: %w", instanceTypeName, err)
+	}
+	// FromExoscaleInstance derives the type name from family/size and fills cpus/memory/gpus.
+	family, size, _ := strings.Cut(instanceTypeName, ".")
+	createdInstance.InstanceType = &egov3.InstanceType{
+		Family: egov3.InstanceTypeFamily(family),
+		Size:   egov3.InstanceTypeSize(size),
+	}
+
+	if err := p.attachPrivateNetworks(ctx, createdInstance.ID, nodeClass.Status.PrivateNetworks); err != nil {
+		log.FromContext(ctx).Error(err, "failed to attach private networks, cleaning up instance")
+
+		deleteErr := p.Delete(ctx, createdInstance.ID.String())
+		if deleteErr != nil {
+			log.FromContext(ctx).Error(deleteErr, "failed to delete instance after network attachment failure")
+		}
+
+		return nil, fmt.Errorf("failed to attach private networks to instance %s: %w", createdInstance.ID.String(), err)
+	}
+
+	if err := p.attachElasticIPs(ctx, createdInstance.ID, nodeClass.Status.ElasticIPs); err != nil {
+		log.FromContext(ctx).Error(err, "failed to attach elastic IPs, cleaning up instance")
+
+		deleteErr := p.Delete(ctx, createdInstance.ID.String())
+		if deleteErr != nil {
+			log.FromContext(ctx).Error(deleteErr, "failed to delete instance after elastic IP attachment failure")
+		}
+
+		return nil, fmt.Errorf("failed to attach elastic IPs to instance %s: %w", createdInstance.ID.String(), err)
 	}
 
 	instance := FromExoscaleInstance(createdInstance, instanceType, p.options.Zone)
@@ -231,26 +205,23 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 	return instance, nil
 }
 
-// patchNodeClaimAnnotations records the resolved container-registry hash and
-// the kubelet CPU manager hash on the NodeClaim so IsDrifted can detect
-// changes to either of them. The CPU manager annotation is written
-// unconditionally (including when empty) so removing all CPU manager config
-// still triggers drift.
+// patchNodeClaimAnnotations records the NodeClass configuration hash on the
+// NodeClaim so IsDrifted can detect configuration changes.
 func (p *Provider) patchNodeClaimAnnotations(ctx context.Context, nodeClaim *karpenterv1.NodeClaim, nodeClass *apiv1.ExoscaleNodeClass) error {
 	if p.kubeClient == nil || nodeClass.Status.ConfigurationHash == "" {
 		return nil
 	}
-	stored := &karpenterv1.NodeClaim{ObjectMeta: metav1.ObjectMeta{Name: nodeClaim.Name}}
+	stored := &karpenterv1.NodeClaim{}
 	if err := p.kubeClient.Get(ctx, client.ObjectKey{Name: nodeClaim.Name}, stored); err != nil {
 		return fmt.Errorf("getting NodeClaim %s: %w", nodeClaim.Name, err)
-	}
-	if stored.Annotations == nil {
-		stored.Annotations = map[string]string{}
 	}
 	if stored.Annotations[constants.AnnotationConfigurationHash] == nodeClass.Status.ConfigurationHash {
 		return nil
 	}
 	patch := client.MergeFrom(stored.DeepCopy())
+	if stored.Annotations == nil {
+		stored.Annotations = map[string]string{}
+	}
 	stored.Annotations[constants.AnnotationConfigurationHash] = nodeClass.Status.ConfigurationHash
 	return p.kubeClient.Patch(ctx, stored, patch)
 }
@@ -260,9 +231,6 @@ func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {
 
 	instance, err := p.exoClient.GetInstance(ctx, egov3.UUID(id))
 	if err != nil {
-		if p.IsNotFoundError(err) {
-			return nil, err // return raw typed error, callers will handle this type
-		}
 		return nil, fmt.Errorf("failed to get instance %s: %w", id, err)
 	}
 
@@ -271,8 +239,7 @@ func (p *Provider) Get(ctx context.Context, id string) (*Instance, error) {
 		return nil, fmt.Errorf("failed to get instance type %s: %w", instance.InstanceType.ID, err)
 	}
 
-	result := FromExoscaleInstance(instance, instanceType, p.options.Zone)
-	return result, nil
+	return FromExoscaleInstance(instance, instanceType, p.options.Zone), nil
 }
 
 func (p *Provider) List(ctx context.Context) ([]*Instance, error) {
@@ -288,17 +255,8 @@ func (p *Provider) List(ctx context.Context) ([]*Instance, error) {
 
 	var result []*Instance
 	for _, instance := range instances.Instances {
-		// Filter only instances managed by this Karpenter cluster
-		if instance.Labels == nil {
-			continue
-		}
-		managedBy, hasManagedBy := instance.Labels[constants.InstanceLabelManagedBy]
-		clusterID, hasClusterName := instance.Labels[constants.InstanceLabelClusterID]
-
-		if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
-			continue
-		}
-		if !hasClusterName || clusterID != p.options.ClusterID {
+		if instance.Labels[constants.InstanceLabelManagedBy] != constants.ManagedByKarpenter ||
+			instance.Labels[constants.InstanceLabelClusterID] != p.options.ClusterID {
 			continue
 		}
 
@@ -314,8 +272,7 @@ func (p *Provider) List(ctx context.Context) ([]*Instance, error) {
 			return nil, fmt.Errorf("failed to get instance type %s: %w", instance.InstanceType.ID, err)
 		}
 
-		inst := FromExoscaleInstance(fullInstance, instanceType, p.options.Zone)
-		result = append(result, inst)
+		result = append(result, FromExoscaleInstance(fullInstance, instanceType, p.options.Zone))
 	}
 
 	return result, nil
@@ -339,7 +296,6 @@ func (p *Provider) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to delete instance: %w", err)
 	}
 
-	// Wait for deletion to complete
 	if operation != nil {
 		log.FromContext(ctx).Info("waiting for delete operation to complete", "operationID", operation.ID)
 		_, err = p.exoClient.Wait(deleteCtx, operation, egov3.OperationStateSuccess)
@@ -391,18 +347,10 @@ func (p *Provider) UpdateTags(ctx context.Context, id string, tags map[string]st
 	}
 
 	updatedLabels := make(map[string]string, len(instance.Labels)+len(tags))
-	for k, v := range instance.Labels {
-		updatedLabels[k] = v
-	}
-	for k, v := range tags {
-		updatedLabels[k] = v
-	}
+	maps.Copy(updatedLabels, instance.Labels)
+	maps.Copy(updatedLabels, tags)
 
-	updateRequest := egov3.UpdateInstanceRequest{
-		Labels: updatedLabels,
-	}
-
-	operation, err := p.exoClient.UpdateInstance(ctx, egov3.UUID(id), updateRequest)
+	operation, err := p.exoClient.UpdateInstance(ctx, egov3.UUID(id), egov3.UpdateInstanceRequest{Labels: updatedLabels})
 	if err != nil {
 		return fmt.Errorf("failed to update instance labels: %w", err)
 	}
@@ -439,12 +387,7 @@ func (p *Provider) GetInstancePrefix() string {
 }
 
 func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, bootstrapToken string) (string, error) {
-	userdataOptions := userdata.NewOptions(nodeClass, nodeClaim)
-	userdataOptions.ClusterEndpoint = p.options.ClusterEndpoint
-	userdataOptions.ClusterDomain = p.options.ClusterDomain
-	userdataOptions.BootstrapToken = bootstrapToken
-
-	userData, err := p.userdataProvider.Generate(ctx, nodeClass, nodeClaim, userdataOptions)
+	userData, err := p.userdataProvider.Generate(ctx, nodeClass, nodeClaim, p.options.ClusterEndpoint, p.options.ClusterDomain, bootstrapToken)
 	if err != nil {
 		return "", cloudprovider.NewCreateError(err, "UserDataGenerationFailed", fmt.Sprintf("failed to generate user data: %s", err))
 	}
@@ -468,22 +411,18 @@ func (p *Provider) attachElasticIP(ctx context.Context, instanceID egov3.UUID, e
 	// is called on an instance that has just been created and is still in
 	// the `starting` state. Retry with a short backoff so we don't fail the
 	// NodeClaim just because the API hasn't observed the state transition yet.
-	var lastErr error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+	for attempt := 1; ; attempt++ {
 		attachCtx, cancel := context.WithTimeout(ctx, constants.DefaultOperationTimeout)
 		operation, err := p.exoClient.AttachInstanceToElasticIP(attachCtx, egov3.UUID(eipID), egov3.AttachInstanceToElasticIPRequest{
 			Instance: &egov3.InstanceTarget{ID: instanceID},
 		})
 		cancel()
 		if err != nil {
-			lastErr = err
-			if stderrors.Is(err, egov3.ErrBadRequest) {
+			if stderrors.Is(err, egov3.ErrBadRequest) && attempt < maxAttempts {
 				log.FromContext(ctx).V(1).Info("elastic IP attach returned 400, retrying",
 					"elasticIPID", eipID, "attempt", attempt, "maxAttempts", maxAttempts)
-				if attempt < maxAttempts {
-					time.Sleep(1 * time.Second)
-					continue
-				}
+				time.Sleep(time.Second)
+				continue
 			}
 			return fmt.Errorf("failed to attach elastic IP %s: %w", eipID, err)
 		}
@@ -495,8 +434,8 @@ func (p *Provider) attachElasticIP(ctx context.Context, instanceID egov3.UUID, e
 		}
 		return nil
 	}
-	return fmt.Errorf("failed to attach elastic IP %s after %d attempts: %w", eipID, maxAttempts, lastErr)
 }
+
 func (p *Provider) attachPrivateNetworks(ctx context.Context, instanceID egov3.UUID, networkIDs []string) error {
 	for _, networkID := range networkIDs {
 		if err := p.attachPrivateNetwork(ctx, instanceID, networkID); err != nil {
@@ -533,35 +472,17 @@ func findCheapestInstanceType(instanceTypes []string, prices map[string]float64)
 	if len(instanceTypes) == 0 {
 		return ""
 	}
-	if len(instanceTypes) == 1 {
-		return instanceTypes[0]
-	}
-
-	cheapest := instanceTypes[0]
-	cheapestPrice := prices[instanceTypes[0]]
-	foundValidPrice := false
-
+	cheapest, cheapestPrice := instanceTypes[0], math.Inf(1)
 	for _, typeName := range instanceTypes {
-		if price, exists := prices[typeName]; exists {
-			if !foundValidPrice || price < cheapestPrice {
-				cheapestPrice = price
-				cheapest = typeName
-				foundValidPrice = true
-			}
+		if price, ok := prices[typeName]; ok && price < cheapestPrice {
+			cheapest, cheapestPrice = typeName, price
 		}
 	}
-
 	return cheapest
 }
 
 func (p *Provider) IsNotFoundError(err error) bool {
 	return stderrors.Is(err, egov3.ErrNotFound)
-}
-
-// UseSKSDefaultSecurityGroup reports whether the provider is configured to
-// attach the SKS cluster's default security group to every instance.
-func (p *Provider) UseSKSDefaultSecurityGroup() bool {
-	return p.options.UseSKSDefaultSecurityGroup
 }
 
 // GetSKSDefaultSecurityGroupID returns the default security group ID of the
@@ -575,17 +496,10 @@ func (p *Provider) GetSKSDefaultSecurityGroupID(ctx context.Context) (string, bo
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get SKS cluster %s: %w", p.options.ClusterID, err)
 	}
-	id, ok := sksDefaultSGIDFromCluster(cluster)
-	return id, ok, nil
-}
-
-// sksDefaultSGIDFromCluster extracts the default security group ID from an
-// SKS cluster. Pure function — unit-tested without any API mock.
-func sksDefaultSGIDFromCluster(cluster *egov3.SKSCluster) (string, bool) {
-	if cluster == nil || cluster.DefaultSecurityGroupID == nil {
-		return "", false
+	if cluster.DefaultSecurityGroupID == nil {
+		return "", false, nil
 	}
-	return cluster.DefaultSecurityGroupID.String(), true
+	return cluster.DefaultSecurityGroupID.String(), true, nil
 }
 
 func (p *Provider) convertSecurityGroups(ids []string) []egov3.SecurityGroup {
@@ -604,13 +518,7 @@ func (p *Provider) convertAntiAffinityGroups(ids []string) []egov3.AntiAffinityG
 	return result
 }
 
-// checkAntiAffinityGroups checks if the anti-affinity groups have capacity for new instances
-// It returns an error if any group is at or over the MaxInstancesPerAntiAffinityGroup limit
 func (p *Provider) checkAntiAffinityGroups(ctx context.Context, requestedGroups []string) error {
-	if len(requestedGroups) == 0 {
-		return nil
-	}
-
 	for _, groupID := range requestedGroups {
 		group, err := p.exoClient.GetAntiAffinityGroup(ctx, egov3.UUID(groupID))
 		if err != nil {

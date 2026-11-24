@@ -6,12 +6,8 @@ import (
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 )
 
-// TestE2E_GenerateFullPipeline exercises the full bootstrap pipeline
-// (Options -> gzip+base64 TOML -> decode -> assert) with every drift-
-// sensitive field set: kubelet CPU manager, kubelet maxPods, container
-// registry credentials and TLS material. This guarantees that the
-// downstream sks-node-agent receives every new field under the right
-// settings.kubernetes.* key.
+// TestE2E_GenerateFullPipeline checks every kubelet field lands under the
+// right settings.kubernetes.* key in the encoded TOML.
 func TestE2E_GenerateFullPipeline(t *testing.T) {
 	v := int32(110)
 	options := &Options{
@@ -41,8 +37,7 @@ func TestE2E_GenerateFullPipeline(t *testing.T) {
 		MaxPods:                   &v,
 	}
 
-	s := New()
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
@@ -84,10 +79,6 @@ func TestE2E_GenerateFullPipeline(t *testing.T) {
 	mustExist("system-reserved")
 }
 
-// TestE2E_GenerateUserDataMergeHonoursKarpenterOverrides verifies that
-// when the user supplies userData with a max-pods and a cpu-manager-policy
-// setting, Karpenter's structured fields override the user's values
-// (Karpenter-managed sections always win).
 func TestE2E_GenerateUserDataMergeHonoursKarpenterOverrides(t *testing.T) {
 	v := int32(64)
 	userData := `[settings.kubernetes]
@@ -103,8 +94,7 @@ max-pods = 42
 		UserData:         &userData,
 	}
 
-	s := New()
-	encoded, err := s.Generate(options)
+	encoded, err := Generate(options)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}

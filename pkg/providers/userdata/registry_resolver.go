@@ -14,11 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// RegistryResolver loads Kubernetes Secrets backing the container-registry
-// feature from the fixed `kube-system` namespace. It is shared between the
-// NodeClass reconciler (which validates references and hashes resolved bytes
-// for drift detection) and the userdata provider (which renders the resolved
-// bytes into the sks-node-agent TOML).
+// RegistryResolver loads the kube-system Secrets backing the container-registry
+// feature. Both the NodeClass reconciler (validation, drift hash) and the
+// userdata provider (TOML rendering) use it.
 type RegistryResolver struct {
 	kubeClient client.Client
 }
@@ -27,10 +25,9 @@ func NewRegistryResolver(kubeClient client.Client) *RegistryResolver {
 	return &RegistryResolver{kubeClient: kubeClient}
 }
 
-// ResolvedTLSSecret carries the raw PEM bytes for a mirror endpoint's TLS
-// material. Raw is suitable for base64-encoding into the TOML output;
-// Decoded holds the PEM-block bytes (when present) so the hash can ignore
-// harmless whitespace differences across re-encodings.
+// ResolvedTLSSecret carries a mirror endpoint's TLS material. CA/Cert/Key are
+// the raw PEM bytes rendered into the TOML; the *Dec fields hold the decoded
+// PEM block bytes so the drift hash ignores whitespace-only re-encodings.
 type ResolvedTLSSecret struct {
 	CA      []byte
 	Cert    []byte
@@ -40,7 +37,6 @@ type ResolvedTLSSecret struct {
 	KeyDec  []byte
 }
 
-// ResolvedEndpoint is one mirror endpoint plus its (optional) TLS material.
 type ResolvedEndpoint struct {
 	URL          string
 	OverridePath bool
@@ -48,7 +44,6 @@ type ResolvedEndpoint struct {
 	TLS          *ResolvedTLSSecret
 }
 
-// ResolvedMirror is one mirror entry as returned by Resolve.
 type ResolvedMirror struct {
 	Registry  string
 	Endpoints []ResolvedEndpoint
@@ -65,9 +60,6 @@ type ResolvedCredential struct {
 	IdentityToken []byte
 }
 
-// Resolved is the fully-resolved container-registry configuration. It is the
-// single source of truth consumed by both the reconciler (for hashing and
-// status) and the userdata provider (for TOML rendering).
 type Resolved struct {
 	Mirrors     []ResolvedMirror
 	Credentials []ResolvedCredential
@@ -107,10 +99,6 @@ func (r *RegistryResolver) Resolve(ctx context.Context, spec *apiv1.ContainerReg
 	return out, nil
 }
 
-// loadTLSSecret fetches a TLS secret for a mirror endpoint from kube-system
-// (namespace mismatches are explicitly rejected) and validates that any
-// non-empty value PEM-decodes successfully. The cert/key pair must be
-// specified together or not at all.
 func (r *RegistryResolver) loadTLSSecret(ctx context.Context, ref *v1.SecretReference) (*ResolvedTLSSecret, error) {
 	if ref.Namespace != "" && ref.Namespace != metav1.NamespaceSystem {
 		return nil, fmt.Errorf("SecretNamespaceInvalid: TLS secret %q must be in namespace %q, got %q", ref.Name, metav1.NamespaceSystem, ref.Namespace)
@@ -124,40 +112,31 @@ func (r *RegistryResolver) loadTLSSecret(ctx context.Context, ref *v1.SecretRefe
 	}
 	out := &ResolvedTLSSecret{}
 	if b := secret.Data["ca.crt"]; len(b) > 0 {
-		if block, _ := pem.Decode(b); block == nil {
+		block, _ := pem.Decode(b)
+		if block == nil {
 			return nil, fmt.Errorf("InvalidPEM: TLS secret %q ca.crt is not valid PEM", ref.Name)
 		}
-		out.CA = b
-		if block, _ := pem.Decode(b); block != nil {
-			out.CADec = block.Bytes
-		}
+		out.CA, out.CADec = b, block.Bytes
 	}
 	cert, key := secret.Data["tls.crt"], secret.Data["tls.key"]
 	if (len(cert) == 0) != (len(key) == 0) {
 		return nil, fmt.Errorf("TLSSecretInconsistent: TLS secret %q must declare both tls.crt and tls.key or neither", ref.Name)
 	}
 	if len(cert) > 0 {
-		if block, _ := pem.Decode(cert); block == nil {
+		certBlock, _ := pem.Decode(cert)
+		if certBlock == nil {
 			return nil, fmt.Errorf("InvalidPEM: TLS secret %q tls.crt is not valid PEM", ref.Name)
 		}
-		if block, _ := pem.Decode(key); block == nil {
+		keyBlock, _ := pem.Decode(key)
+		if keyBlock == nil {
 			return nil, fmt.Errorf("InvalidPEM: TLS secret %q tls.key is not valid PEM", ref.Name)
 		}
-		out.Cert = cert
-		out.Key = key
-		if block, _ := pem.Decode(cert); block != nil {
-			out.CertDec = block.Bytes
-		}
-		if block, _ := pem.Decode(key); block != nil {
-			out.KeyDec = block.Bytes
-		}
+		out.Cert, out.CertDec = cert, certBlock.Bytes
+		out.Key, out.KeyDec = key, keyBlock.Bytes
 	}
 	return out, nil
 }
 
-// loadCredential fetches every Secret key backing a credential entry. The
-// returned ResolvedCredential has its Kind label set so callers (the
-// reconciler's hash, the provider's TOML rendering) can disambiguate.
 func (r *RegistryResolver) loadCredential(ctx context.Context, credential apiv1.ContainerRegistryCredential, ci int) (ResolvedCredential, error) {
 	rc := ResolvedCredential{Registry: credential.Registry}
 	switch {
@@ -207,8 +186,6 @@ func (r *RegistryResolver) loadSecretKey(ctx context.Context, ref v1.SecretKeySe
 	return b, nil
 }
 
-// ToBootstrap converts the resolved data into the bootstrap-package TOML
-// structs consumed by sks-node-agent.
 func (r *Resolved) ToBootstrap() *bootstrap.ContainerRegistrySettings {
 	if r == nil {
 		return nil

@@ -1,12 +1,12 @@
 package bootstrap
 
 import (
+	"bytes"
 	"encoding/base64"
 	"testing"
 )
 
 func TestBuildConfigWithContainerRegistry(t *testing.T) {
-	s := &SKSBootstrap{}
 	options := &Options{
 		ClusterEndpoint: "https://api.example.com",
 		BootstrapToken:  "token123",
@@ -31,7 +31,7 @@ func TestBuildConfigWithContainerRegistry(t *testing.T) {
 		},
 	}
 
-	cfg := s.buildConfig(options)
+	cfg := buildConfig(options)
 	if cfg.Settings.ContainerRegistry == nil {
 		t.Fatal("ContainerRegistry settings should be set")
 	}
@@ -54,8 +54,7 @@ func TestBuildConfigWithContainerRegistry(t *testing.T) {
 }
 
 func TestBuildConfigWithoutContainerRegistry(t *testing.T) {
-	s := &SKSBootstrap{}
-	cfg := s.buildConfig(&Options{
+	cfg := buildConfig(&Options{
 		ClusterEndpoint: "https://api.example.com",
 		BootstrapToken:  "token123",
 		CABundle:        []byte("ca"),
@@ -66,7 +65,6 @@ func TestBuildConfigWithoutContainerRegistry(t *testing.T) {
 }
 
 func TestMarshalTOMLWithContainerRegistry(t *testing.T) {
-	s := &SKSBootstrap{}
 	cfg := &Config{
 		Settings: Settings{
 			Kubernetes: KubernetesSettings{
@@ -81,31 +79,14 @@ func TestMarshalTOMLWithContainerRegistry(t *testing.T) {
 			},
 		},
 	}
-	data, err := s.marshalTOML(cfg)
+	data, err := marshalTOML(cfg)
 	if err != nil {
 		t.Fatalf("marshalTOML error: %v", err)
 	}
-	if len(data) == 0 {
-		t.Fatal("expected non-empty TOML")
-	}
-	// Quick textual sanity check
-	if !contains(data, "docker.io") {
+	if !bytes.Contains(data, []byte("docker.io")) {
 		t.Errorf("expected docker.io in output, got:\n%s", data)
 	}
-	if !contains(data, "container-registry") {
+	if !bytes.Contains(data, []byte("container-registry")) {
 		t.Errorf("expected container-registry section, got:\n%s", data)
 	}
-}
-
-func contains(b []byte, s string) bool {
-	return stringContains(string(b), s)
-}
-
-func stringContains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

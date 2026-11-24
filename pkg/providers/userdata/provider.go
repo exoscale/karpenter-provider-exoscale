@@ -8,7 +8,6 @@ import (
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata/bootstrap"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -17,102 +16,66 @@ import (
 )
 
 type Provider struct {
-	kubeClient   client.Client
-	sksBootstrap *bootstrap.SKSBootstrap
+	kubeClient client.Client
 }
 
 func NewProvider(kubeClient client.Client) *Provider {
-	return &Provider{
-		kubeClient:   kubeClient,
-		sksBootstrap: bootstrap.New(),
-	}
+	return &Provider{kubeClient: kubeClient}
 }
 
-// RegistryResolver exposes the shared Secret-loading code path used by both
-// the NodeClass reconciler (validation + hash) and the userdata provider
-// (TOML rendering).
-func (p *Provider) RegistryResolver() *RegistryResolver {
-	return NewRegistryResolver(p.kubeClient)
-}
-
-func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, options *Options) (string, error) {
-	if nodeClass == nil {
-		return "", fmt.Errorf("nodeClass cannot be nil")
-	}
-	if options == nil {
-		return "", fmt.Errorf("options cannot be nil")
-	}
-
+func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, clusterEndpoint, clusterDomain, bootstrapToken string) (string, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
 		"provider", "userdata",
 		"nodeClass", nodeClass.Name,
 		"nodeClaim", nodeClaim.Name,
 	))
 
-	if len(options.CABundle) == 0 {
-		caBundle, err := p.getClusterCA(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed to get cluster CA: %w", err)
-		}
-		options.CABundle = caBundle
+	caBundle, err := p.getClusterCA(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get cluster CA: %w", err)
 	}
 
-	registry, err := NewRegistryResolver(p.kubeClient).Resolve(ctx, options.ContainerRegistry)
+	registry, err := NewRegistryResolver(p.kubeClient).Resolve(ctx, nodeClass.Spec.ContainerRegistry)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve container registry: %w", err)
 	}
-	bootstrapOptions := &bootstrap.Options{
-		ClusterEndpoint:             options.ClusterEndpoint,
-		ClusterDNS:                  options.ClusterDNS,
-		ClusterDomain:               options.ClusterDomain,
-		BootstrapToken:              options.BootstrapToken,
-		CABundle:                    options.CABundle,
-		Labels:                      options.Labels,
-		Taints:                      options.Taints,
-		ImageGCHighThresholdPercent: options.ImageGCHighThresholdPercent,
-		ImageGCLowThresholdPercent:  options.ImageGCLowThresholdPercent,
-		ImageMinimumGCAge:           options.ImageMinimumGCAge,
-		KubeReserved:                options.KubeReserved,
-		SystemReserved:              options.SystemReserved,
-		FeatureGates:                options.FeatureGates,
-		UserData:                    options.UserData,
+
+	kubelet := nodeClass.Spec.Kubelet
+	options := &bootstrap.Options{
+		ClusterEndpoint:             clusterEndpoint,
+		ClusterDNS:                  kubelet.ClusterDNS,
+		ClusterDomain:               clusterDomain,
+		BootstrapToken:              bootstrapToken,
+		CABundle:                    caBundle,
+		Labels:                      nodeClaim.Labels,
+		Taints:                      nodeClaim.Spec.Taints,
+		ImageGCHighThresholdPercent: kubelet.ImageGCHighThresholdPercent,
+		ImageGCLowThresholdPercent:  kubelet.ImageGCLowThresholdPercent,
+		ImageMinimumGCAge:           kubelet.ImageMinimumGCAge,
+		KubeReserved:                kubelet.KubeReserved,
+		SystemReserved:              kubelet.SystemReserved,
+		FeatureGates:                kubelet.FeatureGates,
+		UserData:                    nodeClass.Spec.UserData,
 		ContainerRegistry:           registry.ToBootstrap(),
-		CPUManagerPolicy:            options.CPUManagerPolicy,
-		CPUManagerPolicyOptions:     options.CPUManagerPolicyOptions,
-		CPUManagerReconcilePeriod:   options.CPUManagerReconcilePeriod,
-		MaxPods:                     options.MaxPods,
+		CPUManagerPolicy:            kubelet.CPUManagerPolicy,
+		CPUManagerPolicyOptions:     kubelet.CPUManagerPolicyOptions,
+		CPUManagerReconcilePeriod:   kubelet.CPUManagerReconcilePeriod,
+		MaxPods:                     kubelet.MaxPods,
 	}
 
-	if bootstrapOptions.Labels == nil {
-		bootstrapOptions.Labels = make(map[string]string)
+	userData, err := bootstrap.Generate(options)
+	if err != nil && options.UserData != nil && *options.UserData != "" {
+		log.FromContext(ctx).Error(err, "spec.userData contains invalid TOML, skipping merge")
+		options.UserData = nil
+		userData, err = bootstrap.Generate(options)
 	}
-	for k, v := range nodeClaim.Labels {
-		bootstrapOptions.Labels[k] = v
-	}
-
-	userData, err := p.sksBootstrap.Generate(bootstrapOptions)
 	if err != nil {
-		if bootstrapOptions.UserData != nil && *bootstrapOptions.UserData != "" {
-			log.FromContext(ctx).Error(err, "spec.userData contains invalid TOML, skipping merge")
-			bootstrapOptions.UserData = nil
-			userData, err = p.sksBootstrap.Generate(bootstrapOptions)
-			if err != nil {
-				return "", fmt.Errorf("failed to generate user data: %w", err)
-			}
-		} else {
-			log.FromContext(ctx).Error(err, "failed to generate user data")
-			return "", fmt.Errorf("failed to generate user data: %w", err)
-		}
+		return "", fmt.Errorf("failed to generate user data: %w", err)
 	}
-
 	return userData, nil
 }
 
 func (p *Provider) getClusterCA(ctx context.Context) ([]byte, error) {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues(
-		"method", "getClusterCA",
-	))
-
 	caCert, err := p.getCACertFromClusterInfo(ctx)
 	if err == nil {
 		log.FromContext(ctx).V(2).Info("retrieved CA certificate from cluster-info")
@@ -129,9 +92,6 @@ func (p *Provider) getCACertFromClusterInfo(ctx context.Context) ([]byte, error)
 		Name:      "cluster-info",
 		Namespace: "kube-public",
 	}, cm); err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("cluster-info ConfigMap not found")
-		}
 		return nil, fmt.Errorf("failed to get cluster-info ConfigMap: %w", err)
 	}
 
