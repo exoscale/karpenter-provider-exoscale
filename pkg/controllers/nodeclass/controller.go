@@ -42,7 +42,6 @@ const (
 	ConditionContainerRegistryResolved  = "ContainerRegistrySecretsResolved"
 )
 
-// ExoscaleClient is an interface for interacting with the Exoscale API
 type ExoscaleClient interface {
 	GetTemplate(ctx context.Context, id egov3.UUID) (*egov3.Template, error)
 	GetSecurityGroup(ctx context.Context, id egov3.UUID) (*egov3.SecurityGroup, error)
@@ -59,7 +58,6 @@ type ExoscaleClient interface {
 	ListElasticIPS(ctx context.Context) (*egov3.ListElasticIPSResponse, error)
 	ListVpcs(ctx context.Context) (*egov3.ListVpcsResponse, error)
 	ListSubnets(ctx context.Context, vpcID egov3.UUID) (*egov3.ListSubnetsResponse, error)
-	AttachInstanceToElasticIP(ctx context.Context, id egov3.UUID, req egov3.AttachInstanceToElasticIPRequest) (*egov3.Operation, error)
 }
 
 type ExoscaleNodeClassReconciler struct {
@@ -92,12 +90,7 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 
 	nodeClass := &apiv1.ExoscaleNodeClass{}
 	if err := r.Get(ctx, req.NamespacedName, nodeClass); err != nil {
-		if errors.IsNotFound(err) {
-			log.FromContext(ctx).V(1).Info("ExoscaleNodeClass not found, ignoring")
-			return reconcile.Result{}, nil
-		}
-		log.FromContext(ctx).Error(err, "failed to get ExoscaleNodeClass")
-		return reconcile.Result{}, err
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if !nodeClass.DeletionTimestamp.IsZero() {
@@ -109,35 +102,36 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	if !slices.Contains(nodeClass.Finalizers, Finalizer) {
 		nodeClass.Finalizers = append(nodeClass.Finalizers, Finalizer)
 		if err := r.Update(ctx, nodeClass); err != nil {
-			log.FromContext(ctx).Error(err, "failed to add finalizer")
 			return reconcile.Result{}, err
 		}
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
-	if nodeClass.Status.Conditions == nil {
-		nodeClass.Status.Conditions = []status.Condition{}
-	}
-
-	if err := r.validateSpec(nodeClass); err != nil {
+	requeueAfter := 5 * time.Minute
+	if err := validateSpec(nodeClass); err != nil {
 		log.FromContext(ctx).Error(err, "validation failed")
 		nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ValidationFailed", "Validation failed: "+err.Error())
 		r.Recorder.Eventf(nodeClass, nil, "Warning", "ValidationFailed", "ValidationFailed", "NodeClass validation failed: %v", err)
-
-		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
-			if errors.IsConflict(err) {
-				return reconcile.Result{RequeueAfter: 0}, nil
-			}
-
-			return reconcile.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("failed to patch nodeclass status: %w", err)
-		}
-
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		requeueAfter = 30 * time.Second
+	} else {
+		r.Recorder.Eventf(nodeClass, nil, "Normal", "ValidationSucceeded", "ValidationSucceeded", "NodeClass field validation succeeded")
+		r.reconcileResources(ctx, nodeClass)
 	}
 
-	r.Recorder.Eventf(nodeClass, nil, "Normal", "ValidationSucceeded", "ValidationSucceeded", "NodeClass field validation succeeded")
+	if !equality.Semantic.DeepEqual(stored, nodeClass) {
+		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
+			if errors.IsConflict(err) {
+				return reconcile.Result{}, nil
+			}
+			return reconcile.Result{}, fmt.Errorf("failed to patch nodeclass status: %w", err)
+		}
+	}
 
-	// Reconcile resources from Exoscale API now and resolve them into status fields
+	return reconcile.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// reconcileResources resolves the Exoscale resources referenced by the spec into status.
+func (r *ExoscaleNodeClassReconciler) reconcileResources(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) {
 	type reconcileStep struct {
 		reconcileFn  func(context.Context, *apiv1.ExoscaleNodeClass) error
 		reason       string
@@ -191,39 +185,23 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	}
 
 	nodeClass.StatusConditions().SetFalse(status.ConditionReady, "Reconciling", "Reconciling node class resources")
-	var err error
+	ready := true
 	for _, step := range reconcileSteps {
-		if err = step.reconcileFn(ctx, nodeClass); err != nil {
+		if err := step.reconcileFn(ctx, nodeClass); err != nil {
 			log.FromContext(ctx).Error(err, step.errorMessage)
 			nodeClass.StatusConditions().SetFalse(step.condition, step.reason, err.Error())
-			// It will only record the first failure event during reconciliation loop
-			// but we have all errors on each condition
 			nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ReconcilingFailed", "Reconciling node class resources failed")
 			r.Recorder.Eventf(nodeClass, nil, "Warning", step.reason, step.reason, "%s: %v", step.errorMessage, err)
+			ready = false
 			continue
 		}
-
 		nodeClass.StatusConditions().SetTrue(step.condition)
 	}
 
-	if nodeClass.StatusConditions().IsTrue(ConditionTemplateResolved, ConditionSecurityGroupsResolved, ConditionAntiAffinityGroupsResolved,
-		ConditionPrivateNetworksResolved, ConditionVpcSubnetsResolved, ConditionElasticIPsResolved, ConditionContainerRegistryResolved) {
+	if ready {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 		r.Recorder.Eventf(nodeClass, nil, "Normal", "Ready", "Ready", "NodeClass is ready for use")
 	}
-
-	// if resource is different, patch it
-	if !equality.Semantic.DeepEqual(stored, nodeClass) {
-		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
-			if errors.IsConflict(err) {
-				return reconcile.Result{RequeueAfter: 0}, nil
-			}
-
-			return reconcile.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("failed to patch nodeclass status: %w", err)
-		}
-	}
-
-	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
 func isNodeClaimUsingNodeClass(nc *karpenterv1.NodeClaim, nodeClassName string) bool {
@@ -244,8 +222,6 @@ func countActiveNodeClaims(nodeClaims []karpenterv1.NodeClaim, nodeClassName str
 }
 
 func (r *ExoscaleNodeClassReconciler) handleDeletion(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (reconcile.Result, error) {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
-
 	if !slices.Contains(nodeClass.Finalizers, Finalizer) {
 		return reconcile.Result{}, nil
 	}
@@ -254,7 +230,6 @@ func (r *ExoscaleNodeClassReconciler) handleDeletion(ctx context.Context, nodeCl
 
 	nodeClaims := &karpenterv1.NodeClaimList{}
 	if err := r.List(ctx, nodeClaims); err != nil {
-		log.FromContext(ctx).Error(err, "failed to list NodeClaims")
 		return reconcile.Result{}, err
 	}
 
@@ -276,7 +251,6 @@ func (r *ExoscaleNodeClassReconciler) handleDeletion(ctx context.Context, nodeCl
 		return s == Finalizer
 	})
 	if err := r.Update(ctx, nodeClass); err != nil {
-		log.FromContext(ctx).Error(err, "failed to remove finalizer")
 		return reconcile.Result{}, err
 	}
 
@@ -286,29 +260,22 @@ func (r *ExoscaleNodeClassReconciler) handleDeletion(ctx context.Context, nodeCl
 }
 
 func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) error {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclass", nodeClass.Name))
-	log.FromContext(ctx).V(1).Info("checking for orphaned instances")
-
 	if r.ClusterID == "" {
 		return fmt.Errorf("cluster ID is not configured")
 	}
 
 	encodedLabels, err := labelfilter.KarpenterFilter(r.ClusterID)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to build labels filter")
 		return fmt.Errorf("failed to build labels filter: %w", err)
 	}
 
 	instances, err := r.ExoscaleClient.ListInstances(ctx, egov3.ListInstancesWithLabels(encodedLabels))
-
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to list instances")
 		return fmt.Errorf("failed to list instances: %w", err)
 	}
 
 	nodeClaimList := &karpenterv1.NodeClaimList{}
 	if err := r.List(ctx, nodeClaimList); err != nil {
-		log.FromContext(ctx).Error(err, "failed to list NodeClaims")
 		return fmt.Errorf("failed to list NodeClaims: %w", err)
 	}
 
@@ -324,29 +291,29 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 			continue
 		}
 
-		log.FromContext(ctx).Info("found orphaned inst",
+		log.FromContext(ctx).Info("found orphaned instance",
 			"instanceID", inst.ID,
 			"instanceName", inst.Name,
 			"nodeClaimName", nodeClaimName)
 
 		if _, err := r.ExoscaleClient.DeleteInstance(ctx, inst.ID); err != nil {
-			log.FromContext(ctx).Error(err, "failed to delete orphaned inst",
+			log.FromContext(ctx).Error(err, "failed to delete orphaned instance",
 				"instanceID", inst.ID,
 				"instanceName", inst.Name)
 			continue
 		}
 
-		log.FromContext(ctx).Info("deleted orphaned inst",
+		log.FromContext(ctx).Info("deleted orphaned instance",
 			"instanceID", inst.ID,
 			"instanceName", inst.Name)
 		orphanedCount++
 
 		r.Recorder.Eventf(nodeClass, nil, "Normal", "OrphanedInstanceDeleted", "OrphanedInstanceDeleted",
-			"Deleted orphaned inst %s (NodeClaim: %s)", inst.Name, nodeClaimName)
+			"Deleted orphaned instance %s (NodeClaim: %s)", inst.Name, nodeClaimName)
 	}
 
 	if orphanedCount > 0 {
-		log.FromContext(ctx).Info("orphaned inst cleanup completed", "deletedCount", orphanedCount)
+		log.FromContext(ctx).Info("orphaned instance cleanup completed", "deletedCount", orphanedCount)
 	} else {
 		log.FromContext(ctx).V(1).Info("no orphaned instances found")
 	}
@@ -355,25 +322,12 @@ func (r *ExoscaleNodeClassReconciler) cleanupOrphanedInstances(ctx context.Conte
 }
 
 func (r *ExoscaleNodeClassReconciler) orphanedNodeClaimName(inst egov3.ListInstancesResponseInstances, validNodeClaims map[string]bool) (string, bool) {
-	if inst.Labels == nil {
-		return "", false
-	}
-
-	managedBy, hasManagedBy := inst.Labels[constants.InstanceLabelManagedBy]
-	if !hasManagedBy || managedBy != constants.ManagedByKarpenter {
-		return "", false
-	}
-
-	clusterID, hasClusterID := inst.Labels[constants.InstanceLabelClusterID]
-	if !hasClusterID || clusterID != r.ClusterID {
-		return "", false
-	}
-
 	nodeClaimName, hasNodeClaim := inst.Labels[constants.InstanceLabelNodeClaim]
-	if !hasNodeClaim || validNodeClaims[nodeClaimName] {
+	if !hasNodeClaim || validNodeClaims[nodeClaimName] ||
+		inst.Labels[constants.InstanceLabelManagedBy] != constants.ManagedByKarpenter ||
+		inst.Labels[constants.InstanceLabelClusterID] != r.ClusterID {
 		return "", false
 	}
-
 	return nodeClaimName, true
 }
 
@@ -394,14 +348,7 @@ func (r *ExoscaleNodeClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// secretToNodeClasses lists all ExoscaleNodeClass objects and returns a
-// reconcile request for each one whose spec.containerRegistry references the
-// changed Secret (by name in kube-system).
 func (r *ExoscaleNodeClassReconciler) secretToNodeClasses(ctx context.Context, obj client.Object) []reconcile.Request {
-	secret, ok := obj.(*corev1.Secret)
-	if !ok || secret.Namespace != "kube-system" {
-		return nil
-	}
 	var list apiv1.ExoscaleNodeClassList
 	if err := r.List(ctx, &list); err != nil {
 		return nil
@@ -409,18 +356,13 @@ func (r *ExoscaleNodeClassReconciler) secretToNodeClasses(ctx context.Context, o
 	var out []reconcile.Request
 	for i := range list.Items {
 		nc := &list.Items[i]
-		if nc.Spec.ContainerRegistry == nil {
-			continue
-		}
-		if referencesSecret(nc.Spec.ContainerRegistry, secret.Name) {
+		if nc.Spec.ContainerRegistry != nil && referencesSecret(nc.Spec.ContainerRegistry, obj.GetName()) {
 			out = append(out, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nc)})
 		}
 	}
 	return out
 }
 
-// referencesSecret reports whether the given kube-system Secret is named by
-// any mirror TLS ref or credential ref inside the ContainerRegistry spec.
 func referencesSecret(spec *apiv1.ContainerRegistrySpec, secretName string) bool {
 	for _, mirror := range spec.Mirrors {
 		for _, ep := range mirror.Endpoints {
@@ -445,7 +387,7 @@ func referencesSecret(spec *apiv1.ContainerRegistrySpec, secretName string) bool
 	return false
 }
 
-func (r *ExoscaleNodeClassReconciler) validateSpec(nodeClass *apiv1.ExoscaleNodeClass) error {
+func validateSpec(nodeClass *apiv1.ExoscaleNodeClass) error {
 	kr := nodeClass.Spec.Kubelet.KubeReserved
 	if err := validateResourceQuantities(kr.CPU, kr.Memory, kr.EphemeralStorage); err != nil {
 		return fmt.Errorf("invalid kubelet.kubeReserved: %w", err)

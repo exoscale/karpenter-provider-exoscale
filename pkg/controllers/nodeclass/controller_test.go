@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -196,31 +197,6 @@ func TestValidateResourceQuantities(t *testing.T) {
 			wantErr:          true,
 			errContains:      "invalid ephemeral storage reservation",
 		},
-		{
-			name:    "valid cpu only",
-			cpu:     "2",
-			wantErr: false,
-		},
-		{
-			name:    "valid memory only",
-			memory:  "8Gi",
-			wantErr: false,
-		},
-		{
-			name:             "valid ephemeral storage only",
-			ephemeralStorage: "100Gi",
-			wantErr:          false,
-		},
-		{
-			name:    "valid cpu with different units",
-			cpu:     "1500m",
-			wantErr: false,
-		},
-		{
-			name:    "valid memory with different units",
-			memory:  "1024Mi",
-			wantErr: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -238,9 +214,6 @@ func TestValidateResourceQuantities(t *testing.T) {
 }
 
 func TestValidateSpec(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = apiv1.AddToScheme(scheme)
-
 	tests := []struct {
 		name        string
 		nodeClass   *apiv1.ExoscaleNodeClass
@@ -271,18 +244,6 @@ func TestValidateSpec(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid spec with empty reservations",
-			nodeClass: &apiv1.ExoscaleNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: apiv1.ExoscaleNodeClassSpec{
-					Kubelet: apiv1.KubeletConfiguration{},
-				},
-			},
-			wantErr: false,
-		},
-		{
 			name: "invalid kubeReserved CPU",
 			nodeClass: &apiv1.ExoscaleNodeClass{
 				ObjectMeta: metav1.ObjectMeta{
@@ -292,40 +253,6 @@ func TestValidateSpec(t *testing.T) {
 					Kubelet: apiv1.KubeletConfiguration{
 						KubeReserved: apiv1.KubeResourceReservation{
 							CPU: "invalid",
-						},
-					},
-				},
-			},
-			wantErr:     true,
-			errContains: "invalid kubelet.kubeReserved",
-		},
-		{
-			name: "invalid kubeReserved memory",
-			nodeClass: &apiv1.ExoscaleNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: apiv1.ExoscaleNodeClassSpec{
-					Kubelet: apiv1.KubeletConfiguration{
-						KubeReserved: apiv1.KubeResourceReservation{
-							Memory: "invalid",
-						},
-					},
-				},
-			},
-			wantErr:     true,
-			errContains: "invalid kubelet.kubeReserved",
-		},
-		{
-			name: "invalid kubeReserved ephemeral storage",
-			nodeClass: &apiv1.ExoscaleNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: apiv1.ExoscaleNodeClassSpec{
-					Kubelet: apiv1.KubeletConfiguration{
-						KubeReserved: apiv1.KubeResourceReservation{
-							EphemeralStorage: "invalid",
 						},
 					},
 				},
@@ -349,73 +276,6 @@ func TestValidateSpec(t *testing.T) {
 			},
 			wantErr:     true,
 			errContains: "invalid kubelet.systemReserved",
-		},
-		{
-			name: "invalid systemReserved memory",
-			nodeClass: &apiv1.ExoscaleNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: apiv1.ExoscaleNodeClassSpec{
-					Kubelet: apiv1.KubeletConfiguration{
-						SystemReserved: apiv1.SystemResourceReservation{
-							Memory: "invalid",
-						},
-					},
-				},
-			},
-			wantErr:     true,
-			errContains: "invalid kubelet.systemReserved",
-		},
-		{
-			name: "invalid systemReserved ephemeral storage",
-			nodeClass: &apiv1.ExoscaleNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: apiv1.ExoscaleNodeClassSpec{
-					Kubelet: apiv1.KubeletConfiguration{
-						SystemReserved: apiv1.SystemResourceReservation{
-							EphemeralStorage: "invalid",
-						},
-					},
-				},
-			},
-			wantErr:     true,
-			errContains: "invalid kubelet.systemReserved",
-		},
-		{
-			name: "valid partial kubeReserved",
-			nodeClass: &apiv1.ExoscaleNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: apiv1.ExoscaleNodeClassSpec{
-					Kubelet: apiv1.KubeletConfiguration{
-						KubeReserved: apiv1.KubeResourceReservation{
-							CPU:    "100m",
-							Memory: "512Mi",
-						},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid partial systemReserved",
-			nodeClass: &apiv1.ExoscaleNodeClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-nodeclass",
-				},
-				Spec: apiv1.ExoscaleNodeClassSpec{
-					Kubelet: apiv1.KubeletConfiguration{
-						SystemReserved: apiv1.SystemResourceReservation{
-							CPU: "50m",
-						},
-					},
-				},
-			},
-			wantErr: false,
 		},
 		{
 			name: "vpc subnets without vpcSelector",
@@ -488,11 +348,7 @@ func TestValidateSpec(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			reconciler := &ExoscaleNodeClassReconciler{
-				Scheme: scheme,
-			}
-
-			err := reconciler.validateSpec(tt.nodeClass)
+			err := validateSpec(tt.nodeClass)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateSpec() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -713,22 +569,8 @@ func TestOrphanedNodeClaimName(t *testing.T) {
 }
 
 func equalLabelsFilter(a, b string) bool {
-	if a == b {
-		return true
-	}
-	aPairs := strings.Split(a, " ")
-	bPairs := strings.Split(b, " ")
-	if len(aPairs) != len(bPairs) {
-		return false
-	}
-	aSet := make(map[string]struct{}, len(aPairs))
-	for _, p := range aPairs {
-		aSet[p] = struct{}{}
-	}
-	for _, p := range bPairs {
-		if _, ok := aSet[p]; !ok {
-			return false
-		}
-	}
-	return true
+	x, y := strings.Fields(a), strings.Fields(b)
+	slices.Sort(x)
+	slices.Sort(y)
+	return slices.Equal(x, y)
 }

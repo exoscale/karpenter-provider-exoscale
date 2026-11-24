@@ -6,9 +6,7 @@ import (
 
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
@@ -21,10 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-)
-
-const (
-	AnnotationNodeRegistered = "exoscale.com/node-registered"
 )
 
 type Controller struct {
@@ -41,21 +35,12 @@ type Controller struct {
 func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("secret", req.NamespacedName))
 
-	if req.NamespacedName.Name == "cleanup-tokens" {
-		return r.cleanupTokens(ctx)
-	}
-
 	secret := &v1.Secret{}
 	if err := r.Get(ctx, req.NamespacedName, secret); err != nil {
-		if errors.IsNotFound(err) {
-			log.FromContext(ctx).V(1).Info("secret not found, ignoring")
-			return reconcile.Result{}, nil
-		}
-		log.FromContext(ctx).Error(err, "failed to get secret")
-		return reconcile.Result{}, err
+		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if !r.isBootstrapToken(secret) {
+	if !isBootstrapToken(secret) {
 		return reconcile.Result{}, nil
 	}
 
@@ -69,55 +54,29 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return r.cleanupToken(ctx, secret)
 	}
 
-	return r.monitorToken(ctx, secret)
+	return reconcile.Result{RequeueAfter: calculateTokenExpiryTime(secret)}, nil
 }
 
-func (r *Controller) isBootstrapToken(secret *v1.Secret) bool {
-	if secret.Type != v1.SecretTypeBootstrapToken {
-		return false
-	}
+func isBootstrapToken(secret *v1.Secret) bool {
+	return secret.Type == v1.SecretTypeBootstrapToken && secret.Labels[constants.LabelTokenProvider] == constants.ProviderName
+}
 
-	if provider, ok := secret.Labels[constants.LabelTokenProvider]; !ok || provider != constants.ProviderName {
-		return false
+// tokenCreatedAt returns false when the created annotation is unparseable.
+func tokenCreatedAt(secret *v1.Secret) (time.Time, bool) {
+	createdStr, ok := secret.Annotations[constants.AnnotationTokenCreated]
+	if !ok {
+		return secret.CreationTimestamp.Time, true
 	}
-
-	return true
+	created, err := time.Parse(time.RFC3339, createdStr)
+	return created, err == nil
 }
 
 func isTokenExpired(secret *v1.Secret, checkTime time.Time) bool {
-	createdStr, ok := secret.Annotations[constants.AnnotationTokenCreated]
-	if !ok {
-		return checkTime.Sub(secret.CreationTimestamp.Time) > constants.DefaultBootstrapTokenTTL
-	}
-
-	created, err := time.Parse(time.RFC3339, createdStr)
-	if err != nil {
-		return true
-	}
-
-	return checkTime.Sub(created) > constants.DefaultBootstrapTokenTTL
-}
-
-func isNodeAlreadyMarkedRegistered(secret *v1.Secret) bool {
-	if secret.Annotations == nil {
-		return false
-	}
-	registeredStr, ok := secret.Annotations[AnnotationNodeRegistered]
-	return ok && registeredStr == "true"
-}
-
-func isNodeUsingBootstrapToken(node *v1.Node, tokenSecretName string) bool {
-	if bootstrapToken, ok := node.Annotations[constants.AnnotationBootstrapToken]; ok {
-		return bootstrapToken == tokenSecretName
-	}
-	return false
+	created, ok := tokenCreatedAt(secret)
+	return !ok || checkTime.Sub(created) > constants.DefaultBootstrapTokenTTL
 }
 
 func (r *Controller) isNodeRegistered(ctx context.Context, secret *v1.Secret) bool {
-	if isNodeAlreadyMarkedRegistered(secret) {
-		return true
-	}
-
 	nodeList := &v1.NodeList{}
 	if err := r.List(ctx, nodeList); err != nil {
 		log.FromContext(ctx).Error(err, "failed to list nodes")
@@ -125,15 +84,13 @@ func (r *Controller) isNodeRegistered(ctx context.Context, secret *v1.Secret) bo
 	}
 
 	for _, node := range nodeList.Items {
-		if isNodeUsingBootstrapToken(&node, secret.Name) {
+		if node.Annotations[constants.AnnotationBootstrapToken] == secret.Name {
 			if node.Status.Phase != "" && node.Status.Phase != v1.NodePending {
-				log.FromContext(ctx).Info("node has registered with kubelet, marking token for cleanup", "node", node.Name, "phase", node.Status.Phase)
-				r.markNodeRegistered(ctx, secret)
+				log.FromContext(ctx).Info("node has registered with kubelet", "node", node.Name, "phase", node.Status.Phase)
 				return true
 			}
 			if len(node.Status.Conditions) > 0 {
-				log.FromContext(ctx).Info("node has conditions (kubelet registered), marking token for cleanup", "node", node.Name)
-				r.markNodeRegistered(ctx, secret)
+				log.FromContext(ctx).Info("node has conditions (kubelet registered)", "node", node.Name)
 				return true
 			}
 			log.FromContext(ctx).V(1).Info("node found but kubelet hasn't registered yet (Unknown), keeping token", "node", node.Name)
@@ -144,127 +101,36 @@ func (r *Controller) isNodeRegistered(ctx context.Context, secret *v1.Secret) bo
 	return false
 }
 
-func (r *Controller) markNodeRegistered(ctx context.Context, secret *v1.Secret) {
-	if secret.Annotations == nil {
-		secret.Annotations = make(map[string]string)
-	}
-	secret.Annotations[AnnotationNodeRegistered] = "true"
-
-	if err := r.Update(ctx, secret); err != nil {
-		log.FromContext(ctx).Error(err, "failed to mark token as registered")
-	}
-}
-
 func (r *Controller) cleanupToken(ctx context.Context, secret *v1.Secret) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("token", secret.Name))
 	log.FromContext(ctx).Info("cleaning up bootstrap token")
 
-	r.Recorder.Eventf(secret, nil, "Normal", "TokenCleanup", "CleanupFailed", "Cleaning up bootstrap token")
+	r.Recorder.Eventf(secret, nil, "Normal", "TokenCleanup", "Cleanup", "Cleaning up bootstrap token")
 
-	if err := r.Delete(ctx, secret); err != nil {
-		if errors.IsNotFound(err) {
-			return reconcile.Result{}, nil
-		}
-		log.FromContext(ctx).Error(err, "failed to delete bootstrap token")
+	if err := r.Delete(ctx, secret); client.IgnoreNotFound(err) != nil {
 		r.Recorder.Eventf(secret, nil, "Warning", "CleanupFailed", "CleanupFailed", "Failed to cleanup token: %v", err)
-		return reconcile.Result{RequeueAfter: 30 * time.Second}, err
+		return reconcile.Result{}, err
 	}
 
 	return reconcile.Result{}, nil
 }
 
+// calculateTokenExpiryTime is only called for unexpired tokens, so tokenCreatedAt succeeds.
 func calculateTokenExpiryTime(secret *v1.Secret) time.Duration {
-	createdStr, ok := secret.Annotations[constants.AnnotationTokenCreated]
-	var timeUntilExpiry = constants.DefaultBootstrapTokenTTL
-
-	if ok {
-		if created, err := time.Parse(time.RFC3339, createdStr); err == nil {
-			timeUntilExpiry = constants.DefaultBootstrapTokenTTL - time.Since(created)
-		}
-	} else {
-		timeUntilExpiry = constants.DefaultBootstrapTokenTTL - time.Since(secret.CreationTimestamp.Time)
-	}
-
-	if timeUntilExpiry < 30*time.Second {
-		timeUntilExpiry = 30 * time.Second
-	}
-
-	return timeUntilExpiry
-}
-
-func (r *Controller) monitorToken(ctx context.Context, secret *v1.Secret) (reconcile.Result, error) {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("token", secret.Name))
-
-	timeUntilExpiry := calculateTokenExpiryTime(secret)
-
-	log.FromContext(ctx).V(2).Info("monitoring bootstrap token", "expiry", timeUntilExpiry)
-	return reconcile.Result{RequeueAfter: timeUntilExpiry}, nil
-}
-
-func (r *Controller) cleanupTokens(ctx context.Context) (reconcile.Result, error) {
-	log.FromContext(ctx).V(1).Info("performing periodic bootstrap token cleanup")
-
-	secretList := &v1.SecretList{}
-	if err := r.List(ctx, secretList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labels.Set{
-			constants.LabelTokenProvider: constants.ProviderName,
-		}),
-	}); err != nil {
-		log.FromContext(ctx).Error(err, "failed to list bootstrap token secrets")
-		return reconcile.Result{RequeueAfter: constants.DefaultOperationTimeout}, err
-	}
-
-	cleaned := 0
-	for _, secret := range secretList.Items {
-		if secret.Type != v1.SecretTypeBootstrapToken {
-			continue
-		}
-
-		shouldCleanup := isTokenExpired(&secret, time.Now()) || r.isNodeRegistered(ctx, &secret)
-
-		if shouldCleanup {
-			if err := r.Delete(ctx, &secret); err != nil && !errors.IsNotFound(err) {
-				log.FromContext(ctx).Error(err, "failed to cleanup token during periodic cleanup", "token", secret.Name)
-			} else {
-				cleaned++
-				log.FromContext(ctx).V(2).Info("cleaned up token during periodic cleanup", "token", secret.Name)
-			}
-		}
-	}
-
-	if cleaned > 0 {
-		log.FromContext(ctx).Info("periodic cleanup completed", "tokens_cleaned", cleaned)
-	}
-
-	return reconcile.Result{RequeueAfter: constants.DefaultOperationTimeout}, nil
+	created, _ := tokenCreatedAt(secret)
+	return max(constants.DefaultBootstrapTokenTTL-time.Since(created), 30*time.Second)
 }
 
 func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
-	// NOTE: we watch only kube-system namespace because bootstrap tokens are always created there
+	// Bootstrap tokens always live in kube-system.
+	ours := func(obj client.Object) bool {
+		secret, ok := obj.(*v1.Secret)
+		return ok && secret.Namespace == metav1.NamespaceSystem && isBootstrapToken(secret)
+	}
 	secretPredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			secret, ok := e.Object.(*v1.Secret)
-			if !ok {
-				return false
-			}
-			if secret.Namespace != metav1.NamespaceSystem {
-				return false
-			}
-			return r.isBootstrapToken(secret)
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			secret, ok := e.ObjectNew.(*v1.Secret)
-			if !ok {
-				return false
-			}
-			if secret.Namespace != metav1.NamespaceSystem {
-				return false
-			}
-			return r.isBootstrapToken(secret)
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
-		},
+		CreateFunc: func(e event.CreateEvent) bool { return ours(e.Object) },
+		UpdateFunc: func(e event.UpdateEvent) bool { return ours(e.ObjectNew) },
+		DeleteFunc: func(event.DeleteEvent) bool { return false },
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -280,22 +146,9 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *Controller) nodeToTokens(_ context.Context, obj client.Object) []reconcile.Request {
-	node, ok := obj.(*v1.Node)
+	tokenSecretName, ok := obj.GetAnnotations()[constants.AnnotationBootstrapToken]
 	if !ok {
-		return []reconcile.Request{}
+		return nil
 	}
-
-	tokenSecretName, ok := node.Annotations[constants.AnnotationBootstrapToken]
-	if !ok {
-		return []reconcile.Request{}
-	}
-
-	return []reconcile.Request{
-		{
-			NamespacedName: types.NamespacedName{
-				Name:      tokenSecretName,
-				Namespace: metav1.NamespaceSystem,
-			},
-		},
-	}
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: tokenSecretName, Namespace: metav1.NamespaceSystem}}}
 }
