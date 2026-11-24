@@ -3,16 +3,12 @@ kind: ExoscaleNodeClass
 metadata:
   name: standard-auto
 spec:
-  # imageTemplateSelector automatically selects the appropriate OS template
-  # based on Kubernetes version and variant (alternative to templateID)
+  # Alternative to templateID: pick the SKS template by Kubernetes version and variant
   imageTemplateSelector:
-    # version: Kubernetes version (semver format like "1.34.1")
-    # If omitted (or if you use imageTemplateSelector: {}), the control plane's
-    # current Kubernetes version will be auto-detected at runtime
+    # Kubernetes version ("1.34.1"); omit to use the control plane version
     version: "1.35.0"
 
-    # variant: Template variant (optional, defaults to "standard")
-    # Options: "standard" for regular workloads, "nvidia" for GPU-enabled nodes
+    # "standard" (default) or "nvidia"
     variant: "standard"
 
   # Disk size in GB (default: 50, min: 10, max: 8000)
@@ -33,11 +29,9 @@ spec:
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-private-network"
 
-  # VPC (optional)
-  # Select the VPC in which the subnets below live (by ID or name).
-  vpcSelector:
-  # - id: "123e4567-e89b-12d3-a456-426614174000"
-  # - name: "my-vpc"
+  # VPC holding the subnets below. Required when vpcSubnetSelectorTerms is set.
+  # vpcSelector:
+  #   name: "my-vpc"
 
   # VPC subnets (optional, max 7)
   # Subnets of the selected VPC, attached to instances at creation time.

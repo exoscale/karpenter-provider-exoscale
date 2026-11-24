@@ -10,21 +10,19 @@ kind: ExoscaleNodeClass
 ## Table of Contents
 
 - [Spec Fields](#spec-fields)
-  - [`spec.templateID`](#spectemplateID)
-  - [`spec.imageTemplateSelector`](#specimageTemplateSelector)
-  - [`spec.diskSize`](#specdiskSize)
-  - [`spec.securityGroupSelectorTerms`](#specsecurityGroupSelectorTerms)
-  - [`spec.antiAffinityGroupSelectorTerms`](#specantiAffinityGroupSelectorTerms)
-  - [`spec.privateNetworkSelectorTerms`](#specprivateNetworkSelectorTerms)
+  - [`spec.templateID`](#spectemplateid)
+  - [`spec.imageTemplateSelector`](#specimagetemplateselector)
+  - [`spec.diskSize`](#specdisksize)
+  - [`spec.securityGroupSelectorTerms`](#specsecuritygroupselectorterms)
+  - [`spec.antiAffinityGroupSelectorTerms`](#specantiaffinitygroupselectorterms)
+  - [`spec.privateNetworkSelectorTerms`](#specprivatenetworkselectorterms)
   - [`spec.vpcSelector`](#specvpcselector)
   - [`spec.vpcSubnetSelectorTerms`](#specvpcsubnetselectorterms)
   - [`spec.enableIPForwarding`](#specenableipforwarding)
-  - [`spec.elasticIPSelectorTerms`](#specelasticIPSelectorTerms)
+  - [`spec.elasticIPSelectorTerms`](#specelasticipselectorterms)
   - [`spec.kubelet`](#speckubelet)
-  - [`spec.userData`](#specuserData)
+  - [`spec.userData`](#specuserdata)
 - [Status Fields](#status-fields)
-
----
 
 ## Spec Fields
 
@@ -40,7 +38,7 @@ spec:
   templateID: "20000000-0000-0000-0000-000000000001"
 ```
 
-This option allows to use custom templates belonging to user's organization.
+Use this to run custom templates from your organization.
 
 The OS template must include an initialization agent that consumes user-data in the TOML format described in [user-data.md](user-data.md). The user-data may be gzip-compressed and base64-encoded.
 
@@ -53,7 +51,7 @@ Karpenter generates user-data that relies on the following subset of `settings.k
 | `settings.kubernetes.cloud-provider`                  | **Yes**  | Always set to `"external"` (Exoscale CCM).                                       |
 | `settings.kubernetes.cluster-certificate`             | **Yes**  | Base64-encoded cluster CA certificate.                                           |
 | `settings.kubernetes.cluster-dns-ip`                  |   No     | Cluster DNS IP(s). Set when `spec.kubelet.clusterDNS` is configured.             |
-| `settings.kubernetes.cluster-domain`                  |   No     | Cluster DNS domain. Set when the controller `--cluster-domain` flag is provided. |
+| `settings.kubernetes.cluster-domain`                  |   No     | Cluster DNS domain. Set from the `CLUSTER_DOMAIN` env var (default `cluster.local`).  |
 | `settings.kubernetes.node-labels`                     |   No     | Labels from the NodePool and NodeClaim.                                          |
 | `settings.kubernetes.node-taints`                     |   No     | Taints from the NodeClaim.                                                       |
 | `settings.kubernetes.image-gc-high-threshold-percent` |   No     | Set when `spec.kubelet.imageGCHighThresholdPercent` is configured.               |
@@ -67,8 +65,6 @@ The four **required** settings are always present in the generated user-data. Op
 
 > [!IMPORTANT]
 > Custom OS images that do not implement at least the four required settings will produce nodes that fail to join the cluster.
-
----
 
 ### `spec.imageTemplateSelector`
 
@@ -91,8 +87,6 @@ spec:
     variant: nvidia
 ```
 
----
-
 ### `spec.diskSize`
 
 **Type**: Integer
@@ -106,8 +100,6 @@ The size of the root disk in GB.
 spec:
   diskSize: 100
 ```
-
----
 
 ### `spec.securityGroupSelectorTerms`
 
@@ -126,8 +118,6 @@ spec:
 > [!NOTE]
 > The deprecated `spec.securityGroups` field (list of UUIDs) is still accepted but will be removed in a future release.
 
----
-
 ### `spec.antiAffinityGroupSelectorTerms`
 
 **Type**: List of selector terms
@@ -143,8 +133,6 @@ spec:
 
 > [!NOTE]
 > The deprecated `spec.antiAffinityGroups` field (list of UUIDs) is still accepted but will be removed in a future release.
-
----
 
 ### `spec.privateNetworkSelectorTerms`
 
@@ -163,8 +151,6 @@ spec:
 > The deprecated `spec.privateNetworks` field (list of UUIDs) is still accepted but will be removed in a future release.
 > Private Networks are deprecated in favor of VPC subnets: use `spec.vpcSubnetSelectorTerms` instead.
 
----
-
 ### `spec.vpcSelector`
 
 **Type**: Selector terms (single item)
@@ -176,16 +162,13 @@ Selects the [Exoscale VPC](https://www.exoscale.com/vpc/) in which the subnets l
 ```yaml
 spec:
   vpcSelector:
-    - id: "60000000-0000-0000-0000-000000000001"
-    - name: "my-vpc"
+    name: "my-vpc"
 ```
 
 > [!NOTE]
 > The IAM role bound to `EXOSCALE_API_KEY` must allow the VPC operations used
 > by the provider: `list-vpcs` and `get-vpc`. See the
 > [Required IAM policy](iam.md).
-
----
 
 ### `spec.vpcSubnetSelectorTerms`
 
@@ -208,8 +191,6 @@ spec:
 > used by the provider: `list-subnets` and `get-subnet`. See the
 > [Required IAM policy](iam.md).
 
----
-
 ### `spec.enableIPForwarding`
 
 **Type**: Boolean
@@ -221,8 +202,6 @@ Enables ip-forwarding on instances created with this NodeClass, letting them act
 spec:
   enableIPForwarding: true
 ```
-
----
 
 ### `spec.elasticIPSelectorTerms`
 
@@ -250,11 +229,7 @@ EIPs are attached to every instance launched from this NodeClass right after cre
 > [!NOTE]
 > The IAM role bound to `EXOSCALE_API_KEY` must allow the EIP operations used
 > by the provider: `list-elastic-ips`, `get-elastic-ip`, and
-> `attach-instance-to-elastic-ip`. See the [Required IAM policy](iam.md) for
-> a ready-to-paste least-privilege policy covering all operations the provider
-> uses (including EIPs).
-
----
+> `attach-instance-to-elastic-ip`. See the [Required IAM policy](iam.md).
 
 ### `spec.kubelet`
 
@@ -339,18 +314,14 @@ spec:
       ImageVolume: true
 ```
 
----
-
 ### `spec.userData`
 
 **Type**: String (raw TOML)
 
-Optional raw TOML content that is deep-merged with the Karpenter-generated user-data configuration.
-This allows specifying additional settings that are not directly exposed by the ExoscaleNodeClass API, such as NVIDIA device plugin configuration.
+Raw TOML deep-merged into the generated user-data, for settings the ExoscaleNodeClass API does not expose (e.g. NVIDIA device plugin configuration).
 
 #### Merge Behavior
 
-The user-provided TOML is deep-merged with the Karpenter-generated configuration:
 - **Karpenter-managed fields always take precedence**: `api-server`, `bootstrap-token`, `cloud-provider`, `cluster-certificate`, and other fields managed through `spec.kubelet` cannot be overridden.
 - **User-provided sections are preserved**: settings that Karpenter does not manage (e.g. `settings.kubelet-device-plugins`) are included as-is in the final user-data.
 - **Maps are merged recursively**: for example, user-provided `node-labels` are merged with Karpenter-managed labels, but Karpenter labels win on conflict.
@@ -372,8 +343,6 @@ spec:
     [settings.kubelet-device-plugins.nvidia.mig.profile]
     "rtxpro6000.96gb" = "1g.24gb"
 ```
-
----
 
 ## Status Fields
 
