@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
 	egov3 "github.com/exoscale/egoscale/v3"
@@ -24,7 +23,7 @@ func hashEntries(entries []hashEntry) string {
 	if len(entries) == 0 {
 		return ""
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].key < entries[j].key })
+	slices.SortFunc(entries, func(a, b hashEntry) int { return strings.Compare(a.key, b.key) })
 	h := sha256.New()
 	for _, e := range entries {
 		_, _ = h.Write([]byte(e.key))
