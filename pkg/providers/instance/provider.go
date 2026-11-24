@@ -421,7 +421,11 @@ func (p *Provider) attachElasticIP(ctx context.Context, instanceID egov3.UUID, e
 			if stderrors.Is(err, egov3.ErrBadRequest) && attempt < maxAttempts {
 				log.FromContext(ctx).V(1).Info("elastic IP attach returned 400, retrying",
 					"elasticIPID", eipID, "attempt", attempt, "maxAttempts", maxAttempts)
-				time.Sleep(time.Second)
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("failed to attach elastic IP %s: %w", eipID, ctx.Err())
+				case <-time.After(time.Second):
+				}
 				continue
 			}
 			return fmt.Errorf("failed to attach elastic IP %s: %w", eipID, err)

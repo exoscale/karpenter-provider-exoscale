@@ -19,6 +19,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -510,57 +511,46 @@ func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {
 		}
 	}
 
-	evictStartTime := time.Now()
-	for {
-		if time.Since(evictStartTime) > 15*time.Minute {
-			log.FromContext(ctx).Error(fmt.Errorf("timed out waiting for pods to be evicted"), "giving up on drain", "nodeName", nodeName)
-			return nil
-		}
-
-		evictionFailed := false
-		foundInDeletionPods := false
-		justEvictedPod := false
-
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 15*time.Minute, true, func(ctx context.Context) (bool, error) {
 		var podList v1.PodList
 		if err := c.kubeClient.List(ctx, &podList, client.MatchingFields{"spec.nodeName": nodeName}); err != nil {
-			goto nextAttempt
+			return false, nil
 		}
 
+		drained := true
 		for _, pod := range podList.Items {
 			if slices.ContainsFunc(pod.OwnerReferences, func(o metav1.OwnerReference) bool { return o.Kind == "DaemonSet" }) {
 				continue
 			}
 
 			if pod.DeletionTimestamp != nil {
-				foundInDeletionPods = true
+				drained = false
 				continue
 			}
 
-			if err := c.kubeClient.SubResource("eviction").Create(ctx, &pod, &policyv1.Eviction{
+			err := c.kubeClient.SubResource("eviction").Create(ctx, &pod, &policyv1.Eviction{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      pod.Name,
 					Namespace: pod.Namespace,
 				},
-			}); err != nil {
-				if !errors.IsNotFound(err) {
-					log.FromContext(ctx).Error(err, "failed to evict pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-					evictionFailed = true
-				}
+			})
+			if errors.IsNotFound(err) {
+				continue
+			}
+			drained = false
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to evict pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
 			} else {
 				log.FromContext(ctx).Info("evicted pod", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-				justEvictedPod = true
 			}
 		}
-
-		if !evictionFailed && !foundInDeletionPods && !justEvictedPod {
-			break
-		}
-
-	nextAttempt:
-		time.Sleep(time.Second * 5)
+		return drained, nil
+	})
+	if err != nil && ctx.Err() == nil {
+		log.FromContext(ctx).Error(err, "giving up on drain after 15m", "nodeName", nodeName)
+		return nil
 	}
-
-	return nil
+	return err
 }
 
 func (c *CloudProvider) publishDrift(nodeClaim *karpenterv1.NodeClaim, message string) {
