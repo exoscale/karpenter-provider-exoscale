@@ -2,6 +2,7 @@ package nodeclass
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	egov3 "github.com/exoscale/egoscale/v3"
@@ -47,6 +48,36 @@ func newStatusTestReconciler(t *testing.T, funcs interceptor.Funcs) (*ExoscaleNo
 			return &egov3.Template{}, nil
 		}},
 	}, recorder, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodeClass)}
+}
+
+func drain(recorder *events.FakeRecorder) []string {
+	var got []string
+	for {
+		select {
+		case e := <-recorder.Events:
+			got = append(got, e)
+		default:
+			return got
+		}
+	}
+}
+
+func TestReconcileEmitsReadyOnlyWhenBecomingReady(t *testing.T) {
+	r, recorder, req := newStatusTestReconciler(t, interceptor.Funcs{})
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if got := drain(recorder); len(got) != 1 || !strings.Contains(got[0], "Ready") {
+		t.Fatalf("first reconcile events = %q, want one Ready event", got)
+	}
+
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if got := drain(recorder); len(got) != 0 {
+		t.Fatalf("resync events = %q, want none", got)
+	}
 }
 
 func TestReconcileReturnsStatusPatchConflict(t *testing.T) {

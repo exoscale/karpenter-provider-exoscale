@@ -113,7 +113,6 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 		r.Recorder.Eventf(nodeClass, nil, "Warning", "ValidationFailed", "ValidationFailed", "NodeClass validation failed: %v", err)
 		requeueAfter = 30 * time.Second
 	} else {
-		r.Recorder.Eventf(nodeClass, nil, "Normal", "ValidationSucceeded", "ValidationSucceeded", "NodeClass field validation succeeded")
 		r.reconcileResources(ctx, nodeClass)
 	}
 
@@ -123,6 +122,9 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to patch nodeclass status: %w", err)
 		}
+	}
+	if nodeClass.StatusConditions().IsTrue(status.ConditionReady) && !stored.StatusConditions().IsTrue(status.ConditionReady) {
+		r.Recorder.Eventf(nodeClass, nil, "Normal", "Ready", "Ready", "NodeClass is ready for use")
 	}
 
 	return reconcile.Result{RequeueAfter: requeueAfter}, nil
@@ -198,7 +200,6 @@ func (r *ExoscaleNodeClassReconciler) reconcileResources(ctx context.Context, no
 
 	if ready {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
-		r.Recorder.Eventf(nodeClass, nil, "Normal", "Ready", "Ready", "NodeClass is ready for use")
 	}
 }
 
