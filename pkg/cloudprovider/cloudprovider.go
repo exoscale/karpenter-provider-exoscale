@@ -277,15 +277,10 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpenterv1.No
 		return DriftReasonAntiAffinityGroups, nil
 	}
 
-	// When the provider attaches the SKS cluster's default security group at
-	// instance creation time, that SG is not part of nodeClass.Status.SecurityGroups.
-	// Append it to the expected list so drift detection doesn't flag it as extra.
-	// GetSKSDefaultSecurityGroupID returns found=false when the feature is off.
-	sksDefaultSGID, sksDefaultSGFound, err := c.instanceProvider.GetSKSDefaultSecurityGroupID(ctx)
+	expectedSecurityGroups, err := c.instanceProvider.ExpectedSecurityGroups(ctx, nodeClass)
 	if err != nil {
-		return "", fmt.Errorf("failed to get SKS default security group: %w", err)
+		return "", err
 	}
-	expectedSecurityGroups := computeExpectedSecurityGroups(nodeClass.Status.SecurityGroups, sksDefaultSGFound, sksDefaultSGID)
 
 	left, right = lo.Difference(expectedSecurityGroups, inst.SecurityGroups)
 	if len(left) != 0 || len(right) != 0 {
@@ -454,15 +449,4 @@ func (c *CloudProvider) publishDrift(nodeClaim *karpenterv1.NodeClaim, message s
 		Reason:         "DriftDetected",
 		Message:        message,
 	})
-}
-
-// computeExpectedSecurityGroups never mutates nodeClassSGs.
-func computeExpectedSecurityGroups(nodeClassSGs []string, sksDefaultSGFound bool, sksDefaultSGID string) []string {
-	if !sksDefaultSGFound || sksDefaultSGID == "" {
-		return nodeClassSGs
-	}
-	if slices.Contains(nodeClassSGs, sksDefaultSGID) {
-		return nodeClassSGs
-	}
-	return append(slices.Clone(nodeClassSGs), sksDefaultSGID)
 }

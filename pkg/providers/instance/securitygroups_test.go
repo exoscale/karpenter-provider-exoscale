@@ -1,4 +1,4 @@
-package cloudprovider
+package instance
 
 import (
 	"slices"

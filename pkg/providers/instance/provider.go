@@ -102,12 +102,9 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		return nil, fmt.Errorf("failed to resolve template ID: %w", err)
 	}
 
-	securityGroups := p.convertSecurityGroups(nodeClass.Status.SecurityGroups)
-
-	if sksSGID, ok, err := p.GetSKSDefaultSecurityGroupID(ctx); err != nil {
+	securityGroups, err := p.ExpectedSecurityGroups(ctx, nodeClass)
+	if err != nil {
 		return nil, err
-	} else if ok && !slices.Contains(nodeClass.Status.SecurityGroups, sksSGID) {
-		securityGroups = append(securityGroups, egov3.SecurityGroup{ID: egov3.UUID(sksSGID)})
 	}
 
 	createRequest := egov3.CreateInstanceRequest{
@@ -117,7 +114,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClas
 		DiskSize:           nodeClass.Spec.DiskSize,
 		UserData:           userData,
 		Labels:             p.GenerateInstanceLabels(nodeClaim),
-		SecurityGroups:     securityGroups,
+		SecurityGroups:     p.convertSecurityGroups(securityGroups),
 		AntiAffinityGroups: p.convertAntiAffinityGroups(nodeClass.Status.AntiAffinityGroups),
 		Ipv6Enabled:        &nodeClass.Spec.EnableIPv6,
 	}
@@ -483,6 +480,28 @@ func findCheapestInstanceType(instanceTypes []string, prices map[string]float64)
 
 func (p *Provider) IsNotFoundError(err error) bool {
 	return stderrors.Is(err, egov3.ErrNotFound)
+}
+
+// ExpectedSecurityGroups returns the security groups attached to instances of
+// nodeClass: its own, plus the SKS cluster's default one when
+// UseSKSDefaultSecurityGroup is enabled. Create and drift detection both use it.
+func (p *Provider) ExpectedSecurityGroups(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) ([]string, error) {
+	sksDefaultSGID, found, err := p.GetSKSDefaultSecurityGroupID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return computeExpectedSecurityGroups(nodeClass.Status.SecurityGroups, found, sksDefaultSGID), nil
+}
+
+// computeExpectedSecurityGroups never mutates nodeClassSGs.
+func computeExpectedSecurityGroups(nodeClassSGs []string, sksDefaultSGFound bool, sksDefaultSGID string) []string {
+	if !sksDefaultSGFound || sksDefaultSGID == "" {
+		return nodeClassSGs
+	}
+	if slices.Contains(nodeClassSGs, sksDefaultSGID) {
+		return nodeClassSGs
+	}
+	return append(slices.Clone(nodeClassSGs), sksDefaultSGID)
 }
 
 // GetSKSDefaultSecurityGroupID returns the default security group ID of the
