@@ -22,6 +22,8 @@ UNRELEASED
 - fix(nodeclass): keep the NodeClass `Ready` condition false when resolving one of its
   resources fails; a later successful step used to set it back to true, so Karpenter could
   launch nodes from a partly resolved NodeClass.
+- docs(iam): the VPC and subnet operations belong to the `networking` IAM service, not
+  `compute`; the documented policy denied them.
 
 1.37.2
 ----------
