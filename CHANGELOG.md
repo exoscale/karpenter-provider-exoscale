@@ -19,6 +19,9 @@ UNRELEASED
 - fix(config): install the Karpenter core CRDs from v1.15.1 to match the vendored version
   (were v1.14.0).
 - docs(api): clean up the NodeClass field descriptions shown by `kubectl explain`.
+- fix(nodeclass): keep the NodeClass `Ready` condition false when resolving one of its
+  resources fails; a later successful step used to set it back to true, so Karpenter could
+  launch nodes from a partly resolved NodeClass.
 
 1.37.2
 ----------
