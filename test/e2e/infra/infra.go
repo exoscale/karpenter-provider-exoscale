@@ -226,10 +226,16 @@ func destroy(ctx context.Context, c *egov3.Client, owned func(string) bool) erro
 	if err != nil {
 		errs = append(errs, err)
 	} else {
+		// Start every deletion before waiting for any.
+		var deletions []func() error
 		for _, i := range instances.Instances {
 			if owned(i.Name) || clusterIDs[i.Labels[constants.InstanceLabelClusterID]] {
-				errs = append(errs, wait(ctx, c)(c.DeleteInstance(ctx, i.ID)))
+				op, err := c.DeleteInstance(ctx, i.ID)
+				deletions = append(deletions, func() error { return wait(ctx, c)(op, err) })
 			}
+		}
+		for _, wait := range deletions {
+			errs = append(errs, wait())
 		}
 	}
 

@@ -94,6 +94,11 @@ var _ = SynchronizedBeforeSuite(func(ctx SpecContext) []byte {
 		Expect(infra.Destroy(ctx, exo, runName)).To(Succeed())
 	}, NodeTimeout(30*time.Minute))
 
+	// Build Karpenter while the cluster is created.
+	bin := filepath.Join(GinkgoT().TempDir(), "karpenter")
+	built := make(chan error, 1)
+	go func() { built <- buildKarpenterBinary(ctx, bin) }()
+
 	cluster, err = infra.Create(ctx, exo, runName, k8sVersion, iamPolicy())
 	Expect(err).NotTo(HaveOccurred())
 	clusterID = cluster.ID.String()
@@ -114,21 +119,20 @@ var _ = SynchronizedBeforeSuite(func(ctx SpecContext) []byte {
 		g.Expect(kube.List(ctx, &karpv1.NodePoolList{})).To(Succeed())
 	}).WithContext(ctx).WithTimeout(2 * time.Minute).Should(Succeed())
 
-	karpenter = buildKarpenter(ctx)
+	// Before Karpenter starts: the collector runs at startup and every
+	// GCInterval, so the orphan reaches its grace period exactly at a run
+	// instead of just after one, which would delay the GC spec by GCInterval.
+	createOrphanInstance(ctx)
+
+	Expect(<-built).To(Succeed())
+	karpenter = newKarpenter(bin)
 	karpenter.start()
-	DeferCleanup(func(ctx SpecContext) {
-		// Let Karpenter terminate its own instances before it stops.
-		Expect(kube.DeleteAllOf(ctx, &karpv1.NodePool{})).To(Succeed())
-		Eventually(func(g Gomega) {
-			var claims karpv1.NodeClaimList
-			g.Expect(kube.List(ctx, &claims)).To(Succeed())
-			g.Expect(claims.Items).To(BeEmpty())
-		}).WithContext(ctx).WithTimeout(10 * time.Minute).Should(Succeed())
+	// Specs check that Karpenter removes their nodes; whatever is left when the
+	// suite ends goes with the cluster.
+	DeferCleanup(func() {
 		karpenter.stop()
 		_ = karpenter.log.Close()
-	}, NodeTimeout(15*time.Minute))
-
-	createOrphanInstance(ctx)
+	})
 
 	data, err := json.Marshal(shared{
 		RunName: runName, K8sVersion: k8sVersion, ClusterID: clusterID,
@@ -227,13 +231,18 @@ type karpenterProcess struct {
 	exited          chan error
 }
 
-func buildKarpenter(ctx context.Context) *karpenterProcess {
-	dir := GinkgoT().TempDir()
-	k := &karpenterProcess{bin: filepath.Join(dir, "karpenter"), kubeconfig: filepath.Join(dir, "karpenter.kubeconfig")}
-	build := exec.CommandContext(ctx, "go", "build", "-o", k.bin, "./cmd/karpenter-exoscale")
+func buildKarpenterBinary(ctx context.Context, bin string) error {
+	build := exec.CommandContext(ctx, "go", "build", "-o", bin, "./cmd/karpenter-exoscale")
 	build.Dir = repoRoot
-	build.Stdout, build.Stderr = GinkgoWriter, GinkgoWriter
-	Expect(build.Run()).To(Succeed())
+	if out, err := build.CombinedOutput(); err != nil {
+		return fmt.Errorf("build karpenter: %w\n%s", err, out)
+	}
+	return nil
+}
+
+func newKarpenter(bin string) *karpenterProcess {
+	dir := GinkgoT().TempDir()
+	k := &karpenterProcess{bin: bin, kubeconfig: filepath.Join(dir, "karpenter.kubeconfig")}
 	Expect(os.WriteFile(k.kubeconfig, cluster.KarpenterKubeconfig, 0o600)).To(Succeed())
 
 	logPath := os.Getenv("KARPENTER_LOG")
