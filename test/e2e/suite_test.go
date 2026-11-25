@@ -98,7 +98,7 @@ var _ = SynchronizedBeforeSuite(func(ctx SpecContext) []byte {
 	connect(cluster.AdminKubeconfig)
 
 	createManifests(ctx,
-		filepath.Join(repoRoot, "config/crd/bases/*.yaml"),
+		filepath.Join(repoRoot, "config/crd/bases/karpenter.exoscale.com_*.yaml"),
 		filepath.Join(repoRoot, "vendor/sigs.k8s.io/karpenter/pkg/apis/crds/*.yaml"),
 		filepath.Join(repoRoot, "config/rbac/role.yaml"),
 	)
