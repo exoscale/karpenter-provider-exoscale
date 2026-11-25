@@ -298,16 +298,15 @@ func extractPrice(rawKey, rawPrice string) (string, float64, error) {
 
 	normalizedKey, _ := strings.CutPrefix(rawKey, "running_")
 
+	// Longest match wins: "large" is also a suffix of "extra_large".
 	for size := range rawInstanceSizes {
-		if strings.HasSuffix(normalizedKey, size) {
+		if strings.HasSuffix(normalizedKey, size) && len(size) > len(instanceSize) {
 			instanceSize = size
-			// pattern is 'running_<instance-family>_<instance-size>'
-			// or 'running_<instance-size>' (implicit 'standard' family)
-			instanceFamily = strings.TrimSuffix(normalizedKey, size)
-			instanceFamily = strings.TrimSuffix(instanceFamily, "_")
-			break
 		}
 	}
+	// pattern is 'running_<instance-family>_<instance-size>'
+	// or 'running_<instance-size>' (implicit 'standard' family)
+	instanceFamily = strings.TrimSuffix(strings.TrimSuffix(normalizedKey, instanceSize), "_")
 
 	instanceSize = rawInstanceSizes[instanceSize]
 	instanceFamily = rawInstanceFamilies[instanceFamily]

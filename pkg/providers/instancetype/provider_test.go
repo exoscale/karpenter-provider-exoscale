@@ -1,6 +1,8 @@
 package instancetype
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	exov1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
@@ -86,21 +88,46 @@ func TestExtractPrice(t *testing.T) {
 			rawKey:   "running_gpu_a5000_medium",
 			wantName: "gpua5000.medium",
 		},
+		{
+			name:     "extra large, which also ends in large",
+			rawKey:   "running_extra_large",
+			wantName: "standard.extra-large",
+		},
+		{
+			name:     "family with extra large",
+			rawKey:   "running_memory_extra_large",
+			wantName: "memory.extra-large",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotName, _, err := extractPrice(tt.rawKey, "0.123")
-
-			if err != nil {
-				t.Errorf("extractPrice() unexpected error = %v", err)
-				return
-			}
-
-			if gotName != tt.wantName {
-				t.Errorf("extractPrice() name = %v, want %v", gotName, tt.wantName)
+			// Sizes are matched by iterating a map, so repeat to cover iteration orders.
+			for range 50 {
+				gotName, _, err := extractPrice(tt.rawKey, "0.123")
+				if err != nil {
+					t.Fatalf("extractPrice() unexpected error = %v", err)
+				}
+				if gotName != tt.wantName {
+					t.Fatalf("extractPrice() name = %v, want %v", gotName, tt.wantName)
+				}
 			}
 		})
+	}
+}
+
+func TestLoadPricesMapsEveryKeyToAnInstanceType(t *testing.T) {
+	prices, err := loadPrices(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range prices {
+		if family, size, _ := strings.Cut(name, "."); family == "" || size == "" {
+			t.Errorf("price key mapped to %q", name)
+		}
+	}
+	if _, ok := prices["standard.extra-large"]; !ok {
+		t.Error("standard.extra-large has no price")
 	}
 }
 
