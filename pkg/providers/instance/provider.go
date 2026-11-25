@@ -382,10 +382,6 @@ func (p *Provider) GenerateInstanceLabels(nodeClaim *karpenterv1.NodeClaim) map[
 	return labels
 }
 
-func (p *Provider) GetInstancePrefix() string {
-	return p.options.InstancePrefix
-}
-
 func (p *Provider) buildUserdata(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodeClaim *karpenterv1.NodeClaim, bootstrapToken string) (string, error) {
 	userData, err := p.userdataProvider.Generate(ctx, nodeClass, nodeClaim, p.options.ClusterEndpoint, p.options.ClusterDomain, bootstrapToken)
 	if err != nil {
