@@ -57,10 +57,19 @@ jobs:
       - run: make go.mk
         working-directory: .
       - uses: ./go.mk/.github/actions/setup
+      # The e2e module isn't vendored: without this, every job downloads its modules.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: e2e-go-${{ runner.os }}-${{ hashFiles('go.sum', 'test/e2e/go.sum') }}
+          restore-keys: e2e-go-${{ runner.os }}-
 
       - name: Run e2e tests
-        # Specs run on 4 processes; Serial specs (Karpenter restart) run alone at the end.
-        run: go tool ginkgo -v --procs=4 --timeout=150m .
+        # Each spec mostly waits for its nodes to boot, so specs run on 8 processes.
+        # Serial specs (Karpenter restart) run alone at the end.
+        run: go tool ginkgo -v --procs=8 --timeout=150m .
 
       - name: Karpenter log
         if: always()
