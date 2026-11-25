@@ -33,7 +33,7 @@ var _ = Describe("Provisioning", Ordered, func() {
 
 		instance := instanceOf(ctx, claim)
 		instanceID = instance.ID
-		Expect(instance.Labels).To(HaveKeyWithValue(constants.InstanceLabelClusterID, cluster.ID.String()))
+		Expect(instance.Labels).To(HaveKeyWithValue(constants.InstanceLabelClusterID, clusterID))
 
 		By("deleting the node's bootstrap token once it registered")
 		Eventually(func(g Gomega) {

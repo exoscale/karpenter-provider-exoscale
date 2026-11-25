@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -38,22 +39,38 @@ import (
 // Tests run from test/e2e.
 const repoRoot = "../.."
 
+// Set on every Ginkgo process.
 var (
-	exo     *egov3.Client
-	cluster *infra.Cluster
-	kube    client.Client
+	exo  *egov3.Client
+	kube client.Client
 
 	// Name of every Exoscale resource the run creates, and the cluster version.
 	runName    string
 	k8sVersion string
+	clusterID  string
 )
+
+// Only set on process 1, which owns the cluster and the Karpenter process.
+// Specs that use them must be Serial: Ginkgo runs those on process 1.
+var (
+	cluster   *infra.Cluster
+	karpenter *karpenterProcess
+)
+
+// shared is what process 1 hands to every process once the cluster is up.
+type shared struct {
+	RunName, K8sVersion, ClusterID string
+	AdminKubeconfig                []byte
+	OrphanID                       egov3.UUID
+	OrphanCreated                  time.Time
+}
 
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Karpenter Exoscale e2e")
 }
 
-var _ = BeforeSuite(func(ctx SpecContext) {
+var _ = SynchronizedBeforeSuite(func(ctx SpecContext) []byte {
 	var err error
 	exo, err = infra.NewClient(ctx)
 	Expect(err).NotTo(HaveOccurred())
@@ -68,18 +85,15 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	}
 	GinkgoWriter.Printf("cluster %s, Kubernetes %s, zone %s\n", runName, k8sVersion, infra.Zone())
 
+	// Cleanups registered here run on process 1 after every process finished.
 	DeferCleanup(func(ctx SpecContext) {
 		Expect(infra.Destroy(ctx, exo, runName)).To(Succeed())
 	}, NodeTimeout(30*time.Minute))
 
 	cluster, err = infra.Create(ctx, exo, runName, k8sVersion, iamPolicy())
 	Expect(err).NotTo(HaveOccurred())
-
-	Expect(apiv1.AddToScheme(scheme.Scheme)).To(Succeed())
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig(cluster.AdminKubeconfig)
-	Expect(err).NotTo(HaveOccurred())
-	kube, err = client.New(restConfig, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
+	clusterID = cluster.ID.String()
+	connect(cluster.AdminKubeconfig)
 
 	createManifests(ctx,
 		filepath.Join(repoRoot, "config/crd/bases/*.yaml"),
@@ -89,15 +103,15 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	Expect(kube.Create(ctx, &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "e2e-karpenter"},
 		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: "manager-role"},
-		Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: rbacv1.UserKind, Name: "karpenter-" + cluster.ID.String()}},
+		Subjects:   []rbacv1.Subject{{APIGroup: rbacv1.GroupName, Kind: rbacv1.UserKind, Name: "karpenter-" + clusterID}},
 	})).To(Succeed())
 	Eventually(func(g Gomega) {
 		g.Expect(kube.List(ctx, &apiv1.ExoscaleNodeClassList{})).To(Succeed())
 		g.Expect(kube.List(ctx, &karpv1.NodePoolList{})).To(Succeed())
 	}).WithContext(ctx).WithTimeout(2 * time.Minute).Should(Succeed())
 
-	stop := startKarpenter(ctx, runName)
-	createOrphanInstance(ctx)
+	karpenter = buildKarpenter(ctx)
+	karpenter.start()
 	DeferCleanup(func(ctx SpecContext) {
 		// Let Karpenter terminate its own instances before it stops.
 		Expect(kube.DeleteAllOf(ctx, &karpv1.NodePool{})).To(Succeed())
@@ -106,9 +120,38 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 			g.Expect(kube.List(ctx, &claims)).To(Succeed())
 			g.Expect(claims.Items).To(BeEmpty())
 		}).WithContext(ctx).WithTimeout(10 * time.Minute).Should(Succeed())
-		stop()
+		karpenter.stop()
+		_ = karpenter.log.Close()
 	}, NodeTimeout(15*time.Minute))
+
+	createOrphanInstance(ctx)
+
+	data, err := json.Marshal(shared{
+		RunName: runName, K8sVersion: k8sVersion, ClusterID: clusterID,
+		AdminKubeconfig: cluster.AdminKubeconfig,
+		OrphanID:        orphanID, OrphanCreated: orphanCreated,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	return data
+}, func(ctx SpecContext, data []byte) {
+	var s shared
+	Expect(json.Unmarshal(data, &s)).To(Succeed())
+	runName, k8sVersion, clusterID = s.RunName, s.K8sVersion, s.ClusterID
+	orphanID, orphanCreated = s.OrphanID, s.OrphanCreated
+
+	var err error
+	exo, err = infra.NewClient(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	connect(s.AdminKubeconfig)
 }, NodeTimeout(45*time.Minute))
+
+func connect(kubeconfig []byte) {
+	Expect(apiv1.AddToScheme(scheme.Scheme)).To(Succeed())
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	Expect(err).NotTo(HaveOccurred())
+	kube, err = client.New(restConfig, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+}
 
 func randomSuffix() string {
 	b := make([]byte, 3)
@@ -170,51 +213,60 @@ func createManifests(ctx context.Context, globs ...string) {
 	}
 }
 
-// startKarpenter builds the controller from this checkout and runs it in the
-// CI job with the identity, IAM policy and settings SKS uses in production.
-func startKarpenter(ctx context.Context, name string) (stop func()) {
+// karpenterProcess runs the controller built from this checkout in the CI
+// job, with the identity, IAM policy and settings SKS uses in production.
+type karpenterProcess struct {
+	bin, kubeconfig string
+	log             *os.File
+	cmd             *exec.Cmd
+	exited          chan error
+}
+
+func buildKarpenter(ctx context.Context) *karpenterProcess {
 	dir := GinkgoT().TempDir()
-	bin := filepath.Join(dir, "karpenter")
-	build := exec.CommandContext(ctx, "go", "build", "-o", bin, "./cmd/karpenter-exoscale")
+	k := &karpenterProcess{bin: filepath.Join(dir, "karpenter"), kubeconfig: filepath.Join(dir, "karpenter.kubeconfig")}
+	build := exec.CommandContext(ctx, "go", "build", "-o", k.bin, "./cmd/karpenter-exoscale")
 	build.Dir = repoRoot
 	build.Stdout, build.Stderr = GinkgoWriter, GinkgoWriter
 	Expect(build.Run()).To(Succeed())
-
-	kubeconfig := filepath.Join(dir, "karpenter.kubeconfig")
-	Expect(os.WriteFile(kubeconfig, cluster.KarpenterKubeconfig, 0o600)).To(Succeed())
+	Expect(os.WriteFile(k.kubeconfig, cluster.KarpenterKubeconfig, 0o600)).To(Succeed())
 
 	logPath := os.Getenv("KARPENTER_LOG")
 	if logPath == "" {
-		logPath = filepath.Join(os.TempDir(), name+"-karpenter.log")
+		logPath = filepath.Join(os.TempDir(), runName+"-karpenter.log")
 	}
-	logFile, err := os.Create(logPath)
+	var err error
+	k.log, err = os.Create(logPath)
 	Expect(err).NotTo(HaveOccurred())
 	GinkgoWriter.Printf("karpenter log: %s\n", logPath)
+	return k
+}
 
-	cmd := exec.Command(bin, "--leader-election-namespace=kube-system")
-	cmd.Stdout, cmd.Stderr = logFile, logFile
+func (k *karpenterProcess) start() {
+	fmt.Fprintf(k.log, "=== e2e: starting karpenter at %s\n", time.Now().Format(time.RFC3339))
+	k.cmd = exec.Command(k.bin, "--leader-election-namespace=kube-system")
+	k.cmd.Stdout, k.cmd.Stderr = k.log, k.log
 	// Later entries win, so these override the CI's admin credentials.
-	cmd.Env = append(os.Environ(),
+	k.cmd.Env = append(os.Environ(),
 		"EXOSCALE_API_KEY="+cluster.APIKey,
 		"EXOSCALE_API_SECRET="+cluster.APISecret,
 		"EXOSCALE_ZONE="+infra.Zone(),
-		"EXOSCALE_SKS_CLUSTER_ID="+cluster.ID.String(),
-		"EXOSCALE_COMPUTE_INSTANCE_PREFIX="+name+"-",
+		"EXOSCALE_SKS_CLUSTER_ID="+clusterID,
+		"EXOSCALE_COMPUTE_INSTANCE_PREFIX="+runName+"-",
 		"USE_SKS_DEFAULT_SECURITY_GROUP=true",
-		"KUBECONFIG="+kubeconfig,
+		"KUBECONFIG="+k.kubeconfig,
 	)
-	Expect(cmd.Start()).To(Succeed())
+	Expect(k.cmd.Start()).To(Succeed())
+	k.exited = make(chan error, 1)
+	go func() { k.exited <- k.cmd.Wait() }()
+}
 
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
-
-	return func() {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		select {
-		case <-exited:
-		case <-time.After(30 * time.Second):
-			_ = cmd.Process.Kill()
-		}
-		_ = logFile.Close()
+func (k *karpenterProcess) stop() {
+	_ = k.cmd.Process.Signal(syscall.SIGTERM)
+	select {
+	case <-k.exited:
+	case <-time.After(30 * time.Second):
+		_ = k.cmd.Process.Kill()
+		<-k.exited
 	}
 }

@@ -34,7 +34,7 @@ func createOrphanInstance(ctx context.Context) {
 		// Labels of a Karpenter instance whose NodeClaim no longer exists.
 		Labels: egov3.Labels{
 			constants.InstanceLabelManagedBy: constants.ManagedByKarpenter,
-			constants.InstanceLabelClusterID: cluster.ID.String(),
+			constants.InstanceLabelClusterID: clusterID,
 			constants.InstanceLabelNodeClaim: "e2e-orphan",
 		},
 	})

@@ -110,3 +110,5 @@ require (
 )
 
 replace github.com/exoscale/karpenter-provider-exoscale => ../..
+
+tool github.com/onsi/ginkgo/v2/ginkgo
