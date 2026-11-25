@@ -190,6 +190,7 @@ func buildResourceList(cpus, memory, gpus int64) corev1.ResourceList {
 func buildInstanceRequirements(instanceFamily, instanceSize, name, zone string, hasGPU bool) scheduling.Requirements {
 	reqs := []*scheduling.Requirement{
 		scheduling.NewRequirement(corev1.LabelTopologyRegion, corev1.NodeSelectorOpIn, zone),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, name),
 		scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, "amd64"),
 		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
@@ -220,6 +221,7 @@ func (p *Provider) createInstanceType(instanceFamily, instanceSize, name string,
 		&cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpenterv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpenterv1.CapacityTypeOnDemand),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, p.zone),
 			),
 			Price:     price,
 			Available: true,

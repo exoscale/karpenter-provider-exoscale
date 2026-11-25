@@ -1,8 +1,9 @@
 Changelog
 =========
 
-Unreleased
+UNRELEASED
 ----------
+- fix(instancetype): set the zone on offerings so cost tracking and consolidation find their price
 - fix(bootstraptoken): delete a bootstrap token once its NodeClaim is registered
   (or gone), instead of leaving it until expiry.
 - fix(instancetype): `extra-large` instance types now get a price (the `large`

@@ -5,9 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	egov3 "github.com/exoscale/egoscale/v3"
 	exov1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
@@ -330,5 +332,19 @@ func assertResource(t *testing.T, instanceName, label string, got resource.Quant
 	}
 	if got.Cmp(want) != 0 {
 		t.Errorf("[%s] %s = %v, want %v", instanceName, label, got.String(), want.String())
+	}
+}
+
+func TestCreateInstanceTypeOfferingPrice(t *testing.T) {
+	p := &Provider{zone: "ch-gva-2", prices: map[string]float64{"standard.medium": 0.04666}}
+
+	it := p.createInstanceType("standard", "medium", "standard.medium", egov3.InstanceType{Cpus: 2, Memory: 4 * 1024 * 1024 * 1024})
+
+	price, ok := it.OfferingPrice("ch-gva-2", karpenterv1.CapacityTypeOnDemand)
+	if !ok || price != 0.04666 {
+		t.Errorf("OfferingPrice() = %v, %v, want 0.04666, true", price, ok)
+	}
+	if zone := it.Requirements.Get(corev1.LabelTopologyZone).Any(); zone != "ch-gva-2" {
+		t.Errorf("zone requirement = %q, want ch-gva-2", zone)
 	}
 }
