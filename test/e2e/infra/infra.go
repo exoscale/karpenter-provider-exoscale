@@ -195,25 +195,63 @@ func Destroy(ctx context.Context, c *egov3.Client, name string) error {
 		}
 	}
 
-	// Scenarios name their private networks, and describe their elastic IPs, after the run.
-	networks, err := c.ListPrivateNetworks(ctx)
-	if err != nil {
+	// Scenarios name the resources they create name or name-<suffix> (elastic
+	// IPs have no name, so their description is used). Instances are gone by
+	// now, so nothing is attached to them any more.
+	owned := func(n string) bool { return n == name || strings.HasPrefix(n, name+"-") }
+
+	if networks, err := c.ListPrivateNetworks(ctx); err != nil {
 		errs = append(errs, err)
 	} else {
 		for _, pn := range networks.PrivateNetworks {
-			if pn.Name == name {
+			if owned(pn.Name) {
 				errs = append(errs, wait(ctx, c)(c.DeletePrivateNetwork(ctx, pn.ID)))
 			}
 		}
 	}
-	eips, err := c.ListElasticIPS(ctx)
-	if err != nil {
+	if eips, err := c.ListElasticIPS(ctx); err != nil {
 		errs = append(errs, err)
 	} else {
 		for _, eip := range eips.ElasticIPS {
-			if eip.Description == name {
+			if owned(eip.Description) {
 				errs = append(errs, wait(ctx, c)(c.DeleteElasticIP(ctx, eip.ID)))
 			}
+		}
+	}
+	if groups, err := c.ListSecurityGroups(ctx); err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, sg := range groups.SecurityGroups {
+			if owned(sg.Name) {
+				errs = append(errs, wait(ctx, c)(c.DeleteSecurityGroup(ctx, sg.ID)))
+			}
+		}
+	}
+	if groups, err := c.ListAntiAffinityGroups(ctx); err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, aag := range groups.AntiAffinityGroups {
+			if owned(aag.Name) {
+				errs = append(errs, wait(ctx, c)(c.DeleteAntiAffinityGroup(ctx, aag.ID)))
+			}
+		}
+	}
+	if vpcs, err := c.ListVpcs(ctx); err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, vpc := range vpcs.Vpcs {
+			if !owned(vpc.Name) {
+				continue
+			}
+			subnets, err := c.ListSubnets(ctx, vpc.ID)
+			if err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			for _, subnet := range subnets.Subnets {
+				errs = append(errs, ignoreNotFound(c.DeleteSubnet(ctx, vpc.ID, subnet.ID)))
+			}
+			errs = append(errs, ignoreNotFound(c.DeleteVpc(ctx, vpc.ID)))
 		}
 	}
 
@@ -274,13 +312,17 @@ func Stale(ctx context.Context, c *egov3.Client, maxAge time.Duration) ([]string
 	return names, nil
 }
 
+func ignoreNotFound(err error) error {
+	if errors.Is(err, egov3.ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
 func wait(ctx context.Context, c *egov3.Client) func(*egov3.Operation, error) error {
 	return func(op *egov3.Operation, err error) error {
-		if errors.Is(err, egov3.ErrNotFound) {
-			return nil
-		}
 		if err != nil {
-			return err
+			return ignoreNotFound(err)
 		}
 		_, err = c.Wait(ctx, op, egov3.OperationStateSuccess)
 		return err

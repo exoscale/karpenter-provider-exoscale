@@ -67,8 +67,9 @@ func nodeClaimSpec(nodeClass string) karpv1.NodeClaimTemplateSpec {
 	}
 }
 
-// createDeployment runs pause pods that only fit on nodes of nodePool.
-func createDeployment(ctx context.Context, name, nodePool string, replicas int32) *appsv1.Deployment {
+// createDeployment runs pause pods that only fit on nodes of nodePool; mutate
+// can change the pod spec before creation.
+func createDeployment(ctx context.Context, name, nodePool string, replicas int32, mutate ...func(*corev1.PodSpec)) *appsv1.Deployment {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
 		Spec: appsv1.DeploymentSpec{
@@ -89,9 +90,46 @@ func createDeployment(ctx context.Context, name, nodePool string, replicas int32
 			},
 		},
 	}
+	for _, m := range mutate {
+		m(&deployment.Spec.Template.Spec)
+	}
 	Expect(kube.Create(ctx, deployment)).To(Succeed())
 	DeferCleanup(kube.Delete, deployment)
 	return deployment
+}
+
+// expectNodeReplaced patches nodeClass, then waits for the drifted node of
+// nodePool to be replaced and its instance deleted. It returns the new NodeClaim.
+func expectNodeReplaced(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass, nodePool string, old karpv1.NodeClaim, change func(*apiv1.ExoscaleNodeClassSpec)) karpv1.NodeClaim {
+	oldInstance := instanceOf(ctx, old)
+	patch := client.MergeFrom(nodeClass.DeepCopy())
+	change(&nodeClass.Spec)
+	Expect(kube.Patch(ctx, nodeClass, patch)).To(Succeed())
+
+	replacement := expectSingleInitializedNodeClaim(ctx, nodePool, old.Name)
+	expectInstanceGone(ctx, oldInstance.ID, 5*time.Minute)
+	return replacement
+}
+
+// createExoscaleResource waits for create and registers del, which runs once
+// nodePool has no NodeClaims left: attached resources can't be deleted.
+func createExoscaleResource(ctx context.Context, nodePool string,
+	create func() (*egov3.Operation, error),
+	del func(context.Context, egov3.UUID) (*egov3.Operation, error),
+) egov3.UUID {
+	op, err := create()
+	Expect(err).NotTo(HaveOccurred())
+	op, err = exo.Wait(ctx, op, egov3.OperationStateSuccess)
+	Expect(err).NotTo(HaveOccurred())
+	id := op.Reference.ID
+	DeferCleanup(func(ctx SpecContext) {
+		expectNoNodeClaims(ctx, nodePool)
+		op, err := del(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = exo.Wait(ctx, op, egov3.OperationStateSuccess)
+		Expect(err).NotTo(HaveOccurred())
+	}, NodeTimeout(15*time.Minute))
+	return id
 }
 
 func scale(ctx context.Context, deployment *appsv1.Deployment, replicas int32) {
