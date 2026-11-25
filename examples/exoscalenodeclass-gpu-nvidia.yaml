@@ -3,56 +3,30 @@ kind: ExoscaleNodeClass
 metadata:
   name: gpu-nvidia
 spec:
-  # imageTemplateSelector with nvidia variant for GPU workloads
-  # Omit 'version' or use imageTemplateSelector: {variant: "nvidia"} 
-  # to auto-detect control plane version
+  # Omit 'version' to use the control plane version.
   imageTemplateSelector:
     version: "1.34.1"
     variant: "nvidia"
-  
-  # Minimal disk for GPU nodes
+
   diskSize: 50
-  
+
   securityGroupSelectorTerms: []
   # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-security-group"
-  
-  # Anti-affinity groups for spreading GPU nodes across hosts
+
+  # Spread GPU nodes across hypervisors
   antiAffinityGroupSelectorTerms: []
-  # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-anti-affinity-group"
-  
-  # deprecated: use vpcSubnetSelectorTerms instead
-  privateNetworkSelectorTerms: []
-  # - id: "123e4567-e89b-12d3-a456-426614174000"
-  # - name: "my-private-network"
 
-  # VPC (optional)
-  # Select the VPC in which the subnets below live (by ID or name).
-  vpcSelector:
-  # - id: "123e4567-e89b-12d3-a456-426614174000"
-  # - name: "my-vpc"
+  # VPC holding the subnets below. Required when vpcSubnetSelectorTerms is set.
+  # vpcSelector:
+  #   name: "my-vpc"
 
-  # VPC subnets (optional, max 7)
-  # Subnets of the selected VPC, attached to instances at creation time.
+  # Subnets of the selected VPC (max 7)
   vpcSubnetSelectorTerms: []
-  # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "my-subnet"
 
-  # Elastic IPs (optional)
   elasticIPSelectorTerms: []
-  # - id: "123e4567-e89b-12d3-a456-426614174000"
   # - name: "203.0.113.42"
 
-  # GPU-specific labels
-  nodeLabels:
-    workload-type: "gpu"
-    gpu-enabled: "true"
-    environment: "production"
-    "nvidia.com/gpu.present": "true"
-  
-  # GPU-specific taints to ensure only GPU workloads are scheduled
-  nodeTaints:
-    - key: "nvidia.com/gpu"
-      value: "true"
-      effect: "NoSchedule"
+# GPU labels and taints are set on the NodePool, see nodepool-gpu.yaml.

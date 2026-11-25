@@ -18,18 +18,18 @@ func pemBlock(typ string, payload []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: payload})
 }
 
-func newResolveTestProvider(t *testing.T, objs ...client.Object) *Provider {
+func newTestResolver(t *testing.T, objs ...client.Object) *RegistryResolver {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	_ = apiv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
-	return &Provider{kubeClient: c}
+	return NewRegistryResolver(c)
 }
 
 func TestResolveContainerRegistry_NilSpec(t *testing.T) {
-	p := newResolveTestProvider(t)
-	got, err := p.RegistryResolver().Resolve(context.Background(), nil)
+	r := newTestResolver(t)
+	got, err := r.Resolve(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func TestResolveContainerRegistry_TLSHappyPath(t *testing.T) {
 			},
 		},
 	}
-	p := newResolveTestProvider(t, secret)
-	got, err := p.RegistryResolver().Resolve(context.Background(), spec)
+	r := newTestResolver(t, secret)
+	got, err := r.Resolve(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,8 +100,8 @@ func TestResolveContainerRegistry_TLSInconsistent(t *testing.T) {
 			},
 		},
 	}
-	p := newResolveTestProvider(t, secret)
-	_, err := p.RegistryResolver().Resolve(context.Background(), spec)
+	r := newTestResolver(t, secret)
+	_, err := r.Resolve(context.Background(), spec)
 	if err == nil || !strings.Contains(err.Error(), "tls.crt") {
 		t.Fatalf("expected tls.crt/tls.key error, got %v", err)
 	}
@@ -126,8 +126,8 @@ func TestResolveContainerRegistry_TLSOnlyCA(t *testing.T) {
 			},
 		},
 	}
-	p := newResolveTestProvider(t, secret)
-	got, err := p.RegistryResolver().Resolve(context.Background(), spec)
+	r := newTestResolver(t, secret)
+	got, err := r.Resolve(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,8 +154,8 @@ func TestResolveContainerRegistry_MissingSecret(t *testing.T) {
 			},
 		},
 	}
-	p := newResolveTestProvider(t)
-	_, err := p.RegistryResolver().Resolve(context.Background(), spec)
+	r := newTestResolver(t)
+	_, err := r.Resolve(context.Background(), spec)
 	if err == nil {
 		t.Fatal("expected error for missing secret")
 	}
@@ -197,8 +197,8 @@ func TestResolveContainerRegistry_CredentialsAllStyles(t *testing.T) {
 			},
 		},
 	}
-	p := newResolveTestProvider(t, basic, auth, token)
-	got, err := p.RegistryResolver().Resolve(context.Background(), spec)
+	r := newTestResolver(t, basic, auth, token)
+	got, err := r.Resolve(context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,8 +231,8 @@ func TestResolveContainerRegistry_CredentialMissingKey(t *testing.T) {
 			},
 		},
 	}
-	p := newResolveTestProvider(t, secret)
-	_, err := p.RegistryResolver().Resolve(context.Background(), spec)
+	r := newTestResolver(t, secret)
+	_, err := r.Resolve(context.Background(), spec)
 	if err == nil || !strings.Contains(err.Error(), "key") {
 		t.Fatalf("expected missing key error, got %v", err)
 	}

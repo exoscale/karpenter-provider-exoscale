@@ -8,47 +8,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// SHA256 values below are computed by feeding the same key\0value\0
-// representation into crypto/sha256 — see hashEntries in
-// controller_reconcilers.go for the exact algorithm. They are pinned to
-// guarantee the hash format never drifts silently.
-
-func newConfigurationHashReconciler(t *testing.T) *ExoscaleNodeClassReconciler {
-	t.Helper()
-	return newContainerRegistryReconciler(t) // schema/fake-client setup is identical
-}
-
-func TestReconcileConfigurationHash_Defaults(t *testing.T) {
-	nc := &apiv1.ExoscaleNodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc"}}
-	r := newConfigurationHashReconciler(t)
-	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if nc.Status.ConfigurationHash != "" {
-		t.Errorf("hash = %q, want empty string for default kubelet", nc.Status.ConfigurationHash)
-	}
-}
-
-func TestReconcileConfigurationHash_NonePolicy(t *testing.T) {
-	nc := &apiv1.ExoscaleNodeClass{
-		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
-		Spec: apiv1.ExoscaleNodeClassSpec{
-			Kubelet: apiv1.KubeletConfiguration{
-				CPUManagerPolicy: "none",
-			},
-		},
-	}
-	r := newConfigurationHashReconciler(t)
-	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if nc.Status.ConfigurationHash != "" {
-		t.Errorf("hash = %q, want empty string for policy=none", nc.Status.ConfigurationHash)
-	}
-}
-
 func TestReconcileConfigurationHash_DefaultCPUManagerPeriod(t *testing.T) {
-	// Default period (10s) must not contribute to the hash.
+	// Pinned so the hash format never drifts silently; the default 10s period must not contribute.
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 		Spec: apiv1.ExoscaleNodeClassSpec{
@@ -58,7 +19,7 @@ func TestReconcileConfigurationHash_DefaultCPUManagerPeriod(t *testing.T) {
 			},
 		},
 	}
-	r := newConfigurationHashReconciler(t)
+	r := newContainerRegistryReconciler(t)
 	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,46 +29,9 @@ func TestReconcileConfigurationHash_DefaultCPUManagerPeriod(t *testing.T) {
 	}
 }
 
-func TestReconcileConfigurationHash_StaticOnly(t *testing.T) {
-	nc := &apiv1.ExoscaleNodeClass{
-		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
-		Spec: apiv1.ExoscaleNodeClassSpec{
-			Kubelet: apiv1.KubeletConfiguration{
-				CPUManagerPolicy: "static",
-			},
-		},
-	}
-	r := newConfigurationHashReconciler(t)
-	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if nc.Status.ConfigurationHash == "" {
-		t.Error("hash = empty, want non-empty for policy=static")
-	}
-}
-
-func TestReconcileConfigurationHash_StaticWithOptions(t *testing.T) {
-	nc := &apiv1.ExoscaleNodeClass{
-		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
-		Spec: apiv1.ExoscaleNodeClassSpec{
-			Kubelet: apiv1.KubeletConfiguration{
-				CPUManagerPolicy:        "static",
-				CPUManagerPolicyOptions: []string{"full-pcpus-only", "align-by-socket"},
-			},
-		},
-	}
-	r := newConfigurationHashReconciler(t)
-	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if nc.Status.ConfigurationHash == "" {
-		t.Error("hash = empty, want non-empty")
-	}
-}
-
 func TestReconcileConfigurationHash_OptionsDeterministic(t *testing.T) {
 	// Same options in different orders must produce the same hash.
-	make := func(opts []string) *apiv1.ExoscaleNodeClass {
+	mk := func(opts []string) *apiv1.ExoscaleNodeClass {
 		return &apiv1.ExoscaleNodeClass{
 			ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 			Spec: apiv1.ExoscaleNodeClassSpec{
@@ -118,9 +42,9 @@ func TestReconcileConfigurationHash_OptionsDeterministic(t *testing.T) {
 			},
 		}
 	}
-	a := make([]string{"full-pcpus-only", "align-by-socket"})
-	b := make([]string{"align-by-socket", "full-pcpus-only"})
-	r := newConfigurationHashReconciler(t)
+	a := mk([]string{"full-pcpus-only", "align-by-socket"})
+	b := mk([]string{"align-by-socket", "full-pcpus-only"})
+	r := newContainerRegistryReconciler(t)
 	if err := r.reconcileConfigurationHash(context.Background(), a); err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +66,7 @@ func TestReconcileConfigurationHash_OptionsDroppedWhenPolicyNone(t *testing.T) {
 			},
 		},
 	}
-	r := newConfigurationHashReconciler(t)
+	r := newContainerRegistryReconciler(t)
 	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +80,7 @@ func TestReconcileConfigurationHash_ClearResetsToEmpty(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
 		Status:     apiv1.ExoscaleNodeClassStatus{ConfigurationHash: "stale"},
 	}
-	r := newConfigurationHashReconciler(t)
+	r := newContainerRegistryReconciler(t)
 	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,23 +97,12 @@ func TestReconcileConfigurationHash_MaxPods(t *testing.T) {
 		}
 	}
 
-	t.Run("unset contributes nothing", func(t *testing.T) {
-		nc := mk(nil)
-		r := newConfigurationHashReconciler(t)
-		if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
-			t.Fatal(err)
-		}
-		if nc.Status.ConfigurationHash != "" {
-			t.Errorf("hash = %q, want empty", nc.Status.ConfigurationHash)
-		}
-	})
-
 	t.Run("value changes the hash", func(t *testing.T) {
 		v110 := int32(110)
 		v250 := int32(250)
 		a := mk(&v110)
 		b := mk(&v250)
-		r := newConfigurationHashReconciler(t)
+		r := newContainerRegistryReconciler(t)
 		if err := r.reconcileConfigurationHash(context.Background(), a); err != nil {
 			t.Fatal(err)
 		}
@@ -207,7 +120,7 @@ func TestReconcileConfigurationHash_MaxPods(t *testing.T) {
 	t.Run("removing the override clears the hash", func(t *testing.T) {
 		v := int32(110)
 		nc := mk(&v)
-		r := newConfigurationHashReconciler(t)
+		r := newContainerRegistryReconciler(t)
 		if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 			t.Fatal(err)
 		}

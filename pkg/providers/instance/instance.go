@@ -39,10 +39,6 @@ type Instance struct {
 }
 
 func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.InstanceType, zone string) *Instance {
-	if instance == nil || instanceType == nil {
-		return nil
-	}
-
 	i := &Instance{
 		ID:           instance.ID.String(),
 		Name:         instance.Name,
@@ -85,9 +81,7 @@ func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.
 		})
 	}
 
-	family := string(instance.InstanceType.Family)
-	size := string(instance.InstanceType.Size)
-	i.InstanceTypeName = family + "." + size
+	i.InstanceTypeName = string(instance.InstanceType.Family) + "." + string(instance.InstanceType.Size)
 
 	for _, sg := range instance.SecurityGroups {
 		i.SecurityGroups = append(i.SecurityGroups, string(sg.ID))
@@ -115,8 +109,6 @@ func FromExoscaleInstance(instance *egov3.Instance, instanceType *cloudprovider.
 	for _, aag := range instance.AntiAffinityGroups {
 		i.AntiAffinityGroups = append(i.AntiAffinityGroups, string(aag.ID))
 	}
-
-	// Capacities
 
 	if cpuQuantity, ok := instanceType.Capacity[v1.ResourceCPU]; ok {
 		i.InstanceType.Cpus = cpuQuantity.Value()
@@ -146,12 +138,7 @@ func (i *Instance) IsRunning() bool {
 }
 
 func (i *Instance) ToNodeClaim() *karpenterv1.NodeClaim {
-	capacity := v1.ResourceList{}
-	allocatable := v1.ResourceList{}
-	for k, v := range i.Capacity {
-		capacity[k] = v.DeepCopy()
-		allocatable[k] = v.DeepCopy()
-	}
+	capacity, allocatable := i.GetCapacityAndAllocatable()
 
 	instanceLabels := map[string]string{
 		v1.LabelTopologyZone:             i.Zone,

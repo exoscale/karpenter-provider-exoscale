@@ -8,8 +8,10 @@ import (
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/instance"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -19,7 +21,6 @@ import (
 const (
 	GCInterval                = 5 * time.Minute
 	StuckNodeClaimTimeout     = 10 * time.Minute
-	TerminationFinalizerName  = "karpenter.sh/termination"
 	OrphanInstanceGracePeriod = 15 * time.Minute
 )
 
@@ -43,23 +44,13 @@ func StartController(mgr manager.Manager, gc *Controller) error {
 		return err
 	}
 
-	go func() {
-		// NOTE: this controller runs on a timer instead of being event-driven
-		// Hence we trigger it on a timer immediately on startup and then at regular intervals
+	// Timer-driven, not event-driven: run once at startup, then every GCInterval.
+	go wait.Until(func() {
 		mgr.GetCache().WaitForCacheSync(context.Background())
 		if _, err := ctrl.Reconcile(context.Background(), reconcile.Request{}); err != nil {
 			mgr.GetLogger().Error(err, "garbage collection reconcile failed")
 		}
-
-		ticker := time.NewTicker(GCInterval)
-		defer ticker.Stop()
-		for range ticker.C {
-			mgr.GetCache().WaitForCacheSync(context.Background())
-			if _, err := ctrl.Reconcile(context.Background(), reconcile.Request{}); err != nil {
-				mgr.GetLogger().Error(err, "garbage collection reconcile failed")
-			}
-		}
-	}()
+	}, GCInterval, wait.NeverStop)
 
 	return nil
 }
@@ -74,7 +65,6 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 
 	log.FromContext(ctx).Info("listed cloud instances", "count", len(cloudInstances))
 
-	// Read NodeClaims straight from the API server rather than the informer cache.
 	var nodeClaims karpenterv1.NodeClaimList
 	if err := c.APIReader.List(ctx, &nodeClaims); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to list NodeClaims: %w", err)
@@ -95,16 +85,15 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 		nodeClaimProviderIDs[instanceID] = true
 	}
 
-	// Delete instances that have no matching NodeClaim. An instance is only a true
-	// orphan when it matches neither by ProviderID nor by node-claim label name
-	// (the name match covers a NodeClaim whose ProviderID isn't populated yet,
-	// e.g. mid-creation) and is past the provisioning grace period (cheap
-	// defense-in-depth against transient races at creation time).
+	// The name match covers a NodeClaim whose ProviderID isn't populated yet; the
+	// grace period guards against races with instances still being created.
+	cloudInstanceIDs := make(map[string]bool)
 	for _, inst := range cloudInstances {
+		cloudInstanceIDs[inst.ID] = true
 		if hasMatchingNodeClaim(inst, nodeClaimProviderIDs, nodeClaimNames) {
 			continue
 		}
-		if !isOrphanInstanceReapable(inst.CreatedAt, time.Now(), OrphanInstanceGracePeriod) {
+		if !isOrphanInstanceReapable(inst.CreatedAt, time.Now()) {
 			log.FromContext(ctx).V(1).Info("skipping orphaned instance within grace period",
 				"instanceID", inst.ID,
 				"name", inst.Name,
@@ -126,18 +115,9 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 		}
 	}
 
-	cloudInstanceIDs := make(map[string]bool)
-	for _, inst := range cloudInstances {
-		cloudInstanceIDs[inst.ID] = true
-	}
-
 	stuckCount := 0
 	for _, nc := range nodeClaims.Items {
-		if nc.DeletionTimestamp.IsZero() {
-			continue
-		}
-
-		if !hasTerminationFinalizer(&nc) {
+		if nc.DeletionTimestamp.IsZero() || !controllerutil.ContainsFinalizer(&nc, karpenterv1.TerminationFinalizer) {
 			continue
 		}
 
@@ -164,7 +144,9 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 			"instanceID", instanceID,
 			"timeSinceDeletion", timeSinceDeletion)
 
-		if err := c.removeTerminationFinalizer(ctx, &nc); err != nil {
+		patch := client.MergeFrom(nc.DeepCopy())
+		controllerutil.RemoveFinalizer(&nc, karpenterv1.TerminationFinalizer)
+		if err := c.Client.Patch(ctx, &nc, patch); err != nil {
 			log.FromContext(ctx).Error(err, "failed to remove finalizer from stuck NodeClaim",
 				"nodeClaim", nc.Name)
 		}
@@ -175,52 +157,11 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 	return reconcile.Result{}, nil
 }
 
-// hasMatchingNodeClaim reports whether a cloud instance still corresponds to a
-// known NodeClaim. It matches first on the NodeClaim ProviderID and then falls
-// back to the instance's node-claim label against the set of NodeClaim names.
 func hasMatchingNodeClaim(inst *instance.Instance, providerIDs, names map[string]bool) bool {
-	if providerIDs[inst.ID] {
-		return true
-	}
-	if name := inst.Labels[constants.InstanceLabelNodeClaim]; name != "" && names[name] {
-		return true
-	}
-	return false
+	return providerIDs[inst.ID] || names[inst.Labels[constants.InstanceLabelNodeClaim]]
 }
 
-// isOrphanInstanceReapable reports whether an orphaned cloud instance (one with no
-// matching NodeClaim) is old enough to be safely garbage collected. Instances that
-// are younger than gracePeriod or whose creation time is unknown (zero), are
-// spared, to avoid deleting instances that are still being provisioned.
-func isOrphanInstanceReapable(createdAt, now time.Time, gracePeriod time.Duration) bool {
-	if createdAt.IsZero() {
-		return false
-	}
-	return now.Sub(createdAt) >= gracePeriod
-}
-
-func hasTerminationFinalizer(nc *karpenterv1.NodeClaim) bool {
-	for _, f := range nc.Finalizers {
-		if f == TerminationFinalizerName {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *Controller) removeTerminationFinalizer(ctx context.Context, nc *karpenterv1.NodeClaim) error {
-	patch := client.MergeFrom(nc.DeepCopy())
-
-	var finalizers []string
-	for _, f := range nc.Finalizers {
-		if f != TerminationFinalizerName {
-			finalizers = append(finalizers, f)
-		}
-	}
-	nc.Finalizers = finalizers
-
-	if err := c.Client.Patch(ctx, nc, patch); err != nil {
-		return fmt.Errorf("patching NodeClaim finalizers: %w", err)
-	}
-	return nil
+// isOrphanInstanceReapable spares instances with an unknown (zero) creation time.
+func isOrphanInstanceReapable(createdAt, now time.Time) bool {
+	return !createdAt.IsZero() && now.Sub(createdAt) >= OrphanInstanceGracePeriod
 }

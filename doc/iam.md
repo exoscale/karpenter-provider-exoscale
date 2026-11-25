@@ -25,10 +25,9 @@ IAM engine.
 | Zone             | `list-zones`                                                                                                  |
 | Operations poll  | `get-operation` (called by the SDK to wait for async operations to complete)                                  |
 
-
 ## Least-privilege IAM policy
 
-The following policy can be applied as an 
+The following policy can be applied as an
 [Organization Policy](https://community.exoscale.com/product/security/iam/how-to/policy-guide/)
 or attached to an IAM Role bound to the API key:
 

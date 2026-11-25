@@ -19,7 +19,6 @@ spec:
         - key: karpenter.sh/unregistered
           effect: NoExecute
 
-      # GPU instance type requirements
       requirements:
         - key: "node.kubernetes.io/instance-type"
           operator: In
@@ -28,7 +27,7 @@ spec:
             - "gpua30.medium"
             - "gpua30.large"
 
-      # Taints inherited from ExoscaleNodeClass ensure only GPU workloads run here
+      # Only pods tolerating this taint run on GPU nodes
       taints:
         - key: "nvidia.com/gpu"
           value: "true"
@@ -37,16 +36,13 @@ spec:
       # Expire GPU nodes after 30 days
       expireAfter: 720h
 
-  # Disruption settings for GPU workloads
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
 
-    # Consolidate quickly when empty to save costs
     consolidateAfter: 1m
 
-    # Allow full disruption budget for GPU pool
     budgets:
       - nodes: "100%"
 
-  # Lower weight for GPU nodes (use only when needed)
+  # Lower weight: prefer the standard pool when both fit
   weight: 10

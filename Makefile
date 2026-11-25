@@ -34,7 +34,6 @@ go.mk:
 
 all: installcrds
 
-# Run tests
 generate:
 	controller-gen object:headerFile=./hack/boilerplate.go.txt paths="./..."
 
@@ -57,9 +56,7 @@ EXTRA_ARGS := -parallel 3 -count=1 -failfast
 
 # Dependencies
 
-# Requires: https://github.com/exoscale/go.mk
-# - install: git submodule update --init --recursive go.mk
-# - update:  git submodule update --remote
+# go.mk is cloned at GO_MK_REF by the go.mk target above.
 go.mk/init.mk:
 include go.mk/init.mk
 go.mk/public.mk:

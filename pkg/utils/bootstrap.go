@@ -17,57 +17,24 @@ type BootstrapToken struct {
 	TokenID     string
 	TokenSecret string
 	SecretName  string
-	Secret      *corev1.Secret
 }
 
 func (bt *BootstrapToken) Token() string {
 	return bt.TokenID + "." + bt.TokenSecret
 }
 
-func generateSecureRandomString(length int) (string, error) {
+func randomHex(length int) string {
 	b := make([]byte, length)
-	for i := 0; i < 3; i++ {
-		if _, err := rand.Read(b); err == nil {
-			return hex.EncodeToString(b)[:length], nil
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return "", fmt.Errorf("failed to generate secure random string: crypto/rand unavailable")
+	_, _ = rand.Read(b) // never returns an error since Go 1.24
+	return hex.EncodeToString(b)[:length]
 }
 
 func CreateAndApplyBootstrapTokenSecret(ctx context.Context, kubeClient client.Client, nodeClaimName string) (*BootstrapToken, error) {
-	tokenID, err := generateSecureRandomString(6)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate token ID: %w", err)
-	}
+	tokenID := randomHex(6)
+	tokenSecret := randomHex(16)
+	now := time.Now()
 
-	tokenSecret, err := generateSecureRandomString(16)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate token secret: %w", err)
-	}
-
-	secret := BuildBootstrapTokenSecret(
-		tokenID,
-		tokenSecret,
-		nodeClaimName,
-		constants.DefaultBootstrapTokenTTL,
-		"system:bootstrappers:worker,system:bootstrappers:ingress",
-	)
-
-	if err := kubeClient.Create(ctx, secret); err != nil {
-		return nil, fmt.Errorf("failed to create bootstrap token secret: %w", err)
-	}
-
-	return &BootstrapToken{
-		TokenID:     tokenID,
-		TokenSecret: tokenSecret,
-		SecretName:  secret.Name,
-		Secret:      secret,
-	}, nil
-}
-
-func BuildBootstrapTokenSecret(tokenID, tokenSecret, nodeClaimName string, ttl time.Duration, extraGroups string) *corev1.Secret {
-	return &corev1.Secret{
+	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "bootstrap-token-" + tokenID,
 			Namespace: metav1.NamespaceSystem,
@@ -76,7 +43,7 @@ func BuildBootstrapTokenSecret(tokenID, tokenSecret, nodeClaimName string, ttl t
 			},
 			Annotations: map[string]string{
 				constants.AnnotationBootstrapToken: nodeClaimName,
-				constants.AnnotationTokenCreated:   time.Now().Format(time.RFC3339),
+				constants.AnnotationTokenCreated:   now.Format(time.RFC3339),
 			},
 		},
 		Type: corev1.SecretTypeBootstrapToken,
@@ -85,9 +52,15 @@ func BuildBootstrapTokenSecret(tokenID, tokenSecret, nodeClaimName string, ttl t
 			"token-secret":                   []byte(tokenSecret),
 			"usage-bootstrap-authentication": []byte("true"),
 			"usage-bootstrap-signing":        []byte("true"),
-			"auth-extra-groups":              []byte(extraGroups),
-			"expiration":                     []byte(time.Now().Add(ttl).Format(time.RFC3339)),
+			"auth-extra-groups":              []byte("system:bootstrappers:worker,system:bootstrappers:ingress"),
+			"expiration":                     []byte(now.Add(constants.DefaultBootstrapTokenTTL).Format(time.RFC3339)),
 			"description":                    []byte(fmt.Sprintf("Bootstrap token for %s created by Karpenter", nodeClaimName)),
 		},
 	}
+
+	if err := kubeClient.Create(ctx, secret); err != nil {
+		return nil, fmt.Errorf("failed to create bootstrap token secret: %w", err)
+	}
+
+	return &BootstrapToken{TokenID: tokenID, TokenSecret: tokenSecret, SecretName: secret.Name}, nil
 }
