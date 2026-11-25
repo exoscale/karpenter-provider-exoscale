@@ -235,33 +235,6 @@ func (p *Provider) createInstanceType(instanceFamily, instanceSize, name string,
 	}
 }
 
-var rawInstanceSizes = map[string]string{
-	"extra_large": "extra-large",
-	"colossus":    "colossus",
-	"jumbo":       "jumbo",
-	"titan":       "titan",
-	"micro":       "micro",
-	"tiny":        "tiny",
-	"small":       "small",
-	"medium":      "medium",
-	"large":       "large",
-	"huge":        "huge",
-	"mega":        "mega",
-}
-
-// rawInstanceFamilies maps prices.json family names to Exoscale instance families.
-var rawInstanceFamilies = map[string]string{
-	"":           "standard",
-	"cpu":        "cpu",
-	"storage":    "storage",
-	"memory":     "memory",
-	"gpu":        "gpua30",
-	"gpu2":       "gpu2",
-	"gpu3":       "gpu3",
-	"gpu_a5000":  "gpua5000",
-	"gpu_3080ti": "gpu3080ti",
-}
-
 func loadPrices(ctx context.Context) (map[string]float64, error) {
 	logger := log.FromContext(ctx)
 
@@ -293,23 +266,33 @@ func loadPrices(ctx context.Context) (map[string]float64, error) {
 }
 
 func extractPrice(rawKey, rawPrice string) (string, float64, error) {
-	var instanceFamily string
-	var instanceSize string
+	// prices.json family names mapped to Exoscale instance families.
+	families := map[string]string{
+		"":           "standard",
+		"cpu":        "cpu",
+		"storage":    "storage",
+		"memory":     "memory",
+		"gpu":        "gpua30",
+		"gpu2":       "gpu2",
+		"gpu3":       "gpu3",
+		"gpu_a5000":  "gpua5000",
+		"gpu_3080ti": "gpu3080ti",
+	}
 
 	normalizedKey, _ := strings.CutPrefix(rawKey, "running_")
 
-	// Longest match wins: "large" is also a suffix of "extra_large".
-	for size := range rawInstanceSizes {
-		if strings.HasSuffix(normalizedKey, size) && len(size) > len(instanceSize) {
+	// "extra_large" comes before "large", which is also its suffix.
+	var instanceSize string
+	for _, size := range []string{"extra_large", "colossus", "jumbo", "titan", "micro", "tiny", "small", "medium", "large", "huge", "mega"} {
+		if strings.HasSuffix(normalizedKey, size) {
 			instanceSize = size
+			break
 		}
 	}
 	// pattern is 'running_<instance-family>_<instance-size>'
 	// or 'running_<instance-size>' (implicit 'standard' family)
-	instanceFamily = strings.TrimSuffix(strings.TrimSuffix(normalizedKey, instanceSize), "_")
-
-	instanceSize = rawInstanceSizes[instanceSize]
-	instanceFamily = rawInstanceFamilies[instanceFamily]
+	instanceFamily := families[strings.TrimSuffix(strings.TrimSuffix(normalizedKey, instanceSize), "_")]
+	instanceSize = strings.ReplaceAll(instanceSize, "_", "-")
 
 	instancePrice, err := strconv.ParseFloat(rawPrice, 64)
 	if err != nil {
