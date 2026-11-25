@@ -12,6 +12,13 @@ UNRELEASED
   leaving the status stale until the next resync.
 - fix(nodeclass): emit the `Ready` event only when the NodeClass becomes ready,
   not on every reconcile; drop the `ValidationSucceeded` event.
+- fix(config): make the self-hosted manifests deployable with `kubectl apply -k config`:
+  install into `kube-system` with the service account and RBAC, fix the image name and
+  the ClusterRoleBinding role, read credentials and cluster settings from the
+  `karpenter-exoscale` Secret (see README), and make the ServiceMonitor and VPA opt-in.
+- fix(config): install the Karpenter core CRDs from v1.15.1 to match the vendored version
+  (were v1.14.0).
+- docs(api): clean up the NodeClass field descriptions shown by `kubectl explain`.
 
 1.37.2
 ----------
