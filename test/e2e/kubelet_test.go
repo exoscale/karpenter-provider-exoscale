@@ -51,10 +51,11 @@ var _ = Describe("Kubelet configuration", func() {
 })
 
 type kubeletConfiguration struct {
-	MaxPods          int32             `json:"maxPods"`
-	CPUManagerPolicy string            `json:"cpuManagerPolicy"`
-	KubeReserved     map[string]string `json:"kubeReserved"`
-	SystemReserved   map[string]string `json:"systemReserved"`
+	MaxPods                     int32             `json:"maxPods"`
+	ImageGCHighThresholdPercent int32             `json:"imageGCHighThresholdPercent"`
+	CPUManagerPolicy            string            `json:"cpuManagerPolicy"`
+	KubeReserved                map[string]string `json:"kubeReserved"`
+	SystemReserved              map[string]string `json:"systemReserved"`
 }
 
 // kubeletConfig reads the running kubelet's configuration through the API server's node proxy.

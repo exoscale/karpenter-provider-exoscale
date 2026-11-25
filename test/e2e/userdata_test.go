@@ -20,6 +20,7 @@ var _ = Describe("User data", func() {
 		spec.UserData = new(`
 [settings.kubernetes]
 max-pods = 30
+image-gc-high-threshold-percent = 90
 
 [settings.kubernetes.node-labels]
 "e2e.karpenter.exoscale.com/user-data" = "merged"
@@ -29,9 +30,13 @@ max-pods = 30
 		createDeployment(ctx, name, name, 1)
 		claim := expectSingleInitializedNodeClaim(ctx, name)
 
+		// The kubelet applies node labels only when it creates the Node itself.
 		var node corev1.Node
 		Expect(kube.Get(ctx, client.ObjectKey{Name: claim.Status.NodeName}, &node)).To(Succeed())
-		Expect(node.Labels).To(HaveKeyWithValue("e2e.karpenter.exoscale.com/user-data", "merged"), "user-only key kept")
-		Expect(node.Status.Capacity.Pods().Value()).To(Equal(int64(42)), "NodeClass maxPods wins over user data")
+		Expect(node.Labels).To(HaveKeyWithValue("e2e.karpenter.exoscale.com/user-data", "merged"), "user-only node label kept")
+
+		config := kubeletConfig(ctx, claim.Status.NodeName)
+		Expect(config.ImageGCHighThresholdPercent).To(Equal(int32(90)), "user-only kubelet setting kept")
+		Expect(config.MaxPods).To(Equal(int32(42)), "NodeClass maxPods wins over user data")
 	}, SpecTimeout(20*time.Minute))
 })
