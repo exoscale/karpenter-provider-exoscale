@@ -42,7 +42,7 @@ jobs:
   e2e:
     needs: versions
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 130
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +62,7 @@ jobs:
       - uses: ./go.mk/.github/actions/setup
 
       - name: Run e2e tests
-        run: go test -v -count=1 -timeout 80m . -args -ginkgo.v
+        run: go test -v -count=1 -timeout 120m . -args -ginkgo.v
 
       - name: Karpenter log
         if: always()

@@ -15,7 +15,7 @@ supports (`.github/workflows/e2e.yml`).
 cd test/e2e
 export EXOSCALE_API_KEY=... EXOSCALE_API_SECRET=...  # needs SKS, compute and IAM rights
 export K8S_VERSION=<version>                         # optional, defaults to the latest (go run ./cmd/versions)
-go test -v -count=1 -timeout 80m . -args -ginkgo.v
+go test -v -count=1 -timeout 120m . -args -ginkgo.v
 ```
 
 Optional: `EXOSCALE_ZONE` (default `ch-gva-2`), `EXOSCALE_API_ENDPOINT`,

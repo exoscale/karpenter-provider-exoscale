@@ -42,6 +42,10 @@ var (
 	exo     *egov3.Client
 	cluster *infra.Cluster
 	kube    client.Client
+
+	// Name of every Exoscale resource the run creates, and the cluster version.
+	runName    string
+	k8sVersion string
 )
 
 func TestE2E(t *testing.T) {
@@ -54,21 +58,21 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	exo, err = infra.NewClient(ctx)
 	Expect(err).NotTo(HaveOccurred())
 
-	name := os.Getenv("E2E_NAME")
-	if name == "" {
-		name = infra.NamePrefix + randomSuffix()
+	runName = os.Getenv("E2E_NAME")
+	if runName == "" {
+		runName = infra.NamePrefix + randomSuffix()
 	}
-	version := os.Getenv("K8S_VERSION")
-	if version == "" {
-		version = latestVersion(ctx)
+	k8sVersion = os.Getenv("K8S_VERSION")
+	if k8sVersion == "" {
+		k8sVersion = latestVersion(ctx)
 	}
-	GinkgoWriter.Printf("cluster %s, Kubernetes %s, zone %s\n", name, version, infra.Zone())
+	GinkgoWriter.Printf("cluster %s, Kubernetes %s, zone %s\n", runName, k8sVersion, infra.Zone())
 
 	DeferCleanup(func(ctx SpecContext) {
-		Expect(infra.Destroy(ctx, exo, name)).To(Succeed())
+		Expect(infra.Destroy(ctx, exo, runName)).To(Succeed())
 	}, NodeTimeout(30*time.Minute))
 
-	cluster, err = infra.Create(ctx, exo, name, version, iamPolicy())
+	cluster, err = infra.Create(ctx, exo, runName, k8sVersion, iamPolicy())
 	Expect(err).NotTo(HaveOccurred())
 
 	Expect(apiv1.AddToScheme(scheme.Scheme)).To(Succeed())
@@ -92,7 +96,8 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 		g.Expect(kube.List(ctx, &karpv1.NodePoolList{})).To(Succeed())
 	}).WithContext(ctx).WithTimeout(2 * time.Minute).Should(Succeed())
 
-	stop := startKarpenter(ctx, name)
+	stop := startKarpenter(ctx, runName)
+	createOrphanInstance(ctx)
 	DeferCleanup(func(ctx SpecContext) {
 		// Let Karpenter terminate its own instances before it stops.
 		Expect(kube.DeleteAllOf(ctx, &karpv1.NodePool{})).To(Succeed())

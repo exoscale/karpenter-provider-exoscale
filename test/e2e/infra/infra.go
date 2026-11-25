@@ -70,18 +70,9 @@ func Versions(ctx context.Context, c *egov3.Client) ([]string, error) {
 // nodepool for system pods, kubeconfigs, and a least-privilege API key.
 // On error, whatever was created is left for Destroy(name).
 func Create(ctx context.Context, c *egov3.Client, name, version string, policy egov3.IAMPolicy) (*Cluster, error) {
-	types, err := c.ListInstanceTypes(ctx)
+	systemType, err := InstanceType(ctx, c, "standard", "medium")
 	if err != nil {
 		return nil, err
-	}
-	var systemType *egov3.InstanceType
-	for _, t := range types.InstanceTypes {
-		if t.Family == "standard" && t.Size == "medium" {
-			systemType = &egov3.InstanceType{ID: t.ID}
-		}
-	}
-	if systemType == nil {
-		return nil, errors.New("instance type standard.medium not found")
 	}
 
 	op, err := c.CreateSKSCluster(ctx, egov3.CreateSKSClusterRequest{
@@ -110,7 +101,7 @@ func Create(ctx context.Context, c *egov3.Client, name, version string, policy e
 		Name:           "system",
 		Size:           1,
 		DiskSize:       50,
-		InstanceType:   systemType,
+		InstanceType:   &egov3.InstanceType{ID: systemType},
 		SecurityGroups: []egov3.SecurityGroup{{ID: *sks.DefaultSecurityGroupID}},
 	})
 	if err != nil {
@@ -143,6 +134,19 @@ func Create(ctx context.Context, c *egov3.Client, name, version string, policy e
 	cluster.APIKey, cluster.APISecret = key.Key, key.Secret
 
 	return cluster, nil
+}
+
+func InstanceType(ctx context.Context, c *egov3.Client, family, size string) (egov3.UUID, error) {
+	types, err := c.ListInstanceTypes(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, t := range types.InstanceTypes {
+		if string(t.Family) == family && string(t.Size) == size {
+			return t.ID, nil
+		}
+	}
+	return "", fmt.Errorf("instance type %s.%s not found", family, size)
 }
 
 func kubeconfig(ctx context.Context, c *egov3.Client, id egov3.UUID, user, group string) ([]byte, error) {
@@ -188,6 +192,28 @@ func Destroy(ctx context.Context, c *egov3.Client, name string) error {
 		errs = append(errs, wait(ctx, c)(c.DeleteSKSCluster(ctx, sks.ID)))
 		if sks.DefaultSecurityGroupID != nil {
 			errs = append(errs, wait(ctx, c)(c.DeleteSecurityGroup(ctx, *sks.DefaultSecurityGroupID)))
+		}
+	}
+
+	// Scenarios name their private networks, and describe their elastic IPs, after the run.
+	networks, err := c.ListPrivateNetworks(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, pn := range networks.PrivateNetworks {
+			if pn.Name == name {
+				errs = append(errs, wait(ctx, c)(c.DeletePrivateNetwork(ctx, pn.ID)))
+			}
+		}
+	}
+	eips, err := c.ListElasticIPS(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, eip := range eips.ElasticIPS {
+			if eip.Description == name {
+				errs = append(errs, wait(ctx, c)(c.DeleteElasticIP(ctx, eip.ID)))
+			}
 		}
 	}
 
