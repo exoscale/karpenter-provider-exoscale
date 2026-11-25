@@ -1,11 +1,12 @@
-// Command cleanup destroys one e2e cluster by name (-name), or every e2e
-// leftover older than -older-than.
+// Command cleanup destroys one e2e run by name (-name), every run whose name
+// starts with -prefix, or every e2e leftover older than -older-than.
 package main
 
 import (
 	"context"
 	"flag"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/exoscale/karpenter-provider-exoscale/test/e2e/infra"
@@ -13,8 +14,16 @@ import (
 
 func main() {
 	name := flag.String("name", "", "destroy the e2e resources with this name")
-	olderThan := flag.Duration("older-than", 0, "destroy e2e resources older than this")
+	prefix := flag.String("prefix", infra.NamePrefix, "destroy e2e resources whose name starts with this")
+	olderThan := flag.Duration("older-than", 0, "only destroy clusters older than this")
 	flag.Parse()
+
+	if !strings.HasPrefix(*prefix, infra.NamePrefix) {
+		log.Fatalf("-prefix must start with %s", infra.NamePrefix)
+	}
+	if *name == "" && *prefix == infra.NamePrefix && *olderThan == 0 {
+		log.Fatal("refusing to destroy every e2e run: set -name, a narrower -prefix, or -older-than")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
@@ -25,10 +34,7 @@ func main() {
 
 	names := []string{*name}
 	if *name == "" {
-		if *olderThan == 0 {
-			log.Fatal("one of -name or -older-than is required")
-		}
-		if names, err = infra.Stale(ctx, c, *olderThan); err != nil {
+		if names, err = infra.Stale(ctx, c, *prefix, *olderThan); err != nil {
 			log.Fatal(err)
 		}
 	}

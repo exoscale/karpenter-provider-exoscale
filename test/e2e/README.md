@@ -24,6 +24,7 @@ Optional: `EXOSCALE_ZONE` (default `ch-gva-2`), `EXOSCALE_API_ENDPOINT`,
 The suite destroys what it created. If a run is interrupted:
 
 ```bash
-go run ./cmd/cleanup -name <E2E_NAME>   # one run
-go run ./cmd/cleanup -older-than 3h     # every leftover
+go run ./cmd/cleanup -name <E2E_NAME>                    # one run
+go run ./cmd/cleanup -prefix karpenter-e2e-<run>-<attempt>-  # every job of a CI run
+go run ./cmd/cleanup -older-than 3h                      # every leftover
 ```

@@ -32,9 +32,6 @@ jobs:
         working-directory: .
       - uses: ./go.mk/.github/actions/setup
 
-      - name: Remove leftovers from earlier runs
-        run: go run ./cmd/cleanup -older-than 3h
-
       - name: List SKS Kubernetes versions
         id: list
         run: echo "versions=$(go run ./cmd/versions)" >> "$GITHUB_OUTPUT"
@@ -73,3 +70,24 @@ jobs:
       - name: Destroy cluster
         if: always()
         run: go run ./cmd/cleanup -name "$E2E_NAME"
+
+  # Runs after the matrix whatever its outcome, including cancellation.
+  cleanup:
+    needs: [versions, e2e]
+    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: test/e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make go.mk
+        working-directory: .
+      - uses: ./go.mk/.github/actions/setup
+
+      - name: Remove what this run left behind
+        run: go run ./cmd/cleanup -prefix "karpenter-e2e-${{ github.run_id }}-${{ github.run_attempt }}-"
+
+      - name: Remove leftovers from earlier runs
+        if: always()
+        run: go run ./cmd/cleanup -older-than 3h

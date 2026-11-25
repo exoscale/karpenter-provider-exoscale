@@ -279,9 +279,9 @@ func Destroy(ctx context.Context, c *egov3.Client, name string) error {
 	return errors.Join(errs...)
 }
 
-// Stale returns the names of clusters, and of IAM roles left without a
-// cluster, that carry NamePrefix and are older than maxAge.
-func Stale(ctx context.Context, c *egov3.Client, maxAge time.Duration) ([]string, error) {
+// Stale returns the names of clusters older than maxAge, and of IAM roles
+// left without a cluster, whose names start with prefix.
+func Stale(ctx context.Context, c *egov3.Client, prefix string, maxAge time.Duration) ([]string, error) {
 	clusters, err := c.ListSKSClusters(ctx)
 	if err != nil {
 		return nil, err
@@ -289,7 +289,7 @@ func Stale(ctx context.Context, c *egov3.Client, maxAge time.Duration) ([]string
 	live := map[string]bool{}
 	var names []string
 	for _, sks := range clusters.SKSClusters {
-		if !strings.HasPrefix(sks.Name, NamePrefix) {
+		if !strings.HasPrefix(sks.Name, prefix) {
 			continue
 		}
 		live[sks.Name] = true
@@ -305,7 +305,7 @@ func Stale(ctx context.Context, c *egov3.Client, maxAge time.Duration) ([]string
 		return nil, err
 	}
 	for _, r := range roles.IAMRoles {
-		if strings.HasPrefix(r.Name, NamePrefix) && !live[r.Name] {
+		if strings.HasPrefix(r.Name, prefix) && !live[r.Name] {
 			names = append(names, r.Name)
 		}
 	}
