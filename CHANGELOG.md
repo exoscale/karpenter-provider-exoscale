@@ -1,6 +1,22 @@
 Changelog
 =========
 
+UNRELEASED
+----------
+- fix(instancetype): set the zone on offerings so cost tracking and consolidation find their price
+- fix(bootstraptoken): delete a bootstrap token once its NodeClaim is registered
+  (or gone), instead of leaving it until expiry.
+- fix(instancetype): `extra-large` instance types now get a price (the `large`
+  size was matched instead), so consolidation can compare them.
+- fix(nodeclass): retry the status update after a patch conflict instead of
+  leaving the status stale until the next resync.
+- fix(nodeclass): emit the `Ready` event only when the NodeClass becomes ready,
+  not on every reconcile; drop the `ValidationSucceeded` event.
+
+1.37.2
+----------
+- fix(zone-check): ListZone is unauthenticated, use GetZoneAPIEndpoint instead
+
 1.37.1
 ----------
 - chore(deps): update github.com/exoscale/egoscale to v3.1.64

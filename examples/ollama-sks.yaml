@@ -3,15 +3,12 @@ kind: ExoscaleNodeClass
 metadata:
   name: gpu-nvidia
 spec:
-  # imageTemplateSelector with nvidia variant for GPU workloads
-  # Omit 'version' or use imageTemplateSelector: {variant: "nvidia"}
-  # to auto-detect control plane version
+  # Omit 'version' to use the control plane version
   imageTemplateSelector:
     version: "1.35.0"
     variant: "nvidia"
 
   securityGroupSelectorTerms: []
-  # Minimal disk for GPU nodes
   diskSize: 200
 ---
 apiVersion: karpenter.exoscale.com/v1
@@ -19,16 +16,12 @@ kind: ExoscaleNodeClass
 metadata:
   name: standard
 spec:
-  # imageTemplateSelector automatically selects the appropriate OS template
-  # based on Kubernetes version and variant (alternative to templateID)
+  # Alternative to templateID: pick the SKS template by Kubernetes version and variant
   imageTemplateSelector:
-    # version: Kubernetes version (semver format like "1.34.1")
-    # If omitted (or if you use imageTemplateSelector: {}), the control plane's
-    # current Kubernetes version will be auto-detected at runtime
+    # Kubernetes version ("1.34.1"); omit to use the control plane version
     version: "1.35.0"
 
-    # variant: Template variant (optional, defaults to "standard")
-    # Options: "standard" for regular workloads, "nvidia" for GPU-enabled nodes
+    # "standard" (default) or "nvidia"
     variant: "standard"
 
   securityGroupSelectorTerms: []
@@ -53,7 +46,6 @@ spec:
       # Startup taints prevent scheduling until node is fully ready
       startupTaints: []
 
-      # Instance type requirements
       requirements:
         - key: "node.kubernetes.io/instance-type"
           operator: In
@@ -62,21 +54,18 @@ spec:
             - "standard.large"
             - "standard.extra-large"
 
-      # Expire nodes after 30 days for security updates
+      # Replace nodes after 30 days to pick up OS updates
       expireAfter: 720h
 
-  # Disruption settings for cost optimization
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
 
-    # Wait 30 minutes before consolidating
     consolidateAfter: 1m
 
-    # Limit disruption rate
     budgets:
       - nodes: "10%" # Disrupt at most 10% of nodes at once
 
-  # Weight for prioritization (higher = higher priority)
+  # Higher weight wins when several NodePools match
   weight: 50
 ---
 apiVersion: karpenter.sh/v1
@@ -100,7 +89,6 @@ spec:
         - key: karpenter.sh/unregistered
           effect: NoExecute
 
-      # GPU instance type requirements
       requirements:
         - key: "node.kubernetes.io/instance-type"
           operator: In
@@ -110,7 +98,7 @@ spec:
           operator: In
           values: ["ch-gva-2"]
 
-      # Taints inherited from ExoscaleNodeClass ensure only GPU workloads run here
+      # Only pods tolerating this taint run on GPU nodes
       taints:
         - key: "nvidia.com/gpu"
           value: "true"
@@ -121,18 +109,15 @@ spec:
 
   limits:
     nodes: 2
-  # Disruption settings for GPU workloads
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
 
-    # Consolidate quickly when empty to save costs
     consolidateAfter: 30m
 
-    # Allow full disruption budget for GPU pool
     budgets:
       - nodes: "100%"
 
-  # Lower weight for GPU nodes (use only when needed)
+  # Lower weight: prefer the standard pool when both fit
   weight: 10
 ---
 apiVersion: apps/v1

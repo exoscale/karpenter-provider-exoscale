@@ -62,11 +62,6 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 		clusterEndpoint = fallbackClusterEndpoint
 	}
 
-	UseSKSDefaultSecurityGroup := false
-	if os.Getenv("USE_SKS_DEFAULT_SECURITY_GROUP") == "true" {
-		UseSKSDefaultSecurityGroup = true
-	}
-
 	return &Options{
 		Zone:                       zone,
 		ClusterID:                  clusterID,
@@ -75,15 +70,12 @@ func NewOptionsFromEnvironment(fallbackClusterEndpoint string) (*Options, error)
 		APISecret:                  APISecret,
 		ClusterDomain:              clusterDomain,
 		ClusterEndpoint:            clusterEndpoint,
-		UseSKSDefaultSecurityGroup: UseSKSDefaultSecurityGroup,
+		UseSKSDefaultSecurityGroup: os.Getenv("USE_SKS_DEFAULT_SECURITY_GROUP") == "true",
 	}, nil
 }
 
 func (c *Options) BuildExoscaleClient(ctx context.Context) (*egov3.Client, error) {
-	apiEndpoint, _ := os.LookupEnv("EXOSCALE_API_ENDPOINT")
-	apiEnvironment, _ := os.LookupEnv("EXOSCALE_API_ENVIRONMENT")
-
-	endpoint := getEndpoint(apiEndpoint, apiEnvironment)
+	endpoint := getEndpoint(os.Getenv("EXOSCALE_API_ENDPOINT"), os.Getenv("EXOSCALE_API_ENVIRONMENT"))
 	if endpoint == nil {
 		exoClient, err := egov3.NewClient(credentials.NewStaticCredentials(c.APIKey, c.APISecret))
 		if err != nil {
@@ -106,8 +98,8 @@ func (c *Options) BuildExoscaleClient(ctx context.Context) (*egov3.Client, error
 		return nil, fmt.Errorf("failed to create final Exoscale client: %w", err)
 	}
 
-	if err := c.validateZone(ctx, exoClient); err != nil {
-		return nil, fmt.Errorf("zone validation failed: %w", err)
+	if _, err := exoClient.GetZoneAPIEndpoint(ctx, egov3.ZoneName(c.Zone)); err != nil {
+		return nil, fmt.Errorf("zone %s not found or not accessible with the provided API key: %w", c.Zone, err)
 	}
 
 	return exoClient, nil
@@ -133,24 +125,4 @@ func getEndpoint(apiEndpoint, apiEnvironment string) *egov3.Endpoint {
 	}
 
 	return nil
-}
-
-func (c *Options) validateZone(ctx context.Context, client *egov3.Client) error {
-	zones, err := client.ListZones(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list zones: %w", err)
-	}
-
-	for _, z := range zones.Zones {
-		if string(z.Name) == c.Zone {
-			return nil
-		}
-	}
-
-	var availableZones []string
-	for _, z := range zones.Zones {
-		availableZones = append(availableZones, string(z.Name))
-	}
-
-	return fmt.Errorf("zone %s not found. Available zones: %v", c.Zone, availableZones)
 }

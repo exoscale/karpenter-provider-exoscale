@@ -6,7 +6,6 @@ import (
 	egov3 "github.com/exoscale/egoscale/v3"
 )
 
-// MockClient is a mock implementation of the ExoscaleClient interface for testing
 type MockClient struct {
 	GetTemplateFunc               func(ctx context.Context, id egov3.UUID) (*egov3.Template, error)
 	GetSecurityGroupFunc          func(ctx context.Context, id egov3.UUID) (*egov3.SecurityGroup, error)

@@ -37,26 +37,22 @@
 
 ## Overview
 
-When an instance starts, it retrieves `user-data` from the [metadata server](https://community.exoscale.com/documentation/compute/cloud-init/#querying-the-user-data-and-meta-data-from-the-instance).
-This `user-data` is used during the initialization process to configure the instance according to specified parameters.
+When an instance starts, it retrieves `user-data` from the [metadata server](https://community.exoscale.com/documentation/compute/cloud-init/#querying-the-user-data-and-meta-data-from-the-instance) and uses it to configure itself.
 
 The `user-data` can be supplied in different formats:
 - **TOML File**: Optionally gzip-compressed and base64-encoded.
 - **Base64-Encoded String**: Without compression.
 - **Plain Text**: Unencoded and uncompressed.
 
-We provide support for gzipped and base64-encoded `user-data` because of the way out Terraform provider encodes this content by default.
+We provide support for gzipped and base64-encoded `user-data` because that is how our Terraform provider encodes this content by default.
 
-An initialization program called `sks-node-agent`, processes the `user-data`.
-It reads the provided configurations and applies them to the system, setting up features such as Kubernetes node parameters and storage configurations.
+The `sks-node-agent` initialization program reads the `user-data` and applies it: Kubernetes node parameters, storage configuration, and so on.
 
 # Configuration Parameters
 
-The `user-data` file allows you to specify various settings under two main categories: **Exoscale-specific settings** (not documented here since they are not actively maintained) and **Kubernetes-related settings**.
+Settings fall into Exoscale-specific settings (undocumented, not actively maintained) and the Kubernetes-related settings below.
 
 ## Kubernetes Settings (`settings.kubernetes.*`)
-
-These settings are related to the Kubernetes configuration of the node. They allow you to customize the Kubelet behavior, networking, and other Kubernetes-specific features.
 
 > [!NOTE]
 > Most of these options are inspired by the [Bottlerocket](https://bottlerocket.dev/en/os/1.20.x/api/settings/kubernetes/) open-source project.
@@ -93,7 +89,7 @@ The token used for [TLS bootstrapping](https://kubernetes.io/docs/reference/acce
 
 Specifies the cloud provider for the Kubernetes cluster.
 This should typically be set to `external` because the cloud provider integration is handled externally via the Exoscale Cloud Controller Manager.
-Any other value disable cloud provider integration.
+Any other value disables cloud provider integration.
 
 - **Example**:
 
@@ -335,7 +331,7 @@ The `<identifier>` must satisfy this regex: `^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-z
 
 ### `settings.kubernetes.standalone-mode`
 
-It `true`, kubelet runs in standalone mode without connecting to an API server.
+If `true`, kubelet runs in standalone mode without connecting to an API server.
 
 **Type**: Boolean
 
@@ -366,7 +362,7 @@ These settings configure [containerd registry](https://github.com/containerd/con
 The agent hot-reloads `hosts.toml` changes (mirror re-resolution requires no node restart), but `config.toml` changes (credentials) trigger a `containerd` restart.
 
 > [!IMPORTANT]
-> Credentials and TLS material are sourced from Kubernetes Secrets referenced from `spec.containerRegistry` on the `ExoscaleNodeClass`. They are **never** stored inline in the generated user-data; the Secrets must live in the `kube-system` namespace. See `spec.containerRegistry` in `nodeclass.md` for the full schema.
+> Credentials and TLS material are sourced from Kubernetes Secrets referenced from `spec.containerRegistry` on the `ExoscaleNodeClass`. They are **never** stored inline in the generated user-data; the Secrets must live in the `kube-system` namespace. Run `kubectl explain exoscalenodeclass.spec.containerRegistry` for the full schema.
 
 ### `settings.container-registry.mirrors`
 
@@ -445,7 +441,7 @@ Per-registry pull credentials. Each entry must declare exactly one of `username`
 
 ## Kubelet Device Plugins Settings (`settings.kubelet-device-plugins.*`)
 
-These settings configure device plugins for Kubernetes. Currently only nvidia device plugin is supported.
+Only the NVIDIA device plugin is supported.
 
 ### `settings.kubelet-device-plugins.nvidia` (EXPERIMENTAL)
 
@@ -524,7 +520,7 @@ Configures Multi-Instance GPU (MIG) profiles when `device-partitioning-strategy`
   ```
 
 > [!NOTE]
-> MIG (Multi-Instance GPU) and MPS (Multi-Process Service) are not supported as they require GPUs not available on Exoscale (A100/H100 for MIG).
+> MPS (Multi-Process Service) is not supported.
 
 > [!IMPORTANT]
 > The NVIDIA device plugin service requires the kubelet to be running. It will automatically start when kubelet starts and restart if kubelet restarts.

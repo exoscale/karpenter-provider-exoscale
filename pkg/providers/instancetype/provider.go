@@ -39,19 +39,11 @@ type Provider struct {
 }
 
 func NewExoscaleProvider(ctx context.Context, client *egov3.Client, zone string) (*Provider, error) {
-	p := &Provider{
-		client: client,
-		zone:   zone,
-		prices: make(map[string]float64),
-	}
-
-	prices, err := p.loadPrices(ctx)
+	prices, err := loadPrices(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	p.prices = prices
-	return p, nil
+	return &Provider{client: client, zone: zone, prices: prices}, nil
 }
 
 func (p *Provider) GetByName(name string) (*cloudprovider.InstanceType, error) {
@@ -166,7 +158,7 @@ func (p *Provider) buildInstanceTypes(ctx context.Context, exoTypes *egov3.ListI
 			continue
 		}
 
-		if exoType.Zones == nil || !slices.Contains(exoType.Zones, egov3.ZoneName(p.zone)) {
+		if !slices.Contains(exoType.Zones, egov3.ZoneName(p.zone)) {
 			log.FromContext(ctx).V(1).Info("skipping instance type not available in zone", "family", exoType.Family, "size", exoType.Size, "zone", p.zone)
 			continue
 		}
@@ -198,6 +190,7 @@ func buildResourceList(cpus, memory, gpus int64) corev1.ResourceList {
 func buildInstanceRequirements(instanceFamily, instanceSize, name, zone string, hasGPU bool) scheduling.Requirements {
 	reqs := []*scheduling.Requirement{
 		scheduling.NewRequirement(corev1.LabelTopologyRegion, corev1.NodeSelectorOpIn, zone),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, name),
 		scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, "amd64"),
 		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
@@ -228,6 +221,7 @@ func (p *Provider) createInstanceType(instanceFamily, instanceSize, name string,
 		&cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpenterv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpenterv1.CapacityTypeOnDemand),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, p.zone),
 			),
 			Price:     price,
 			Available: true,
@@ -243,63 +237,23 @@ func (p *Provider) createInstanceType(instanceFamily, instanceSize, name string,
 	}
 }
 
-func rawInstanceSizes() map[string]string {
-	sizes := map[string]string{
-		"extra_large": "extra-large",
-		"colossus":    "colossus",
-		"jumbo":       "jumbo",
-		"titan":       "titan",
-		"micro":       "micro",
-		"tiny":        "tiny",
-		"small":       "small",
-		"medium":      "medium",
-		"large":       "large",
-		"huge":        "huge",
-		"mega":        "mega",
-	}
-	return sizes
-}
-
-// rawInstanceFamilies returns a map where keys are in-file families and values are actual families
-func rawInstanceFamilies() map[string]string {
-	return map[string]string{
-		"":           "standard",
-		"cpu":        "cpu",
-		"storage":    "storage",
-		"memory":     "memory",
-		"gpu":        "gpua30",
-		"gpu2":       "gpu2",
-		"gpu3":       "gpu3",
-		"gpu_a5000":  "gpua5000",
-		"gpu_3080ti": "gpu3080ti",
-	}
-}
-
-func (p *Provider) loadPrices(ctx context.Context) (map[string]float64, error) {
+func loadPrices(ctx context.Context) (map[string]float64, error) {
 	logger := log.FromContext(ctx)
 
-	type RawPricingData struct {
-		CHF map[string]string `json:"chf"`
+	var rawPriceData struct {
 		EUR map[string]string `json:"eur"`
-		USD map[string]string `json:"usd"`
 	}
-
-	var rawPriceData RawPricingData
 	if err := json.Unmarshal(pricesJSON, &rawPriceData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal pricing data: %w", err)
 	}
 
-	rawFamilies := rawInstanceFamilies()
-	rawSizes := rawInstanceSizes()
 	prices := make(map[string]float64)
-
-	// Parse EUR prices (default currency)
 	for rawKey, rawPrice := range rawPriceData.EUR {
 		if !strings.HasPrefix(rawKey, "running_") {
 			continue
 		}
 
-		name, price, err := extractPrice(rawFamilies, rawSizes, rawKey, rawPrice)
+		name, price, err := extractPrice(rawKey, rawPrice)
 		if err != nil {
 			logger.Info("unable to parse price", "key", rawKey, "price", rawPrice)
 			continue
@@ -313,29 +267,34 @@ func (p *Provider) loadPrices(ctx context.Context) (map[string]float64, error) {
 	return prices, nil
 }
 
-func extractPrice(
-	rawFamilies map[string]string,
-	rawSizes map[string]string,
-	rawKey, rawPrice string,
-) (string, float64, error) {
-	var instanceFamily string
-	var instanceSize string
+func extractPrice(rawKey, rawPrice string) (string, float64, error) {
+	// prices.json family names mapped to Exoscale instance families.
+	families := map[string]string{
+		"":           "standard",
+		"cpu":        "cpu",
+		"storage":    "storage",
+		"memory":     "memory",
+		"gpu":        "gpua30",
+		"gpu2":       "gpu2",
+		"gpu3":       "gpu3",
+		"gpu_a5000":  "gpua5000",
+		"gpu_3080ti": "gpu3080ti",
+	}
 
 	normalizedKey, _ := strings.CutPrefix(rawKey, "running_")
 
-	for size := range rawSizes {
+	// "extra_large" comes before "large", which is also its suffix.
+	var instanceSize string
+	for _, size := range []string{"extra_large", "colossus", "jumbo", "titan", "micro", "tiny", "small", "medium", "large", "huge", "mega"} {
 		if strings.HasSuffix(normalizedKey, size) {
 			instanceSize = size
-			// pattern is 'running_<instance-family>_<instance-size>'
-			// or 'running_<instance-size>' (implicit 'standard' family)
-			instanceFamily = strings.TrimSuffix(normalizedKey, size)
-			instanceFamily = strings.TrimSuffix(instanceFamily, "_")
 			break
 		}
 	}
-
-	instanceSize = rawSizes[instanceSize]
-	instanceFamily = rawFamilies[instanceFamily]
+	// pattern is 'running_<instance-family>_<instance-size>'
+	// or 'running_<instance-size>' (implicit 'standard' family)
+	instanceFamily := families[strings.TrimSuffix(strings.TrimSuffix(normalizedKey, instanceSize), "_")]
+	instanceSize = strings.ReplaceAll(instanceSize, "_", "-")
 
 	instancePrice, err := strconv.ParseFloat(rawPrice, 64)
 	if err != nil {

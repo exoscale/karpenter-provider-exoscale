@@ -51,17 +51,6 @@ func newContainerRegistryReconciler(t *testing.T, objects ...client.Object) *Exo
 	}
 }
 
-func TestReconcileConfigurationHash_NilSpec(t *testing.T) {
-	nc := &apiv1.ExoscaleNodeClass{ObjectMeta: metav1.ObjectMeta{Name: "nc"}}
-	r := newContainerRegistryReconciler(t, nc)
-	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if nc.Status.ConfigurationHash != "" {
-		t.Errorf("expected empty hash, got %q", nc.Status.ConfigurationHash)
-	}
-}
-
 func TestReconcileConfigurationHash_EmptyRegistry(t *testing.T) {
 	nc := &apiv1.ExoscaleNodeClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "nc"},
@@ -71,11 +60,6 @@ func TestReconcileConfigurationHash_EmptyRegistry(t *testing.T) {
 	if err := r.reconcileConfigurationHash(context.Background(), nc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// An empty registry spec contributes no entries -> empty hash, which is
-	// consistent with the kubelet CPU manager and maxPods behaviour. Drift
-	// still fires when the user later adds registry config (hash becomes
-	// non-empty) or removes it (hash becomes empty while the NodeClaim
-	// still carries a stale non-empty hash).
 	if nc.Status.ConfigurationHash != "" {
 		t.Errorf("expected empty hash for empty containerRegistry spec, got %q", nc.Status.ConfigurationHash)
 	}

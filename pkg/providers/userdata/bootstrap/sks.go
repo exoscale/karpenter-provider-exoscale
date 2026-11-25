@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
@@ -93,16 +95,7 @@ type Config struct {
 	Settings Settings `toml:"settings"`
 }
 
-type SKSBootstrap struct{}
-
-func New() *SKSBootstrap {
-	return &SKSBootstrap{}
-}
-
-func (s *SKSBootstrap) Generate(options *Options) (string, error) {
-	if options == nil {
-		return "", fmt.Errorf("options cannot be nil")
-	}
+func Generate(options *Options) (string, error) {
 	if options.BootstrapToken == "" {
 		return "", fmt.Errorf("bootstrap token is required")
 	}
@@ -110,75 +103,52 @@ func (s *SKSBootstrap) Generate(options *Options) (string, error) {
 		return "", fmt.Errorf("CA bundle is required")
 	}
 
-	config := s.buildConfig(options)
+	config := buildConfig(options)
 
 	var userData []byte
 	var err error
-
 	if options.UserData != nil && *options.UserData != "" {
-		userData, err = s.mergeUserData(config, *options.UserData)
-		if err != nil {
-			return "", fmt.Errorf("failed to merge user data: %w", err)
-		}
+		userData, err = mergeUserData(config, *options.UserData)
 	} else {
-		userData, err = s.marshalTOML(config)
-		if err != nil {
-			return "", fmt.Errorf("failed to marshal user data to TOML: %w", err)
-		}
+		userData, err = marshalTOML(config)
 	}
-
-	encodedUserData, err := s.compressAndEncode(userData)
 	if err != nil {
-		return "", fmt.Errorf("failed to compress and encode user data: %w", err)
+		return "", err
 	}
 
-	return encodedUserData, nil
+	return compressAndEncode(userData)
 }
 
 // mergeUserData deep-merges user-provided TOML with the Karpenter-generated config.
 // The generated config always takes precedence for Karpenter-managed fields.
-func (s *SKSBootstrap) mergeUserData(config *Config, rawUserData string) ([]byte, error) {
-	// Marshal generated config to a generic map
-	generatedTOML, err := s.marshalTOML(config)
+func mergeUserData(config *Config, rawUserData string) ([]byte, error) {
+	generatedTOML, err := marshalTOML(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal generated config: %w", err)
+		return nil, err
 	}
-	var generatedMap map[string]interface{}
+	var generatedMap map[string]any
 	if err := toml.Unmarshal(generatedTOML, &generatedMap); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal generated config: %w", err)
 	}
 
-	// Parse user-provided TOML into a generic map
-	var userMap map[string]interface{}
+	var userMap map[string]any
 	if err := toml.Unmarshal([]byte(rawUserData), &userMap); err != nil {
 		return nil, fmt.Errorf("failed to parse user data as TOML: %w", err)
 	}
 
-	// Deep merge: start with user-provided, overlay generated on top
-	// This ensures Karpenter-managed fields always win while preserving
-	// user-provided sections that Karpenter doesn't manage.
-	merged := deepMerge(userMap, generatedMap)
-
-	var buf bytes.Buffer
-	encoder := toml.NewEncoder(&buf)
-	encoder.SetIndentTables(false)
-	if err := encoder.Encode(merged); err != nil {
-		return nil, fmt.Errorf("failed to encode merged config: %w", err)
-	}
-
-	return buf.Bytes(), nil
+	return marshalTOML(deepMerge(userMap, generatedMap))
 }
 
 // deepMerge recursively merges src into dst. Values from src take precedence.
 // For nested maps, merging is recursive. For all other types, src overwrites dst.
-func deepMerge(dst, src map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(dst))
+func deepMerge(dst, src map[string]any) map[string]any {
+	result := make(map[string]any, len(dst))
 	for k, v := range dst {
 		result[k] = v
 	}
 	for k, v := range src {
-		if srcMap, ok := v.(map[string]interface{}); ok {
-			if dstMap, ok := result[k].(map[string]interface{}); ok {
+		if srcMap, ok := v.(map[string]any); ok {
+			if dstMap, ok := result[k].(map[string]any); ok {
 				result[k] = deepMerge(dstMap, srcMap)
 				continue
 			}
@@ -188,153 +158,77 @@ func deepMerge(dst, src map[string]interface{}) map[string]interface{} {
 	return result
 }
 
-func (s *SKSBootstrap) buildConfig(options *Options) *Config {
-	config := &Config{
-		Settings: Settings{
-			Kubernetes: KubernetesSettings{
-				APIServer:          options.ClusterEndpoint,
-				BootstrapToken:     options.BootstrapToken,
-				CloudProvider:      "external",
-				ClusterCertificate: base64.StdEncoding.EncodeToString(options.CABundle),
-			},
-			ContainerRegistry: options.ContainerRegistry,
-		},
+func buildConfig(options *Options) *Config {
+	k := KubernetesSettings{
+		APIServer:                   options.ClusterEndpoint,
+		BootstrapToken:              options.BootstrapToken,
+		CloudProvider:               "external",
+		ClusterCertificate:          base64.StdEncoding.EncodeToString(options.CABundle),
+		ClusterDomain:               options.ClusterDomain,
+		ImageGCHighThresholdPercent: options.ImageGCHighThresholdPercent,
+		ImageGCLowThresholdPercent:  options.ImageGCLowThresholdPercent,
+		ImageMinimumGCAge:           options.ImageMinimumGCAge,
+		NodeLabels:                  maps.Clone(options.Labels),
+		FeatureGates:                options.FeatureGates,
+		CPUManagerPolicy:            options.CPUManagerPolicy,
+		// nil leaves the kubelet built-in default in place.
+		MaxPods: options.MaxPods,
 	}
 
 	if len(options.ClusterDNS) > 0 {
-		ips := make([]string, len(options.ClusterDNS))
+		k.ClusterDNSIP = make([]string, len(options.ClusterDNS))
 		for i, ip := range options.ClusterDNS {
-			ips[i] = strings.TrimSpace(ip)
+			k.ClusterDNSIP[i] = strings.TrimSpace(ip)
 		}
-		config.Settings.Kubernetes.ClusterDNSIP = ips
 	}
 
-	if options.ClusterDomain != "" {
-		config.Settings.Kubernetes.ClusterDomain = options.ClusterDomain
+	if kr := options.KubeReserved; kr.CPU != "" || kr.Memory != "" || kr.EphemeralStorage != "" {
+		k.KubeReserved = &ResourceReservation{CPU: kr.CPU, Memory: kr.Memory, EphemeralStorage: kr.EphemeralStorage}
 	}
-
-	if options.ImageGCHighThresholdPercent != nil {
-		config.Settings.Kubernetes.ImageGCHighThresholdPercent = options.ImageGCHighThresholdPercent
-	}
-	if options.ImageGCLowThresholdPercent != nil {
-		config.Settings.Kubernetes.ImageGCLowThresholdPercent = options.ImageGCLowThresholdPercent
-	}
-	if options.ImageMinimumGCAge != "" {
-		config.Settings.Kubernetes.ImageMinimumGCAge = options.ImageMinimumGCAge
-	}
-
-	if options.KubeReserved.CPU != "" || options.KubeReserved.Memory != "" || options.KubeReserved.EphemeralStorage != "" {
-		config.Settings.Kubernetes.KubeReserved = convertKubeResourceReservation(options.KubeReserved)
-	}
-
-	if options.SystemReserved.CPU != "" || options.SystemReserved.Memory != "" || options.SystemReserved.EphemeralStorage != "" {
-		config.Settings.Kubernetes.SystemReserved = convertSystemResourceReservation(options.SystemReserved)
+	if sr := options.SystemReserved; sr.CPU != "" || sr.Memory != "" || sr.EphemeralStorage != "" {
+		k.SystemReserved = &ResourceReservation{CPU: sr.CPU, Memory: sr.Memory, EphemeralStorage: sr.EphemeralStorage}
 	}
 
 	if len(options.Taints) > 0 {
-		if config.Settings.Kubernetes.NodeTaints == nil {
-			config.Settings.Kubernetes.NodeTaints = make(map[string][]string)
-		}
+		k.NodeTaints = make(map[string][]string)
 		for _, taint := range options.Taints {
-			// XXX: sks-node-agent requires ALL taints to have a non-empty value
-			// For taints that are semantically empty (like karpenter.sh/unregistered),
-			// we use "true" as the value for compatibility
+			// sks-node-agent requires every taint to have a non-empty value, so
+			// semantically empty taints (like karpenter.sh/unregistered) get "true".
 			value := taint.Value
 			if value == "" {
 				value = "true"
 			}
-			taintString := fmt.Sprintf("%s:%s", value, string(taint.Effect))
-			// Check if this taint already exists to avoid duplicates
-			exists := false
-			for _, existing := range config.Settings.Kubernetes.NodeTaints[taint.Key] {
-				if existing == taintString {
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				config.Settings.Kubernetes.NodeTaints[taint.Key] = append(config.Settings.Kubernetes.NodeTaints[taint.Key], taintString)
+			taintString := value + ":" + string(taint.Effect)
+			if !slices.Contains(k.NodeTaints[taint.Key], taintString) {
+				k.NodeTaints[taint.Key] = append(k.NodeTaints[taint.Key], taintString)
 			}
 		}
 	}
 
-	if len(options.Labels) > 0 {
-		if config.Settings.Kubernetes.NodeLabels == nil {
-			config.Settings.Kubernetes.NodeLabels = make(map[string]string)
-		}
-		for k, v := range options.Labels {
-			config.Settings.Kubernetes.NodeLabels[k] = v
-		}
-	}
-
-	if len(options.FeatureGates) > 0 {
-		config.Settings.Kubernetes.FeatureGates = options.FeatureGates
-	}
-
-	if options.CPUManagerPolicy != "" {
-		config.Settings.Kubernetes.CPUManagerPolicy = options.CPUManagerPolicy
-	}
 	if options.CPUManagerPolicy == "static" && len(options.CPUManagerPolicyOptions) > 0 {
-		config.Settings.Kubernetes.CPUManagerPolicyOptions = options.CPUManagerPolicyOptions
+		k.CPUManagerPolicyOptions = options.CPUManagerPolicyOptions
 	}
 	// Skip emission when the value equals the kubelet default; the apiserver
 	// injects the default server-side on admission, so an unset spec field
 	// would otherwise be redundantly written into user-data.
-	if options.CPUManagerReconcilePeriod != "" && options.CPUManagerReconcilePeriod != apiv1.DefaultCPUManagerReconcilePeriod {
-		config.Settings.Kubernetes.CPUManagerReconcilePeriod = options.CPUManagerReconcilePeriod
+	if options.CPUManagerReconcilePeriod != apiv1.DefaultCPUManagerReconcilePeriod {
+		k.CPUManagerReconcilePeriod = options.CPUManagerReconcilePeriod
 	}
 
-	// Only emit when the user has set a value; unset leaves the kubelet
-	// built-in default in place. sks-templates treats 0 the same way, so a
-	// nil pointer here keeps the resulting TOML sparse.
-	if options.MaxPods != nil {
-		config.Settings.Kubernetes.MaxPods = options.MaxPods
-	}
-
-	return config
+	return &Config{Settings: Settings{Kubernetes: k, ContainerRegistry: options.ContainerRegistry}}
 }
 
-func convertKubeResourceReservation(rr apiv1.KubeResourceReservation) *ResourceReservation {
-	result := &ResourceReservation{}
-	if rr.CPU != "" {
-		result.CPU = rr.CPU
-	}
-	if rr.Memory != "" {
-		result.Memory = rr.Memory
-	}
-	if rr.EphemeralStorage != "" {
-		result.EphemeralStorage = rr.EphemeralStorage
-	}
-	return result
-}
-
-func convertSystemResourceReservation(rr apiv1.SystemResourceReservation) *ResourceReservation {
-	result := &ResourceReservation{}
-	if rr.CPU != "" {
-		result.CPU = rr.CPU
-	}
-	if rr.Memory != "" {
-		result.Memory = rr.Memory
-	}
-	if rr.EphemeralStorage != "" {
-		result.EphemeralStorage = rr.EphemeralStorage
-	}
-	return result
-}
-
-func (s *SKSBootstrap) marshalTOML(config *Config) ([]byte, error) {
+func marshalTOML(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	encoder := toml.NewEncoder(&buf)
 	encoder.SetIndentTables(false)
-
-	if err := encoder.Encode(config); err != nil {
-		return nil, fmt.Errorf("failed to encode config to TOML: %w", err)
+	if err := encoder.Encode(v); err != nil {
+		return nil, fmt.Errorf("failed to encode user data to TOML: %w", err)
 	}
-
 	return buf.Bytes(), nil
 }
 
-func (s *SKSBootstrap) compressAndEncode(userData []byte) (string, error) {
+func compressAndEncode(userData []byte) (string, error) {
 	var buf bytes.Buffer
 	gzWriter := gzip.NewWriter(&buf)
 
