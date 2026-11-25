@@ -32,8 +32,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Destroy treats a name ending with "-" as a prefix, which also finds
+	// leftovers whose cluster is already gone.
 	names := []string{*name}
-	if *name == "" {
+	switch {
+	case *name != "":
+	case *olderThan == 0:
+		names = []string{*prefix}
+	default:
 		if names, err = infra.Stale(ctx, c, *prefix, *olderThan); err != nil {
 			log.Fatal(err)
 		}

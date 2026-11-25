@@ -161,30 +161,81 @@ func kubeconfig(ctx context.Context, c *egov3.Client, id egov3.UUID, user, group
 	return base64.StdEncoding.DecodeString(resp.Kubeconfig)
 }
 
-// Destroy deletes everything named name, discovering it from the API so it
-// works after a crash or a cancelled job. Karpenter instances are not part of
-// the SKS nodepool, so they are found by their cluster-id label.
+// Destroy deletes everything named name or name-<suffix>, discovering it from
+// the API so it works after a crash or a cancelled job. A name ending with "-"
+// is a prefix: everything of every run under it is deleted. Deletions that
+// fail because a resource is still detaching are retried.
 func Destroy(ctx context.Context, c *egov3.Client, name string) error {
+	prefix := strings.TrimSuffix(name, "-") + "-"
+	owned := func(n string) bool { return n == name || strings.HasPrefix(n, prefix) }
+
+	var err error
+	for range 5 {
+		if err = destroy(ctx, c, owned); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		case <-time.After(30 * time.Second):
+		}
+	}
+	return err
+}
+
+func destroy(ctx context.Context, c *egov3.Client, owned func(string) bool) error {
 	var errs []error
+
+	// Revoke the credentials first: a Karpenter process left behind by a
+	// cancelled job would otherwise keep launching instances.
+	keys, err := c.ListAPIKeys(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, k := range keys.APIKeys {
+			if owned(k.Name) {
+				errs = append(errs, wait(ctx, c)(c.DeleteAPIKey(ctx, k.Key)))
+			}
+		}
+	}
+	roles, err := c.ListIAMRoles(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, r := range roles.IAMRoles {
+			if owned(r.Name) {
+				errs = append(errs, wait(ctx, c)(c.DeleteIAMRole(ctx, r.ID)))
+			}
+		}
+	}
 
 	clusters, err := c.ListSKSClusters(ctx)
 	if err != nil {
-		return err
+		return errors.Join(append(errs, err)...)
 	}
+	clusterIDs := map[string]bool{}
 	for _, sks := range clusters.SKSClusters {
-		if sks.Name != name {
-			continue
+		if owned(sks.Name) {
+			clusterIDs[sks.ID.String()] = true
 		}
+	}
 
-		instances, err := c.ListInstances(ctx)
-		if err != nil {
-			errs = append(errs, err)
-		} else {
-			for _, i := range instances.Instances {
-				if i.Labels[constants.InstanceLabelClusterID] == sks.ID.String() {
-					errs = append(errs, wait(ctx, c)(c.DeleteInstance(ctx, i.ID)))
-				}
+	// Karpenter instances are not part of the SKS nodepool: they are named
+	// after the run, and carry the cluster-id label while the cluster exists.
+	instances, err := c.ListInstances(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
+		for _, i := range instances.Instances {
+			if owned(i.Name) || clusterIDs[i.Labels[constants.InstanceLabelClusterID]] {
+				errs = append(errs, wait(ctx, c)(c.DeleteInstance(ctx, i.ID)))
 			}
+		}
+	}
+
+	for _, sks := range clusters.SKSClusters {
+		if !owned(sks.Name) {
+			continue
 		}
 		for _, np := range sks.Nodepools {
 			errs = append(errs, wait(ctx, c)(c.DeleteSKSNodepool(ctx, sks.ID, np.ID)))
@@ -194,11 +245,6 @@ func Destroy(ctx context.Context, c *egov3.Client, name string) error {
 			errs = append(errs, wait(ctx, c)(c.DeleteSecurityGroup(ctx, *sks.DefaultSecurityGroupID)))
 		}
 	}
-
-	// Scenarios name the resources they create name or name-<suffix> (elastic
-	// IPs have no name, so their description is used). Instances are gone by
-	// now, so nothing is attached to them any more.
-	owned := func(n string) bool { return n == name || strings.HasPrefix(n, name+"-") }
 
 	if networks, err := c.ListPrivateNetworks(ctx); err != nil {
 		errs = append(errs, err)
@@ -213,6 +259,7 @@ func Destroy(ctx context.Context, c *egov3.Client, name string) error {
 		errs = append(errs, err)
 	} else {
 		for _, eip := range eips.ElasticIPS {
+			// Elastic IPs have no name, so their description is used.
 			if owned(eip.Description) {
 				errs = append(errs, wait(ctx, c)(c.DeleteElasticIP(ctx, eip.ID)))
 			}
@@ -252,27 +299,6 @@ func Destroy(ctx context.Context, c *egov3.Client, name string) error {
 				errs = append(errs, ignoreNotFound(c.DeleteSubnet(ctx, vpc.ID, subnet.ID)))
 			}
 			errs = append(errs, ignoreNotFound(c.DeleteVpc(ctx, vpc.ID)))
-		}
-	}
-
-	keys, err := c.ListAPIKeys(ctx)
-	if err != nil {
-		errs = append(errs, err)
-	} else {
-		for _, k := range keys.APIKeys {
-			if k.Name == name {
-				errs = append(errs, wait(ctx, c)(c.DeleteAPIKey(ctx, k.Key)))
-			}
-		}
-	}
-	roles, err := c.ListIAMRoles(ctx)
-	if err != nil {
-		errs = append(errs, err)
-	} else {
-		for _, r := range roles.IAMRoles {
-			if r.Name == name {
-				errs = append(errs, wait(ctx, c)(c.DeleteIAMRole(ctx, r.ID)))
-			}
 		}
 	}
 
