@@ -65,5 +65,3 @@ Resources can also be referenced by name instead of ID:
   privateNetworkSelectorTerms:
     - name: "my-private-network"
 ```
-
-> **Note:** Each selector term must specify exactly one of `id` or `name`. Specifying both or neither is invalid.

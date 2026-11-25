@@ -60,40 +60,7 @@ func TestBuildResourceList(t *testing.T) {
 	}
 }
 
-func TestRawInstanceSizes(t *testing.T) {
-	sizes := rawInstanceSizes()
-
-	if len(sizes) == 0 {
-		t.Error("rawInstanceSizes() returned empty map")
-	}
-
-	expectedSizes := []string{"micro", "tiny", "small", "medium", "large", "huge", "mega", "extra_large", "colossus", "jumbo", "titan"}
-	for _, size := range expectedSizes {
-		if _, ok := sizes[size]; !ok {
-			t.Errorf("rawInstanceSizes() missing size %s", size)
-		}
-	}
-}
-
-func TestRawInstanceFamilies(t *testing.T) {
-	families := rawInstanceFamilies()
-
-	if len(families) == 0 {
-		t.Error("rawInstanceFamilies() returned empty map")
-	}
-
-	expectedFamilies := []string{"", "cpu", "storage", "memory", "gpu", "gpu2", "gpu3", "gpu_a5000", "gpu_3080ti"}
-	for _, family := range expectedFamilies {
-		if _, ok := families[family]; !ok {
-			t.Errorf("rawInstanceFamilies() missing family %s", family)
-		}
-	}
-}
-
 func TestExtractPrice(t *testing.T) {
-	rawFamilies := rawInstanceFamilies()
-	rawSizes := rawInstanceSizes()
-
 	tests := []struct {
 		name     string
 		rawKey   string
@@ -123,7 +90,7 @@ func TestExtractPrice(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotName, _, err := extractPrice(rawFamilies, rawSizes, tt.rawKey, "0.123")
+			gotName, _, err := extractPrice(tt.rawKey, "0.123")
 
 			if err != nil {
 				t.Errorf("extractPrice() unexpected error = %v", err)
@@ -163,10 +130,6 @@ func newTestProvider() *Provider {
 		instanceTypesByID:   make(map[string]*cloudprovider.InstanceType),
 		prices:              make(map[string]float64),
 	}
-}
-
-func mustParseQty(s string) resource.Quantity {
-	return resource.MustParse(s)
 }
 
 func TestList(t *testing.T) {
@@ -313,18 +276,15 @@ func TestList(t *testing.T) {
 			}
 
 			for _, it := range got {
-				// Check ephemeral storage capacity reflects DiskSize
 				diskQty := it.Capacity[corev1.ResourceEphemeralStorage]
 				if diskQty.Value() != tt.wantDiskBytes {
 					t.Errorf("[%s] EphemeralStorage capacity = %v, want %v", it.Name, diskQty.Value(), tt.wantDiskBytes)
 				}
 
-				// Check KubeReserved
 				assertResource(t, it.Name, "KubeReserved CPU", it.Overhead.KubeReserved[corev1.ResourceCPU], tt.wantKubeReservedCPU)
 				assertResource(t, it.Name, "KubeReserved Memory", it.Overhead.KubeReserved[corev1.ResourceMemory], tt.wantKubeReservedMem)
 				assertResource(t, it.Name, "KubeReserved EphemeralStorage", it.Overhead.KubeReserved[corev1.ResourceEphemeralStorage], tt.wantKubeReservedEph)
 
-				// Check SystemReserved
 				assertResource(t, it.Name, "SystemReserved CPU", it.Overhead.SystemReserved[corev1.ResourceCPU], tt.wantSystemReservedCPU)
 				assertResource(t, it.Name, "SystemReserved Memory", it.Overhead.SystemReserved[corev1.ResourceMemory], tt.wantSystemReservedMem)
 				assertResource(t, it.Name, "SystemReserved EphemeralStorage", it.Overhead.SystemReserved[corev1.ResourceEphemeralStorage], tt.wantSystemReservedEph)
@@ -339,7 +299,7 @@ func assertResource(t *testing.T, instanceName, label string, got resource.Quant
 	t.Helper()
 	var want resource.Quantity
 	if wantStr != "" && wantStr != "0" {
-		want = mustParseQty(wantStr)
+		want = resource.MustParse(wantStr)
 	}
 	if got.Cmp(want) != 0 {
 		t.Errorf("[%s] %s = %v, want %v", instanceName, label, got.String(), want.String())

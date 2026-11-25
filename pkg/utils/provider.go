@@ -20,10 +20,6 @@ func ParseProviderID(providerID string) (string, error) {
 		return "", fmt.Errorf("invalid provider ID format: %s (must start with %s)", providerID, ExoscaleProviderIDPrefix)
 	}
 
-	if instanceID == "" {
-		return "", fmt.Errorf("invalid provider ID format: %s (missing instance ID)", providerID)
-	}
-
 	if !uuidRegex.MatchString(instanceID) {
 		return "", fmt.Errorf("invalid provider ID format: %s (instance ID must be a valid UUID)", providerID)
 	}

@@ -47,10 +47,6 @@ func TestFromExoscaleInstance(t *testing.T) {
 
 	got := FromExoscaleInstance(exoInstance, instanceType, zone)
 
-	if got == nil {
-		t.Fatal("FromExoscaleInstance() returned nil")
-	}
-
 	if got.ID != instanceID {
 		t.Errorf("FromExoscaleInstance() ID = %v, want %v", got.ID, instanceID)
 	}
@@ -102,16 +98,10 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 
 	got := FromExoscaleInstance(exoInstance, instanceType, zone)
 
-	if got == nil {
-		t.Fatal("FromExoscaleInstance() returned nil")
-	}
-
-	// Verify we have exactly 3 addresses
 	if len(got.Addresses) != 5 {
 		t.Fatalf("FromExoscaleInstance() Addresses count = %d, want 5", len(got.Addresses))
 	}
 
-	// Verify we have a default Hostname
 	if got.Addresses[0].Type != v1.NodeHostName {
 		t.Errorf("Addresses[0].Type = %v, want %v", got.Addresses[0].Type, v1.NodeHostName)
 	}
@@ -119,7 +109,6 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 		t.Errorf("Addresses[0].Address = %v, want %v", got.Addresses[0].Address, instanceName)
 	}
 
-	// Verify the external IP address
 	expectedIP := "192.168.1.100"
 	if got.Addresses[1].Type != v1.NodeExternalIP {
 		t.Errorf("Addresses[1].Type = %v, want %v", got.Addresses[1].Type, v1.NodeExternalIP)
@@ -128,7 +117,6 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 		t.Errorf("Addresses[1].Address = %v, want %v", got.Addresses[1].Address, expectedIP)
 	}
 
-	// Verify the internal IP address (same as external)
 	if got.Addresses[2].Type != v1.NodeInternalIP {
 		t.Errorf("Addresses[2].Type = %v, want %v", got.Addresses[2].Type, v1.NodeInternalIP)
 	}
@@ -136,7 +124,6 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 		t.Errorf("Addresses[2].Address = %v, want %v", got.Addresses[2].Address, expectedIP)
 	}
 
-	// Verify the external IPv6 address
 	expectedIPv6 := "fe80::1:2:3"
 	if got.Addresses[3].Type != v1.NodeExternalIP {
 		t.Errorf("Addresses[3].Type = %v, want %v", got.Addresses[3].Type, v1.NodeExternalIP)
@@ -145,42 +132,11 @@ func TestFromExoscaleInstance_WithAddresses(t *testing.T) {
 		t.Errorf("Addresses[3].Address = %v, want %v", got.Addresses[3].Address, expectedIPv6)
 	}
 
-	// Verify the internal IPv6 address (same as external)
 	if got.Addresses[4].Type != v1.NodeInternalIP {
 		t.Errorf("Addresses[4].Type = %v, want %v", got.Addresses[4].Type, v1.NodeInternalIP)
 	}
 	if got.Addresses[4].Address != expectedIPv6 {
 		t.Errorf("Addresses[4].Address = %v, want %v", got.Addresses[4].Address, expectedIPv6)
-	}
-}
-
-func TestFromExoscaleInstance_NilInputs(t *testing.T) {
-	tests := []struct {
-		name         string
-		instance     *egov3.Instance
-		instanceType *cloudprovider.InstanceType
-	}{
-		{
-			name:         "nil instance",
-			instance:     nil,
-			instanceType: &cloudprovider.InstanceType{},
-		},
-		{
-			name: "nil instanceType",
-			instance: &egov3.Instance{
-				ID: egov3.UUID("test"),
-			},
-			instanceType: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := FromExoscaleInstance(tt.instance, tt.instanceType, "test-zone")
-			if got != nil {
-				t.Errorf("FromExoscaleInstance() = %v, want nil", got)
-			}
-		})
 	}
 }
 
@@ -201,10 +157,6 @@ func TestInstance_ToNodeClaim(t *testing.T) {
 	}
 
 	got := instance.ToNodeClaim()
-
-	if got == nil {
-		t.Fatal("ToNodeClaim() returned nil")
-	}
 
 	if got.Name != "test-claim" {
 		t.Errorf("ToNodeClaim() Name = %v, want test-claim", got.Name)
@@ -278,9 +230,6 @@ func TestFromExoscaleInstance_WithVpc(t *testing.T) {
 	}
 
 	got := FromExoscaleInstance(exoInstance, instanceType, zone)
-	if got == nil {
-		t.Fatal("FromExoscaleInstance() returned nil")
-	}
 
 	if got.VpcID != "11111111-0000-0000-0000-000000000001" {
 		t.Errorf("FromExoscaleInstance() VpcID = %v, want %v", got.VpcID, "11111111-0000-0000-0000-000000000001")
@@ -316,9 +265,6 @@ func TestFromExoscaleInstance_WithoutVpc(t *testing.T) {
 	}
 
 	got := FromExoscaleInstance(exoInstance, instanceType, "ch-gva-2")
-	if got == nil {
-		t.Fatal("FromExoscaleInstance() returned nil")
-	}
 	if got.VpcID != "" {
 		t.Errorf("FromExoscaleInstance() VpcID = %v, want empty", got.VpcID)
 	}

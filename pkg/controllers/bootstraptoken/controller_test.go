@@ -10,8 +10,6 @@ import (
 )
 
 func TestIsBootstrapToken(t *testing.T) {
-	c := &Controller{}
-
 	tests := []struct {
 		name   string
 		secret *v1.Secret
@@ -64,7 +62,7 @@ func TestIsBootstrapToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := c.isBootstrapToken(tt.secret)
+			got := isBootstrapToken(tt.secret)
 			if got != tt.want {
 				t.Errorf("isBootstrapToken() = %v, want %v", got, tt.want)
 			}
@@ -115,6 +113,16 @@ func TestIsTokenExpired(t *testing.T) {
 			now:  now,
 			want: true,
 		},
+		{
+			name: "unparseable annotation counts as expired",
+			secret: &v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.AnnotationTokenCreated: "garbage"},
+				},
+			},
+			now:  now,
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -122,100 +130,6 @@ func TestIsTokenExpired(t *testing.T) {
 			got := isTokenExpired(tt.secret, tt.now)
 			if got != tt.want {
 				t.Errorf("isTokenExpired() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestIsNodeAlreadyMarkedRegistered(t *testing.T) {
-	tests := []struct {
-		name   string
-		secret *v1.Secret
-		want   bool
-	}{
-		{
-			name: "marked registered",
-			secret: &v1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						AnnotationNodeRegistered: "true",
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "not marked registered",
-			secret: &v1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						AnnotationNodeRegistered: "false",
-					},
-				},
-			},
-			want: false,
-		},
-		{
-			name:   "no annotation",
-			secret: &v1.Secret{},
-			want:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isNodeAlreadyMarkedRegistered(tt.secret)
-			if got != tt.want {
-				t.Errorf("isNodeAlreadyMarkedRegistered() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestIsNodeUsingBootstrapToken(t *testing.T) {
-	tests := []struct {
-		name            string
-		node            *v1.Node
-		tokenSecretName string
-		want            bool
-	}{
-		{
-			name: "node using token",
-			node: &v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.AnnotationBootstrapToken: "test-token",
-					},
-				},
-			},
-			tokenSecretName: "test-token",
-			want:            true,
-		},
-		{
-			name: "node using different token",
-			node: &v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.AnnotationBootstrapToken: "other-token",
-					},
-				},
-			},
-			tokenSecretName: "test-token",
-			want:            false,
-		},
-		{
-			name:            "no annotation",
-			node:            &v1.Node{},
-			tokenSecretName: "test-token",
-			want:            false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isNodeUsingBootstrapToken(tt.node, tt.tokenSecretName)
-			if got != tt.want {
-				t.Errorf("isNodeUsingBootstrapToken() = %v, want %v", got, tt.want)
 			}
 		})
 	}

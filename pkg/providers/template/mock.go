@@ -6,7 +6,6 @@ import (
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 )
 
-// MockResolver is a mock implementation of the Resolver interface for testing
 type MockResolver struct {
 	ResolveFunc func(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (*Template, error)
 }

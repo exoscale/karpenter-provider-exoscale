@@ -15,7 +15,6 @@ import (
 
 var gitVersionRegex = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)`)
 
-// Resolver is an interface for resolving templates
 type Resolver interface {
 	ResolveTemplate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (*Template, error)
 }
@@ -35,28 +34,20 @@ func NewResolver(client *egov3.Client, zone string, kubeConfig *rest.Config) *Pr
 }
 
 func (r *Provider) ResolveTemplate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass) (*Template, error) {
-	logger := log.FromContext(ctx)
-
-	if nodeClass.Spec.TemplateID != "" {
-		return &Template{
-			ID: nodeClass.Spec.TemplateID,
-			Labels: map[string]string{
-				corev1.LabelOSStable: "linux",
-			},
-		}, nil
-	}
-
-	if nodeClass.Spec.ImageTemplateSelector != nil {
+	templateID := nodeClass.Spec.TemplateID
+	if templateID == "" {
 		selector := nodeClass.Spec.ImageTemplateSelector
+		if selector == nil {
+			return nil, fmt.Errorf("neither templateID nor imageTemplateSelector is specified in NodeClass %s", nodeClass.Name)
+		}
 
+		var err error
 		version := selector.Version
 		if version == "" {
-			detectedVersion, err := r.getKubernetesVersion()
-			if err != nil {
+			if version, err = r.getKubernetesVersion(); err != nil {
 				return nil, fmt.Errorf("failed to detect cluster version: %w", err)
 			}
-			version = detectedVersion
-			logger.V(1).Info("detected cluster version", "version", version)
+			log.FromContext(ctx).V(1).Info("detected cluster version", "version", version)
 		}
 
 		variant := selector.Variant
@@ -64,25 +55,16 @@ func (r *Provider) ResolveTemplate(ctx context.Context, nodeClass *apiv1.Exoscal
 			variant = "standard"
 		}
 
-		templateID, err := r.lookupTemplate(ctx, version, variant)
-		if err != nil {
+		if templateID, err = r.lookupTemplate(ctx, version, variant); err != nil {
 			return nil, fmt.Errorf("failed to resolve template for version=%s, variant=%s: %w", version, variant, err)
 		}
-
-		logger.Info("resolved template from selector",
-			"templateID", templateID,
-			"version", version,
-			"variant", variant)
-
-		return &Template{
-			ID: templateID,
-			Labels: map[string]string{
-				corev1.LabelOSStable: "linux",
-			},
-		}, nil
+		log.FromContext(ctx).Info("resolved template from selector", "templateID", templateID, "version", version, "variant", variant)
 	}
 
-	return nil, fmt.Errorf("neither templateID nor imageTemplateSelector is specified in NodeClass %s", nodeClass.Name)
+	return &Template{
+		ID:     templateID,
+		Labels: map[string]string{corev1.LabelOSStable: "linux"},
+	}, nil
 }
 
 func (r *Provider) getKubernetesVersion() (string, error) {
