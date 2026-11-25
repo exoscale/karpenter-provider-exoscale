@@ -16,7 +16,6 @@ import (
 	labelfilter "github.com/exoscale/karpenter-provider-exoscale/pkg/utils/labels"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
@@ -119,10 +118,9 @@ func (r *ExoscaleNodeClassReconciler) Reconcile(ctx context.Context, req reconci
 	}
 
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
+		// A conflict is returned too: GenerationChangedPredicate drops status-only
+		// events, so nothing else would requeue this NodeClass.
 		if err := r.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
-			if errors.IsConflict(err) {
-				return reconcile.Result{}, nil
-			}
 			return reconcile.Result{}, fmt.Errorf("failed to patch nodeclass status: %w", err)
 		}
 	}
