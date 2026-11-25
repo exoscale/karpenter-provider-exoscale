@@ -124,7 +124,8 @@ func expectNodeReplaced(ctx context.Context, nodeClass *apiv1.ExoscaleNodeClass,
 }
 
 // createExoscaleResource waits for create and registers del, which runs once
-// nodePool has no NodeClaims left: attached resources can't be deleted.
+// nodePool has no NodeClaims left: attached resources can't be deleted. Call it
+// before createNodePool, so that del runs after the NodePool is deleted.
 func createExoscaleResource(ctx context.Context, nodePool string,
 	create func() (*egov3.Operation, error),
 	del func(context.Context, egov3.UUID) (*egov3.Operation, error),

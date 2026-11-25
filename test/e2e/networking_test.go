@@ -37,6 +37,13 @@ var _ = Describe("Networking", func() {
 			_, _ = exo.DeleteElasticIP(ctx, elasticIPID)
 			_, _ = exo.DeletePrivateNetwork(ctx, networkID)
 		}, NodeTimeout(15*time.Minute))
+		// Created before the NodePool too: its cleanup must run after the
+		// NodePool's, which is what removes the nodes.
+		otherIP := createExoscaleResource(ctx, name, func() (*egov3.Operation, error) {
+			return exo.CreateElasticIP(ctx, egov3.CreateElasticIPRequest{Description: runName + "-eip-b"})
+		}, func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error) {
+			return exo.DeleteElasticIP(ctx, id)
+		})
 
 		spec := defaultNodeClassSpec()
 		spec.PrivateNetworkSelectorTerms = []apiv1.SelectorTerms{{ID: networkID.String()}}
@@ -55,11 +62,6 @@ var _ = Describe("Networking", func() {
 		Expect(instance.ElasticIPS).To(ContainElement(HaveField("ID", elasticIPID)))
 
 		By("replacing the node when another elastic IP is selected")
-		otherIP := createExoscaleResource(ctx, name, func() (*egov3.Operation, error) {
-			return exo.CreateElasticIP(ctx, egov3.CreateElasticIPRequest{Description: runName + "-eip-b"})
-		}, func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error) {
-			return exo.DeleteElasticIP(ctx, id)
-		})
 		replacement := expectNodeReplaced(ctx, nodeClass, name, claim, func(spec *apiv1.ExoscaleNodeClassSpec) {
 			spec.ElasticIPSelectorTerms = []apiv1.SelectorTerms{{ID: otherIP.String()}}
 		})
