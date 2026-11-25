@@ -6,6 +6,7 @@ import (
 
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -19,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 type Controller struct {
@@ -49,7 +51,11 @@ func (r *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return r.cleanupToken(ctx, secret)
 	}
 
-	if r.isNodeRegistered(ctx, secret) {
+	consumed, err := r.tokenConsumed(ctx, secret)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if consumed {
 		log.FromContext(ctx).Info("node registered, cleaning up bootstrap token")
 		return r.cleanupToken(ctx, secret)
 	}
@@ -76,29 +82,22 @@ func isTokenExpired(secret *v1.Secret, checkTime time.Time) bool {
 	return !ok || checkTime.Sub(created) > constants.DefaultBootstrapTokenTTL
 }
 
-func (r *Controller) isNodeRegistered(ctx context.Context, secret *v1.Secret) bool {
-	nodeList := &v1.NodeList{}
-	if err := r.List(ctx, nodeList); err != nil {
-		log.FromContext(ctx).Error(err, "failed to list nodes")
-		return false
+// tokenConsumed reports whether the NodeClaim the token was issued for has
+// registered its node, or no longer exists. Tokens without the annotation
+// are left to expire.
+func (r *Controller) tokenConsumed(ctx context.Context, secret *v1.Secret) (bool, error) {
+	name := secret.Annotations[constants.AnnotationBootstrapToken]
+	if name == "" {
+		return false, nil
 	}
-
-	for _, node := range nodeList.Items {
-		if node.Annotations[constants.AnnotationBootstrapToken] == secret.Name {
-			if node.Status.Phase != "" && node.Status.Phase != v1.NodePending {
-				log.FromContext(ctx).Info("node has registered with kubelet", "node", node.Name, "phase", node.Status.Phase)
-				return true
-			}
-			if len(node.Status.Conditions) > 0 {
-				log.FromContext(ctx).Info("node has conditions (kubelet registered)", "node", node.Name)
-				return true
-			}
-			log.FromContext(ctx).V(1).Info("node found but kubelet hasn't registered yet (Unknown), keeping token", "node", node.Name)
-			return false
+	nodeClaim := &karpv1.NodeClaim{}
+	if err := r.Get(ctx, types.NamespacedName{Name: name}, nodeClaim); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, nil
 		}
+		return false, err
 	}
-
-	return false
+	return nodeClaim.StatusConditions().IsTrue(karpv1.ConditionTypeRegistered), nil
 }
 
 func (r *Controller) cleanupToken(ctx context.Context, secret *v1.Secret) (reconcile.Result, error) {
@@ -139,16 +138,23 @@ func (r *Controller) SetupWithManager(mgr ctrl.Manager) error {
 			MaxConcurrentReconciles: 5,
 		}).
 		Watches(
-			&v1.Node{},
-			handler.EnqueueRequestsFromMapFunc(r.nodeToTokens),
+			&karpv1.NodeClaim{},
+			handler.EnqueueRequestsFromMapFunc(r.nodeClaimToTokens),
 		).
 		Complete(r)
 }
 
-func (r *Controller) nodeToTokens(_ context.Context, obj client.Object) []reconcile.Request {
-	tokenSecretName, ok := obj.GetAnnotations()[constants.AnnotationBootstrapToken]
-	if !ok {
+func (r *Controller) nodeClaimToTokens(ctx context.Context, obj client.Object) []reconcile.Request {
+	var secrets v1.SecretList
+	if err := r.List(ctx, &secrets, client.InNamespace(metav1.NamespaceSystem), client.MatchingLabels{constants.LabelTokenProvider: constants.ProviderName}); err != nil {
+		log.FromContext(ctx).Error(err, "failed to list bootstrap tokens")
 		return nil
 	}
-	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: tokenSecretName, Namespace: metav1.NamespaceSystem}}}
+	var requests []reconcile.Request
+	for _, secret := range secrets.Items {
+		if secret.Annotations[constants.AnnotationBootstrapToken] == obj.GetName() {
+			requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&secret)})
+		}
+	}
+	return requests
 }
