@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
@@ -69,6 +70,7 @@ type shared struct {
 
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
+	log.SetLogger(GinkgoLogr)
 	RunSpecs(t, "Karpenter Exoscale e2e")
 }
 
