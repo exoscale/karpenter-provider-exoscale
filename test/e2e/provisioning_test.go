@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 )
@@ -19,17 +20,20 @@ var _ = Describe("Provisioning", Ordered, func() {
 	var (
 		deployment *appsv1.Deployment
 		instanceID egov3.UUID
+		launched   *launches
 	)
 
 	BeforeAll(func(ctx SpecContext) {
 		expectNodeClassReady(ctx, createNodeClass(ctx, name, defaultNodeClassSpec()))
 		createNodePool(ctx, name)
+		launched = trackLaunches(name)
 		deployment = createDeployment(ctx, name, name, 1)
 	})
 
-	It("launches a node for a pending pod", func(ctx SpecContext) {
+	It("launches a single node for a pending pod", func(ctx SpecContext) {
 		claim := expectSingleInitializedNodeClaim(ctx, name)
 		expectPodsRunningOn(ctx, name, 1, claim.Status.NodeName)
+		launched.expectLaunched(ctx, 1)
 
 		instance := instanceOf(ctx, claim)
 		instanceID = instance.ID
@@ -52,4 +56,35 @@ var _ = Describe("Provisioning", Ordered, func() {
 		expectNoNodeClaims(ctx, name)
 		expectInstanceGone(ctx, instanceID, 5*time.Minute)
 	}, SpecTimeout(15*time.Minute))
+})
+
+var _ = Describe("Provisioning a burst", func() {
+	const (
+		name     = "burst"
+		replicas = 3
+	)
+
+	// Pods that can't share a node make Karpenter launch several nodes at once.
+	It("launches one node per pod that needs its own", func(ctx SpecContext) {
+		expectNodeClassReady(ctx, createNodeClass(ctx, name, defaultNodeClassSpec()))
+		createNodePool(ctx, name)
+		launched := trackLaunches(name)
+		createDeployment(ctx, name, name, replicas, func(pod *corev1.PodSpec) {
+			pod.Affinity = &corev1.Affinity{PodAntiAffinity: &corev1.PodAntiAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+					LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+					TopologyKey:   corev1.LabelHostname,
+				}},
+			}}
+		})
+
+		Eventually(func(g Gomega) {
+			claims := nodeClaims(ctx, g, name)
+			g.Expect(claims).To(HaveLen(replicas))
+			for _, claim := range claims {
+				g.Expect(claim.StatusConditions().IsTrue(karpv1.ConditionTypeInitialized)).To(BeTrue(), "%s: %+v", claim.Name, claim.Status.Conditions)
+			}
+		}).WithContext(ctx).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+		launched.expectLaunched(ctx, replicas)
+	}, SpecTimeout(20*time.Minute))
 })

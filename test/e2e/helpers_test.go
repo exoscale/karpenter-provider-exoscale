@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	egov3 "github.com/exoscale/egoscale/v3"
@@ -15,6 +16,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
+	"github.com/exoscale/karpenter-provider-exoscale/pkg/constants"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/utils"
 )
 
@@ -199,4 +201,65 @@ func expectInstanceGone(ctx context.Context, id egov3.UUID, timeout time.Duratio
 		_, err := exo.GetInstance(ctx, id)
 		return err
 	}).WithContext(ctx).WithTimeout(timeout).WithPolling(15 * time.Second).Should(MatchError(egov3.ErrNotFound))
+}
+
+// launches records every NodeClaim and Exoscale instance created for a NodePool,
+// so a spec can check Karpenter launched no more nodes than it needed. Polling
+// every few seconds sees them all: a node lives for minutes before it can go.
+type launches struct {
+	mu         sync.Mutex
+	nodeClaims map[string]bool
+	instances  map[string]bool
+}
+
+// trackLaunches records launches until the cleanup of the current node.
+func trackLaunches(nodePool string) *launches {
+	ctx, cancel := context.WithCancel(context.Background())
+	DeferCleanup(cancel)
+	l := &launches{nodeClaims: map[string]bool{}, instances: map[string]bool{}}
+	go func() {
+		defer GinkgoRecover()
+		for {
+			l.record(ctx, nodePool)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
+		}
+	}()
+	return l
+}
+
+// record ignores errors: the next poll retries.
+func (l *launches) record(ctx context.Context, nodePool string) {
+	var claims karpv1.NodeClaimList
+	claimsErr := kube.List(ctx, &claims, client.MatchingLabels{karpv1.NodePoolLabelKey: nodePool})
+	instances, instancesErr := exo.ListInstances(ctx)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if claimsErr == nil {
+		for _, c := range claims.Items {
+			l.nodeClaims[c.Name] = true
+		}
+	}
+	if instancesErr == nil {
+		for _, i := range instances.Instances {
+			if i.Labels[constants.InstanceLabelClusterID] == clusterID && i.Labels[constants.InstanceLabelNodepoolName] == nodePool {
+				l.instances[i.ID.String()] = true
+			}
+		}
+	}
+}
+
+// expectLaunched checks that exactly n NodeClaims and n instances were launched,
+// and that no more appear while Karpenter has time to over-provision.
+func (l *launches) expectLaunched(ctx context.Context, n int) {
+	Consistently(func(g Gomega) {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		g.Expect(l.nodeClaims).To(HaveLen(n), "NodeClaims launched")
+		g.Expect(l.instances).To(HaveLen(n), "instances launched")
+	}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
