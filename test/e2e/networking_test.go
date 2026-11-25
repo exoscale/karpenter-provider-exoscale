@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"context"
 	"time"
 
 	egov3 "github.com/exoscale/egoscale/v3"
@@ -52,5 +53,18 @@ var _ = Describe("Networking", func() {
 		instance := instanceOf(ctx, claim)
 		Expect(instance.PrivateNetworks).To(ContainElement(HaveField("ID", networkID)))
 		Expect(instance.ElasticIPS).To(ContainElement(HaveField("ID", elasticIPID)))
-	}, SpecTimeout(25*time.Minute))
+
+		By("replacing the node when another elastic IP is selected")
+		otherIP := createExoscaleResource(ctx, name, func() (*egov3.Operation, error) {
+			return exo.CreateElasticIP(ctx, egov3.CreateElasticIPRequest{Description: runName + "-eip-b"})
+		}, func(ctx context.Context, id egov3.UUID) (*egov3.Operation, error) {
+			return exo.DeleteElasticIP(ctx, id)
+		})
+		replacement := expectNodeReplaced(ctx, nodeClass, name, claim, func(spec *apiv1.ExoscaleNodeClassSpec) {
+			spec.ElasticIPSelectorTerms = []apiv1.SelectorTerms{{ID: otherIP.String()}}
+		})
+		ips := instanceOf(ctx, replacement).ElasticIPS
+		Expect(ips).To(ContainElement(HaveField("ID", otherIP)))
+		Expect(ips).NotTo(ContainElement(HaveField("ID", elasticIPID)))
+	}, SpecTimeout(35*time.Minute))
 })

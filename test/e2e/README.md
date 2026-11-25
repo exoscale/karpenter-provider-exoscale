@@ -15,7 +15,7 @@ supports (`.github/workflows/e2e.yml`).
 cd test/e2e
 export EXOSCALE_API_KEY=... EXOSCALE_API_SECRET=...  # needs SKS, compute and IAM rights
 export K8S_VERSION=<version>                         # optional, defaults to the latest (go run ./cmd/versions)
-go tool ginkgo -v --procs=3 --timeout=120m .
+go tool ginkgo -v --procs=4 --timeout=150m .
 ```
 
 Optional: `EXOSCALE_ZONE` (default `ch-gva-2`), `EXOSCALE_API_ENDPOINT`,

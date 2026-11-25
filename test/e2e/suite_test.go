@@ -28,6 +28,7 @@ import (
 	utilversion "k8s.io/apimachinery/pkg/util/version"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -41,8 +42,9 @@ const repoRoot = "../.."
 
 // Set on every Ginkgo process.
 var (
-	exo  *egov3.Client
-	kube client.Client
+	exo        *egov3.Client
+	kube       client.Client
+	restConfig *rest.Config
 
 	// Name of every Exoscale resource the run creates, and the cluster version.
 	runName    string
@@ -147,7 +149,8 @@ var _ = SynchronizedBeforeSuite(func(ctx SpecContext) []byte {
 
 func connect(kubeconfig []byte) {
 	Expect(apiv1.AddToScheme(scheme.Scheme)).To(Succeed())
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	var err error
+	restConfig, err = clientcmd.RESTConfigFromKubeConfig(kubeconfig)
 	Expect(err).NotTo(HaveOccurred())
 	kube, err = client.New(restConfig, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())

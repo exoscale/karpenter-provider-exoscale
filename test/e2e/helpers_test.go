@@ -20,10 +20,17 @@ import (
 
 // Each helper registers the deletion of what it creates with DeferCleanup.
 
+// deleteOnCleanup tolerates specs that delete obj themselves.
+func deleteOnCleanup(obj client.Object) {
+	DeferCleanup(func(ctx SpecContext) {
+		Expect(client.IgnoreNotFound(kube.Delete(ctx, obj))).To(Succeed())
+	})
+}
+
 func createNodeClass(ctx context.Context, name string, spec apiv1.ExoscaleNodeClassSpec) *apiv1.ExoscaleNodeClass {
 	nodeClass := &apiv1.ExoscaleNodeClass{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: spec}
 	Expect(kube.Create(ctx, nodeClass)).To(Succeed())
-	DeferCleanup(kube.Delete, nodeClass)
+	deleteOnCleanup(nodeClass)
 	return nodeClass
 }
 
@@ -40,8 +47,8 @@ func defaultNodeClassSpec() apiv1.ExoscaleNodeClassSpec {
 }
 
 // createNodePool consolidates empty or underutilized nodes immediately and
-// lets disruption replace every node at once.
-func createNodePool(ctx context.Context, name string) *karpv1.NodePool {
+// lets disruption replace every node at once; mutate can change that.
+func createNodePool(ctx context.Context, name string, mutate ...func(*karpv1.NodePool)) *karpv1.NodePool {
 	nodePool := &karpv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: karpv1.NodePoolSpec{
@@ -53,8 +60,11 @@ func createNodePool(ctx context.Context, name string) *karpv1.NodePool {
 			},
 		},
 	}
+	for _, m := range mutate {
+		m(nodePool)
+	}
 	Expect(kube.Create(ctx, nodePool)).To(Succeed())
-	DeferCleanup(kube.Delete, nodePool)
+	deleteOnCleanup(nodePool)
 	return nodePool
 }
 
@@ -94,7 +104,7 @@ func createDeployment(ctx context.Context, name, nodePool string, replicas int32
 		m(&deployment.Spec.Template.Spec)
 	}
 	Expect(kube.Create(ctx, deployment)).To(Succeed())
-	DeferCleanup(kube.Delete, deployment)
+	deleteOnCleanup(deployment)
 	return deployment
 }
 

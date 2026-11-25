@@ -39,7 +39,7 @@ jobs:
   e2e:
     needs: versions
     runs-on: ubuntu-latest
-    timeout-minutes: 130
+    timeout-minutes: 160
     strategy:
       fail-fast: false
       matrix:
@@ -59,8 +59,8 @@ jobs:
       - uses: ./go.mk/.github/actions/setup
 
       - name: Run e2e tests
-        # Specs run on 3 processes; Serial specs (Karpenter restart) run alone at the end.
-        run: go tool ginkgo -v --procs=3 --timeout=120m .
+        # Specs run on 4 processes; Serial specs (Karpenter restart) run alone at the end.
+        run: go tool ginkgo -v --procs=4 --timeout=150m .
 
       - name: Karpenter log
         if: always()
