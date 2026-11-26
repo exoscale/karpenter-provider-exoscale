@@ -3,6 +3,9 @@ Changelog
 
 UNRELEASED
 ----------
+- refactor(drift): compute a node's expected security groups (the NodeClass ones plus the
+  SKS default one) in one place for both instance creation and drift detection, so the two
+  can't disagree and replace nodes that didn't drift.
 - fix(instancetype): set the zone on offerings so cost tracking and consolidation find their price
 - fix(bootstraptoken): delete a bootstrap token once its NodeClaim is registered
   (or gone), instead of leaving it until expiry.
