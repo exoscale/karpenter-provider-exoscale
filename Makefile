@@ -1,4 +1,4 @@
-GO_MK_REF := v2.0.3
+GO_MK_REF := v2.1.0
 
 # goreleaser v1.x pins golang.org/x/tools < v0.36 whose internal/tokeninternal
 # canary no longer compiles with Go >= 1.25 ("invalid array length -delta * delta").
