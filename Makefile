@@ -44,7 +44,7 @@ installcrds:
 	kustomize build config/crd/bases | kubectl apply -f -
 
 install: manifests
-	kustomize build config/base | kubectl apply -f -
+	kustomize build config | kubectl apply -f -
 	
 ## Project
 

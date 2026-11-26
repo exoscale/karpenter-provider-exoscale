@@ -19,8 +19,10 @@ Optional environment variables:
 Karpenter. Empty by default: instances are named after their NodeClaim.
 * `CLUSTER_DOMAIN`: Domain name of your Kubernetes cluster. It will be set in
 Kubelet configuration. Defaults to `cluster.local`.
-* `CLUSTER_ENDPOINT`: Kubernetes API server endpoint. If not set, it is
-auto-detected from the in-cluster configuration.
+* `CLUSTER_ENDPOINT`: Kubernetes API server endpoint that new nodes join.
+Defaults to the API server of the kubeconfig in use. Set it when running
+in-cluster: the in-cluster address is a service IP that nodes can't reach before
+they joined.
 * `EXOSCALE_API_ENDPOINT`: Custom Exoscale API endpoint URL. If not set, the
 endpoint is auto-detected from the zone.
 * `EXOSCALE_API_ENVIRONMENT`: Exoscale API environment (e.g., `ppapi` for
@@ -36,15 +38,27 @@ Only if out-of-cluster:
 * `KUBECONFIG`: Path to your kubeconfig file, downloadable from the cluster view in the
   [console](https://portal.exoscale.com).
 
-## In-Cluster CRDs
+## Self-hosted installation
 
-If you deploy the provider yourself, install the Karpenter CRDs:
+On SKS, enabling the `karpenter` addon installs and runs the provider for you.
+To run it yourself instead, install the CRDs, create the Secret the Deployment
+reads its settings from, then apply the manifests in [`config/`](config/):
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodeclaims.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodepools.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/karpenter/refs/tags/v1.9.0/pkg/apis/crds/karpenter.sh_nodeoverlays.yaml
+kubectl apply -k config/crd/bases
+kubectl -n kube-system create secret generic karpenter-exoscale \
+  --from-literal=api-key=EXO... \
+  --from-literal=api-secret=... \
+  --from-literal=zone=ch-gva-2 \
+  --from-literal=cluster-id=<cluster UUID> \
+  --from-literal=cluster-endpoint=https://<cluster endpoint> \
+  --from-literal=use-sks-default-security-group=true   # optional, SKS only
+kubectl apply -k config
 ```
+
+The API key needs the [IAM policy](doc/iam.md). `config/servicemonitor.yaml` and
+`config/verticalpodautoscaler.yaml` are optional: they need the Prometheus
+operator and the VPA CRDs.
 
 ## NodeClasses and NodeClaims
 

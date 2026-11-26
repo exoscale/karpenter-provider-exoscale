@@ -31,12 +31,27 @@ spec:
       serviceAccountName: karpenter
       containers:
         - name: karpenter
-          image: docker.io/exoscale/karpenter-exoscale:latest
+          image: docker.io/exoscale/karpenter:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          env:
+            - name: EXOSCALE_API_KEY
+              valueFrom: { secretKeyRef: { name: karpenter-exoscale, key: api-key } }
+            - name: EXOSCALE_API_SECRET
+              valueFrom: { secretKeyRef: { name: karpenter-exoscale, key: api-secret } }
+            - name: EXOSCALE_ZONE
+              valueFrom: { secretKeyRef: { name: karpenter-exoscale, key: zone } }
+            - name: EXOSCALE_SKS_CLUSTER_ID
+              valueFrom: { secretKeyRef: { name: karpenter-exoscale, key: cluster-id } }
+            # Nodes join through this endpoint: the in-cluster API server address
+            # is a service IP they can't reach before they joined.
+            - name: CLUSTER_ENDPOINT
+              valueFrom: { secretKeyRef: { name: karpenter-exoscale, key: cluster-endpoint } }
+            - name: USE_SKS_DEFAULT_SECURITY_GROUP
+              valueFrom: { secretKeyRef: { name: karpenter-exoscale, key: use-sks-default-security-group, optional: true } }
           ports:
             - containerPort: 8080
               name: metrics
