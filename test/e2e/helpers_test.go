@@ -70,12 +70,18 @@ func createNodePool(ctx context.Context, name string, mutate ...func(*karpv1.Nod
 	return nodePool
 }
 
+// specTaint keeps pods the suite didn't create off spec nodes, such as the
+// CoreDNS replicas that don't fit on the system node: one would keep an empty
+// node from being removed.
+var specTaint = corev1.Taint{Key: "e2e.karpenter.exoscale.com/spec", Effect: corev1.TaintEffectNoSchedule}
+
 func nodeClaimSpec(nodeClass string) karpv1.NodeClaimTemplateSpec {
 	return karpv1.NodeClaimTemplateSpec{
 		NodeClassRef: &karpv1.NodeClassReference{Group: apiv1.GroupVersion.Group, Kind: "ExoscaleNodeClass", Name: nodeClass},
 		Requirements: []karpv1.NodeSelectorRequirementWithMinValues{{
 			Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{"standard.medium"},
 		}},
+		Taints: []corev1.Taint{specTaint},
 	}
 }
 
@@ -91,6 +97,7 @@ func createDeployment(ctx context.Context, name, nodePool string, replicas int32
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
 				Spec: corev1.PodSpec{
 					NodeSelector: map[string]string{karpv1.NodePoolLabelKey: nodePool},
+					Tolerations:  []corev1.Toleration{{Key: specTaint.Key, Operator: corev1.TolerationOpExists}},
 					Containers: []corev1.Container{{
 						Name:  "pause",
 						Image: "registry.k8s.io/pause:3.10",
