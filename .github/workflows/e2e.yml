@@ -27,10 +27,13 @@ jobs:
       run:
         working-directory: test/e2e
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: make go.mk
-        working-directory: .
-      - uses: ./go.mk/.github/actions/setup
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: 'test/e2e/go.mod'
+          cache-dependency-path: |
+            go.sum
+            test/e2e/go.sum
 
       - name: List SKS Kubernetes versions
         id: list
@@ -53,18 +56,13 @@ jobs:
       run:
         working-directory: test/e2e
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: make go.mk
-        working-directory: .
-      - uses: ./go.mk/.github/actions/setup
-      # The e2e module isn't vendored: without this, every job downloads its modules.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: e2e-go-${{ runner.os }}-${{ hashFiles('go.sum', 'test/e2e/go.sum') }}
-          restore-keys: e2e-go-${{ runner.os }}-
+          go-version-file: 'test/e2e/go.mod'
+          cache-dependency-path: |
+            go.sum
+            test/e2e/go.sum
 
       - name: Run e2e tests
         # Each spec mostly waits for its nodes to boot, so specs run on 8 processes.
@@ -89,10 +87,13 @@ jobs:
       run:
         working-directory: test/e2e
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: make go.mk
-        working-directory: .
-      - uses: ./go.mk/.github/actions/setup
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: 'test/e2e/go.mod'
+          cache-dependency-path: |
+            go.sum
+            test/e2e/go.sum
 
       - name: Remove what this run left behind
         run: go run ./cmd/cleanup -prefix "karpenter-e2e-${{ github.run_id }}-${{ github.run_attempt }}-"
