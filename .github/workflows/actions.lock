@@ -3,6 +3,9 @@
 # Docs: https://gh.io/actions-lockfile
 version: 'v0.0.3'
 workflows:
+    '.github/workflows/e2e.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/setup-go@v7.0.0'
     '.github/workflows/govulncheck.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-go@v7.1.0'

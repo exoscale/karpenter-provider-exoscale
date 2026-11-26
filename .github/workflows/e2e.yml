@@ -1,0 +1,103 @@
+name: e2e
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  EXOSCALE_API_KEY: ${{ secrets.EXOSCALE_API_KEY }}
+  EXOSCALE_API_SECRET: ${{ secrets.EXOSCALE_API_SECRET }}
+
+jobs:
+  versions:
+    # Secrets are not available to pull requests from forks.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.list.outputs.versions }}
+    defaults:
+      run:
+        working-directory: test/e2e
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: 'test/e2e/go.mod'
+          cache-dependency-path: |
+            go.sum
+            test/e2e/go.sum
+
+      - name: List SKS Kubernetes versions
+        id: list
+        run: echo "versions=$(go run ./cmd/versions)" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 160
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.versions.outputs.versions) }}
+    name: e2e (Kubernetes ${{ matrix.version }})
+    env:
+      K8S_VERSION: ${{ matrix.version }}
+      E2E_NAME: karpenter-e2e-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
+      KARPENTER_LOG: ${{ github.workspace }}/karpenter.log
+    defaults:
+      run:
+        working-directory: test/e2e
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: 'test/e2e/go.mod'
+          cache-dependency-path: |
+            go.sum
+            test/e2e/go.sum
+
+      - name: Run e2e tests
+        # Each spec mostly waits for its nodes to boot, so specs run on 8 processes.
+        # Serial specs (Karpenter restart) run alone at the end.
+        run: go tool ginkgo -v --procs=8 --timeout=150m .
+
+      - name: Karpenter log
+        if: always()
+        run: cat "$KARPENTER_LOG" || true
+
+      # Also runs when the job is cancelled or the suite crashed before its own cleanup.
+      - name: Destroy cluster
+        if: always()
+        run: go run ./cmd/cleanup -name "$E2E_NAME"
+
+  # Runs after the matrix whatever its outcome, including cancellation.
+  cleanup:
+    needs: [versions, e2e]
+    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: test/e2e
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: 'test/e2e/go.mod'
+          cache-dependency-path: |
+            go.sum
+            test/e2e/go.sum
+
+      - name: Remove what this run left behind
+        run: go run ./cmd/cleanup -prefix "karpenter-e2e-${{ github.run_id }}-${{ github.run_attempt }}-"
+
+      - name: Remove leftovers from earlier runs
+        if: always()
+        run: go run ./cmd/cleanup -older-than 3h

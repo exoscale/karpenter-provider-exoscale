@@ -3,6 +3,7 @@ package userdata
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 	"github.com/exoscale/karpenter-provider-exoscale/pkg/providers/userdata/bootstrap"
@@ -48,7 +49,7 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		BootstrapToken:              bootstrapToken,
 		CABundle:                    caBundle,
 		Labels:                      nodeClaim.Labels,
-		Taints:                      nodeClaim.Spec.Taints,
+		Taints:                      registerTaints(nodeClaim),
 		ImageGCHighThresholdPercent: kubelet.ImageGCHighThresholdPercent,
 		ImageGCLowThresholdPercent:  kubelet.ImageGCLowThresholdPercent,
 		ImageMinimumGCAge:           kubelet.ImageMinimumGCAge,
@@ -73,6 +74,13 @@ func (p *Provider) Generate(ctx context.Context, nodeClass *apiv1.ExoscaleNodeCl
 		return "", fmt.Errorf("failed to generate user data: %w", err)
 	}
 	return userData, nil
+}
+
+// registerTaints are the taints the kubelet registers the Node with: the
+// NodeClaim's taints and startup taints, plus karpenter.sh/unregistered, which
+// Karpenter removes once it synced the Node.
+func registerTaints(nodeClaim *karpenterv1.NodeClaim) []v1.Taint {
+	return slices.Concat(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints, []v1.Taint{karpenterv1.UnregisteredNoExecuteTaint})
 }
 
 func (p *Provider) getClusterCA(ctx context.Context) ([]byte, error) {

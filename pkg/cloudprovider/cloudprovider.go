@@ -25,7 +25,6 @@ import (
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
-	nodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 )
 
 const (
@@ -38,7 +37,6 @@ const (
 	DriftReasonIPv6               cloudprovider.DriftReason = "IPv6ToggleDrift"
 	DriftReasonIPForwarding       cloudprovider.DriftReason = "IPForwardingToggleDrift"
 	DriftReasonUserDataChanged    cloudprovider.DriftReason = "UserDataChanged"
-	kubeletRegistrationRequeue                              = 5 * time.Second
 )
 
 type CloudProvider struct {
@@ -94,15 +92,8 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpenterv1.NodeC
 		return nil, cloudprovider.NewCreateError(err, "InstanceCreationFailed", err.Error())
 	}
 
-	nc := createdInstance.ToNodeClaim()
-
-	if err := c.createNode(ctx, nc, createdInstance); err != nil {
-		return nil, cloudprovider.NewCreateError(err, "NodeCreationFailed", err.Error())
-	}
-
-	nc.Status.NodeName = nc.Name
-
-	return nc, nil
+	// The kubelet registers the Node itself; Karpenter matches it by provider ID.
+	return createdInstance.ToNodeClaim(), nil
 }
 
 // Delete always ends with NodeClaimNotFoundError: Karpenter keeps calling Delete
@@ -382,24 +373,6 @@ func (c *CloudProvider) Name() string {
 	return "exoscale"
 }
 
-// Registered gates Karpenter's logical NodeClaim registration on status that
-// can only have been published by a real kubelet. The provider creates a
-// placeholder Node immediately after instance launch, so Node existence and a
-// matching provider ID alone are not proof that bootstrap completed.
-func (c *CloudProvider) Registered(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) (cloudprovider.NodeLifecycleHookResult, error) {
-	node, err := nodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
-	if err != nil {
-		if nodeclaimutils.IsNodeNotFoundError(err) {
-			return cloudprovider.NodeLifecycleHookResult{RequeueAfter: kubeletRegistrationRequeue}, nil
-		}
-		return cloudprovider.NodeLifecycleHookResult{}, fmt.Errorf("getting node for kubelet registration: %w", err)
-	}
-	if node.Status.NodeInfo.KubeletVersion == "" {
-		return cloudprovider.NodeLifecycleHookResult{RequeueAfter: kubeletRegistrationRequeue}, nil
-	}
-	return cloudprovider.NodeLifecycleHookResult{}, nil
-}
-
 func (c *CloudProvider) getNodeClass(ctx context.Context, ref *karpenterv1.NodeClassReference) (*apiv1.ExoscaleNodeClass, error) {
 	if ref == nil {
 		return nil, fmt.Errorf("nodeClassRef not specified")
@@ -411,90 +384,11 @@ func (c *CloudProvider) getNodeClass(ctx context.Context, ref *karpenterv1.NodeC
 	return &nodeClass, nil
 }
 
-func (c *CloudProvider) createNode(ctx context.Context, nodeClaim *karpenterv1.NodeClaim, exoInstance *instance.Instance) error {
-	nodeName := c.instanceProvider.GetInstancePrefix() + nodeClaim.Name
-
-	capacity, allocatable := exoInstance.GetCapacityAndAllocatable()
-	node := &v1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        nodeName,
-			Annotations: nodeClaim.Annotations,
-		},
-		Spec: v1.NodeSpec{
-			ProviderID: nodeClaim.Status.ProviderID,
-			Taints:     []v1.Taint{karpenterv1.UnregisteredNoExecuteTaint},
-		},
-		Status: v1.NodeStatus{
-			Capacity:    capacity,
-			Allocatable: allocatable,
-			Phase:       v1.NodePending,
-			Conditions: []v1.NodeCondition{
-				{
-					Type:               v1.NodeReady,
-					Status:             v1.ConditionUnknown,
-					Reason:             "Initialization",
-					LastTransitionTime: metav1.Now(),
-					LastHeartbeatTime:  metav1.Now(),
-				},
-			},
-			NodeInfo: v1.NodeSystemInfo{
-				// This attribute is mandatory as CCM uses it to find the instance by ID from API
-				// If it's not set, it will say that instance don't exist and will instant remove it
-				// See https://github.com/exoscale/exoscale-cloud-controller-manager/blob/v0.34.0/exoscale/instances.go#L187
-				SystemUUID: exoInstance.ID,
-			},
-			Addresses: exoInstance.Addresses,
-		},
-	}
-
-	if err := c.kubeClient.Create(ctx, node); err != nil {
-		if !errors.IsAlreadyExists(err) {
-			return fmt.Errorf("creating node %s: %w", nodeName, err)
-		}
-		if err := c.ensureNodeIdentity(ctx, nodeName, node); err != nil {
-			return err
-		}
-		log.FromContext(ctx).Info("reconciled existing node", "nodeName", nodeName)
+func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {
+	// Karpenter sets the node name once the kubelet registered.
+	if nodeName == "" {
 		return nil
 	}
-
-	log.FromContext(ctx).Info("created Pending node", "nodeName", nodeName)
-	return nil
-}
-
-// ensureNodeIdentity patches the CCM-critical identity onto an already-existing Node so
-// it stays resolvable: Spec.ProviderID (the kubelet registers with an empty ProviderID
-// under cloud-provider=external) and Status.NodeInfo.SystemUUID / Addresses (the
-// identifier the Exoscale CCM looks the instance up by).
-func (c *CloudProvider) ensureNodeIdentity(ctx context.Context, nodeName string, desired *v1.Node) error {
-	existing := &v1.Node{}
-	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, existing); err != nil {
-		return fmt.Errorf("getting existing node %s: %w", nodeName, err)
-	}
-
-	if existing.Spec.ProviderID == "" {
-		patch := client.MergeFrom(existing.DeepCopy())
-		existing.Spec.ProviderID = desired.Spec.ProviderID
-		if err := c.kubeClient.Patch(ctx, existing, patch); err != nil {
-			return fmt.Errorf("patching node %s provider ID: %w", nodeName, err)
-		}
-	}
-
-	if existing.Status.NodeInfo.SystemUUID == "" {
-		patch := client.MergeFrom(existing.DeepCopy())
-		existing.Status.NodeInfo.SystemUUID = desired.Status.NodeInfo.SystemUUID
-		if len(existing.Status.Addresses) == 0 {
-			existing.Status.Addresses = desired.Status.Addresses
-		}
-		if err := c.kubeClient.Status().Patch(ctx, existing, patch); err != nil {
-			return fmt.Errorf("patching node %s status: %w", nodeName, err)
-		}
-	}
-
-	return nil
-}
-
-func (c *CloudProvider) drainNode(ctx context.Context, nodeName string) error {
 	var node v1.Node
 	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, &node); err != nil {
 		if errors.IsNotFound(err) {

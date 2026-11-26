@@ -19,6 +19,16 @@ UNRELEASED
 - fix(config): install the Karpenter core CRDs from v1.15.1 to match the vendored version
   (were v1.14.0).
 - docs(api): clean up the NodeClass field descriptions shown by `kubectl explain`.
+- fix(nodeclass): keep the NodeClass `Ready` condition false when resolving one of its
+  resources fails; a later successful step used to set it back to true, so Karpenter could
+  launch nodes from a partly resolved NodeClass.
+- docs(iam): the VPC and subnet operations belong to the `networking` IAM service, not
+  `compute`; the documented policy denied them.
+- fix(node): let the kubelet create the Node instead of creating a placeholder at instance
+  launch, as Karpenter expects. The kubelet now applies `node-labels` and `node-taints` from
+  `spec.userData` again, and registers with the `karpenter.sh/unregistered` and startup
+  taints. The Exoscale cloud controller manager fills the Node's provider ID, as it does
+  for SKS nodepools.
 
 1.37.2
 ----------

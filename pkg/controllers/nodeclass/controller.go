@@ -184,13 +184,11 @@ func (r *ExoscaleNodeClassReconciler) reconcileResources(ctx context.Context, no
 		},
 	}
 
-	nodeClass.StatusConditions().SetFalse(status.ConditionReady, "Reconciling", "Reconciling node class resources")
 	ready := true
 	for _, step := range reconcileSteps {
 		if err := step.reconcileFn(ctx, nodeClass); err != nil {
 			log.FromContext(ctx).Error(err, step.errorMessage)
 			nodeClass.StatusConditions().SetFalse(step.condition, step.reason, err.Error())
-			nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ReconcilingFailed", "Reconciling node class resources failed")
 			r.Recorder.Eventf(nodeClass, nil, "Warning", step.reason, step.reason, "%s: %v", step.errorMessage, err)
 			ready = false
 			continue
@@ -198,8 +196,12 @@ func (r *ExoscaleNodeClassReconciler) reconcileResources(ctx context.Context, no
 		nodeClass.StatusConditions().SetTrue(step.condition)
 	}
 
+	// Set last: the condition set has no dependents, so setting any other
+	// condition sets Ready back to true.
 	if ready {
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
+	} else {
+		nodeClass.StatusConditions().SetFalse(status.ConditionReady, "ReconcilingFailed", "Reconciling node class resources failed")
 	}
 }
 
