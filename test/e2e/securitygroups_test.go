@@ -7,6 +7,8 @@ import (
 	egov3 "github.com/exoscale/egoscale/v3"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	apiv1 "github.com/exoscale/karpenter-provider-exoscale/apis/karpenter/v1"
 )
@@ -39,6 +41,12 @@ var _ = Describe("Security groups", func() {
 		createDeployment(ctx, name, name, 1)
 		claim := expectSingleInitializedNodeClaim(ctx, name)
 		Expect(instanceOf(ctx, claim).SecurityGroups).To(ConsistOf(HaveField("ID", sgs[0]), HaveField("ID", defaultSG)))
+
+		By("not flagging the SKS default security group as drift")
+		Consistently(func(g Gomega) {
+			g.Expect(kube.Get(ctx, client.ObjectKeyFromObject(&claim), &claim)).To(Succeed())
+			g.Expect(claim.StatusConditions().IsTrue(karpv1.ConditionTypeDrifted)).To(BeFalse(), "%+v", claim.Status.Conditions)
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
 		By("selecting another security group by name")
 		replacement := expectNodeReplaced(ctx, nodeClass, name, claim, func(spec *apiv1.ExoscaleNodeClassSpec) {
