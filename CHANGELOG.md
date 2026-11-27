@@ -1,7 +1,7 @@
 Changelog
 =========
 
-UNRELEASED
+1.37.3
 ----------
 - refactor(drift): compute a node's expected security groups (the NodeClass ones plus the
   SKS default one) in one place for both instance creation and drift detection, so the two
