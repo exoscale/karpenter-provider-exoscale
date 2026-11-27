@@ -19,6 +19,11 @@ jobs:
 
       - run: make go.mk
 
+      # go-mk-release-action's setup-go has no version, so it keeps the runner's Go.
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: 'go.mod'
+
       - name: Import GPG key
         # This is a third-party GitHub action and we trust it with our GPG key.
         # To be on the safer side, we should always pin to the commit SHA.

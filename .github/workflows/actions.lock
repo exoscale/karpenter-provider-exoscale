@@ -16,6 +16,7 @@ workflows:
         - 'actions/setup-go@v7.1.0'
     '.github/workflows/release.yml':
         - 'actions/checkout@v7.0.1'
+        - 'actions/setup-go@v7.1.0'
         - 'crazy-max/ghaction-import-gpg@v7.0.0'
         - 'exoscale/go-mk-release-action@main'
 dependencies:
